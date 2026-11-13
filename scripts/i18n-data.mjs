@@ -1,4 +1,4 @@
-﻿export const SITE_BASE_URL = "https://xiaomie-magic-collector.pages.dev";
+﻿export const SITE_BASE_URL = "https://xiaomie-magic-collector-cvz.pages.dev";
 
 export const LANGUAGES = [
   { code: "zh-CN", slug: "", label: "简体中文", short: "简中", dir: "ltr", ogLocale: "zh_CN", market: "中国大陆及全球华人跨境卖家" },

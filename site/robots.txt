@@ -13,4 +13,4 @@ Allow: /
 User-agent: ClaudeBot
 Allow: /
 
-Sitemap: https://xiaomie-magic-collector.pages.dev/sitemap.xml
+Sitemap: https://xiaomie-magic-collector-cvz.pages.dev/sitemap.xml

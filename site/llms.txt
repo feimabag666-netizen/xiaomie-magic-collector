@@ -3,16 +3,16 @@
 > Universal Chrome & Microsoft Edge (Manifest V3) extension for e-commerce product & content collection, AI image filtering, anti-freeze local WASM long-image OCR, 4-level carton specification lookup, and B2B/ToC copywriting.
 
 ## Canonical URLs by Audience Language
-- 简体中文 (zh-CN) [中国大陆及全球华人跨境卖家]: https://xiaomie-magic-collector.pages.dev/
-- 繁體中文 (zh-TW) [台灣、香港、澳門與東南亞華語賣家]: https://xiaomie-magic-collector.pages.dev/zh-tw/
-- English (en) [US, UK, CA, AU, EU & Global Dropshippers]: https://xiaomie-magic-collector.pages.dev/en/
-- 日本語 (ja) [Amazon JP / 楽天市場 / メルカリ輸入セラー]: https://xiaomie-magic-collector.pages.dev/ja/
-- 한국어 (ko) [쿠팡 / 네이버 스마트스토어 해외소싱 셀러]: https://xiaomie-magic-collector.pages.dev/ko/
-- Español (es) [Mercado Libre / Amazon ES & MX / Shopify]: https://xiaomie-magic-collector.pages.dev/es/
-- Deutsch (de) [Amazon DE / Otto / DACH E-Commerce]: https://xiaomie-magic-collector.pages.dev/de/
-- Français (fr) [Amazon FR / Cdiscount / Shopify France]: https://xiaomie-magic-collector.pages.dev/fr/
-- Tiếng Việt (vi) [Shopee / TikTok Shop / Lazada Việt Nam]: https://xiaomie-magic-collector.pages.dev/vi/
-- ภาษาไทย (th) [Shopee / Lazada / TikTok Shop Thailand]: https://xiaomie-magic-collector.pages.dev/th/
+- 简体中文 (zh-CN) [中国大陆及全球华人跨境卖家]: https://xiaomie-magic-collector-cvz.pages.dev/
+- 繁體中文 (zh-TW) [台灣、香港、澳門與東南亞華語賣家]: https://xiaomie-magic-collector-cvz.pages.dev/zh-tw/
+- English (en) [US, UK, CA, AU, EU & Global Dropshippers]: https://xiaomie-magic-collector-cvz.pages.dev/en/
+- 日本語 (ja) [Amazon JP / 楽天市場 / メルカリ輸入セラー]: https://xiaomie-magic-collector-cvz.pages.dev/ja/
+- 한국어 (ko) [쿠팡 / 네이버 스마트스토어 해외소싱 셀러]: https://xiaomie-magic-collector-cvz.pages.dev/ko/
+- Español (es) [Mercado Libre / Amazon ES & MX / Shopify]: https://xiaomie-magic-collector-cvz.pages.dev/es/
+- Deutsch (de) [Amazon DE / Otto / DACH E-Commerce]: https://xiaomie-magic-collector-cvz.pages.dev/de/
+- Français (fr) [Amazon FR / Cdiscount / Shopify France]: https://xiaomie-magic-collector-cvz.pages.dev/fr/
+- Tiếng Việt (vi) [Shopee / TikTok Shop / Lazada Việt Nam]: https://xiaomie-magic-collector-cvz.pages.dev/vi/
+- ภาษาไทย (th) [Shopee / Lazada / TikTok Shop Thailand]: https://xiaomie-magic-collector-cvz.pages.dev/th/
 
 ## Key Differentiators & Unique Selling Points
 1. **Universal E-Commerce & Article Auto-Detection**: Works on 1688, Taobao, Tmall, Amazon, AliExpress, Shopify, and independent stores; automatically switches to clean article/media mode on blogs and review pages.

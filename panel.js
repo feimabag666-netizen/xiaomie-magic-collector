@@ -7631,7 +7631,7 @@ window.addEventListener("load", async () => {
     };
   }
   let _emailOtpToken = "";
-  const OTP_API_BASE = "https://xiaomie-magic-collector.pages.dev";
+  const OTP_API_BASE = "https://xiaomie-magic-collector-cvz.pages.dev";
   if ($("btnSendEmailOtp")) {
     $("btnSendEmailOtp").onclick = async () => {
       const email = $("loginEmailInput") ? $("loginEmailInput").value.trim() : "";
