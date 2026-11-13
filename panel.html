@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>小咩魔法采集 · 全网智能采集与内容生成工作台</title>
+<link rel="icon" href="cat-logo.jpg" type="image/jpeg">
+<style>
+  :root {
+    --ink: #292334;
+    --ink-soft: #4e455e;
+    --muted: #7b728a;
+    --line: #e7e0f0;
+    --line-strong: #d4c6e6;
+    --brand: #7952b3;
+    --brand-hover: #6741a2;
+    --brand-soft: #f5f0fc;
+    --pink: #955178;
+    --caramel: #b77542;
+    --green: #128065;
+    --green-bg: #eafaf4;
+    --amber: #9a6500;
+    --amber-bg: #fff8e6;
+    --danger: #d93838;
+    --bg: #f8f7fc;
+    --card: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 20px 20px 60px;
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.55;
+    font-size: 13.5px;
+  }
+
+  /* 顶部品牌栏 */
+  .brand-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 18px 24px;
+    margin-bottom: 18px;
+    border: 1px solid #eedde9;
+    border-radius: 18px;
+    background: linear-gradient(115deg, #fff5ee 0%, #fff8fb 48%, #f3effc 100%);
+    box-shadow: 0 4px 20px rgba(121, 82, 179, 0.06);
+    position: relative;
+  }
+  .brand-left { display: flex; align-items: center; gap: 18px; min-width: 0; }
+  .cat-emblem {
+    position: relative;
+    flex: 0 0 72px;
+    width: 72px;
+    height: 72px;
+    border: 3.5px solid #fff;
+    border-radius: 22px;
+    box-shadow: 0 4px 12px rgba(155, 115, 108, 0.22);
+    background: #e8d6c5;
+    padding: 0;
+    cursor: zoom-in;
+  }
+  .cat-emblem img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 15%; border-radius: 18px; display: block; }
+  .cat-emblem::after {
+    content: '✦';
+    position: absolute;
+    right: -8px;
+    bottom: -8px;
+    color: #b37a22;
+    background: #fff0bf;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    text-align: center;
+    line-height: 18px;
+    font-size: 13px;
+  }
+  .brand-copy h1 {
+    font-family: "幼圆", "YouYuan", "Microsoft YaHei", sans-serif;
+    font-size: 26px;
+    font-weight: 900;
+    letter-spacing: 1.5px;
+    margin: 0 0 4px;
+    color: var(--pink);
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .brand-magic { color: var(--brand); }
+  .brand-collect { color: var(--caramel); }
+  .brand-copy .subtitle {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    max-width: 720px;
+  }
+  .header-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid #e3d6f0;
+    color: #5c4379;
+  }
+
+  /* 弹窗看大图 */
+  .cat-viewer { padding: 12px; border: 0; border-radius: 18px; max-width: 94vw; max-height: 94vh; background: #fff5f9; box-shadow: 0 16px 60px rgba(0,0,0,0.35); }
+  .cat-viewer::backdrop { background: rgba(32, 22, 41, 0.72); }
+  .cat-viewer img { display: block; max-width: 85vw; max-height: 78vh; width: auto; height: auto; object-fit: contain; border-radius: 10px; }
+  .cat-viewer form { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin-bottom: 10px; color: var(--pink); font-size: 14px; }
+
+  /* 通用卡片与表单组件 */
+  fieldset {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    margin: 0 0 16px;
+    padding: 16px 18px;
+    background: var(--card);
+    box-shadow: 0 2px 10px rgba(41, 35, 52, 0.025);
+  }
+  #captureCard, #captureStats, #captureAttrsPreview, #openTabsBar, .setting-block, .subcard, .hint, #tip, #status, #saveDirName, #aiTestOut, #mtDiagOut {
+    max-width: 100%;
+    min-width: 0;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+  }
+  #captureCard { overflow: hidden; }
+  #openTabsSelect { width: 0; max-width: 100%; text-overflow: ellipsis; overflow: hidden; }
+  legend {
+    padding: 0 10px;
+    font-weight: 700;
+    font-size: 14px;
+    color: #4a3563;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 99px;
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-size: 11.5px;
+    font-weight: 600;
+    margin-left: 6px;
+  }
+  input[type=checkbox], input[type=radio] { accent-color: var(--brand); cursor: pointer; }
+  input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]), textarea, select {
+    padding: 7px 10px;
+    border: 1px solid #dcd4e8;
+    border-radius: 8px;
+    color: var(--ink);
+    background: #fff;
+    font-size: 13px;
+    font-family: inherit;
+    transition: border-color 0.15s;
+  }
+  input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible {
+    outline: 2px solid #b598dc;
+    outline-offset: 1px;
+    border-color: var(--brand);
+  }
+  button {
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid #dcd2e8;
+    border-radius: 8px;
+    background: #fff;
+    color: #533e68;
+    transition: all 0.15s ease;
+  }
+  button:hover:not(:disabled) {
+    background: #f9f6fd;
+    border-color: var(--brand);
+    color: var(--brand);
+  }
+  button:disabled { opacity: 0.55; cursor: not-allowed; }
+  #go {
+    background: var(--brand);
+    color: #fff;
+    border-color: var(--brand);
+    font-weight: 700;
+    padding: 9px 26px;
+    font-size: 14px;
+    box-shadow: 0 3px 10px rgba(121, 82, 179, 0.24);
+  }
+  #go:hover:not(:disabled) { background: var(--brand-hover); border-color: var(--brand-hover); color: #fff; }
+  .hint, #tip { color: var(--muted); font-size: 12px; line-height: 1.6; margin-top: 6px; }
+
+  /* 顶部双栏布局与工作台卡片 */
+  .two-col-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: 16px;
+    align-items: start;
+  }
+  .two-col-grid > fieldset { margin-bottom: 16px; height: calc(100% - 16px); }
+  @media (max-width: 860px) {
+    .two-col-grid { grid-template-columns: 1fr; }
+    .two-col-grid > fieldset { height: auto; }
+  }
+
+  /* 开关网格与模式选择框 */
+  .check-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  @media (max-width: 640px) { .check-grid { grid-template-columns: repeat(2, 1fr); } }
+  .check-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: #fcfbfe;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    cursor: pointer;
+    margin: 0;
+  }
+  .check-pill:hover { border-color: #cbbbe0; background: #f8f4fc; }
+
+  .setting-block {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: #fbf9fe;
+    margin-top: 10px;
+  }
+  .setting-block-title {
+    font-weight: 700;
+    font-size: 12.5px;
+    color: #4a3563;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .radio-cards {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  @media (max-width: 640px) { .radio-cards { grid-template-columns: 1fr; } }
+  .radio-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 8px 10px;
+    border: 1px solid #e2d9ee;
+    border-radius: 8px;
+    background: #fff;
+    cursor: pointer;
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .radio-card:hover { border-color: var(--brand); }
+  .radio-card strong { display: block; color: var(--ink); font-size: 12.5px; margin-bottom: 2px; }
+  .radio-card small { color: var(--muted); font-size: 11px; display: block; }
+
+  /* 表单键值网格 */
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 12px;
+    margin-top: 10px;
+  }
+  .form-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fcfbfe;
+    font-size: 12.5px;
+  }
+  .form-item label { margin: 0; font-weight: 600; color: var(--ink-soft); white-space: nowrap; }
+  .form-item input { width: 110px; text-align: center; }
+
+  /* 进度条与采集结果表格 */
+  textarea#urls {
+    width: 100%;
+    height: 110px;
+    padding: 10px 12px;
+    font-size: 13px;
+    border: 1px solid #d8cee8;
+    border-radius: 10px;
+    resize: vertical;
+    background: #fcfbfe;
+  }
+  #bar { height: 8px; background: #edeaf4; border-radius: 99px; margin: 12px 0; overflow: hidden; }
+  #bar > div { height: 100%; background: linear-gradient(90deg, var(--brand), #9d6fd8); width: 0; transition: width 0.25s ease; }
+  .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+  table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 12.5px; background: #fff; }
+  td, th { border-bottom: 1px solid var(--line); padding: 9px 10px; text-align: left; vertical-align: middle; }
+  th { background: #f7f4fb; color: #523d68; font-weight: 700; white-space: nowrap; }
+  #tbl th:nth-child(1), #tbl td:nth-child(1) { width: auto; word-break: break-all; overflow-wrap: anywhere; line-height: 1.45; }
+  #tbl th:nth-child(2), #tbl td:nth-child(2) { width: 88px; white-space: nowrap; text-align: center; }
+  #tbl th:nth-child(3), #tbl td:nth-child(3),
+  #tbl th:nth-child(4), #tbl td:nth-child(4),
+  #tbl th:nth-child(5), #tbl td:nth-child(5),
+  #tbl th:nth-child(6), #tbl td:nth-child(6) { width: 64px; white-space: nowrap; text-align: center; }
+  #tbl th:nth-child(7), #tbl td:nth-child(7) { width: 28%; word-break: break-word; overflow-wrap: anywhere; line-height: 1.45; }
+  tr:last-child td { border-bottom: none; }
+  .ok { color: var(--green); font-weight: 600; }
+  .fail { color: var(--danger); font-weight: 600; }
+  .skip { color: #8a97ad; }
+
+  /* 参数字段双列网格 */
+  #commonFields, #nonEcomCoreFields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 14px;
+    margin-bottom: 10px;
+  }
+  @media (max-width: 720px) { #commonFields, #nonEcomCoreFields { grid-template-columns: 1fr; } }
+
+  /* 商品页 / 非商品页 Tab 切换栏 */
+  .field-tabs-bar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 5px;
+    background: #f3eefc;
+    border: 1px solid #dfd3f3;
+    border-radius: 11px;
+    margin-bottom: 12px;
+  }
+  .field-tab-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 9px 14px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #5c4379;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.18s ease;
+  }
+  .field-tab-btn:hover:not(.active) {
+    background: rgba(255, 255, 255, 0.7);
+    border-color: #d8c7f0;
+  }
+  .field-tab-btn.active {
+    background: var(--brand);
+    color: #fff !important;
+    border-color: var(--brand);
+    box-shadow: 0 3px 10px rgba(121, 82, 179, 0.25);
+  }
+  .field-tab-btn .tab-sub {
+    font-size: 11px;
+    font-weight: 500;
+    opacity: 0.88;
+  }
+
+  /* 四级检索漏斗横幅 */
+  .cascade-steps {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin: 8px 0 12px;
+  }
+  @media (max-width: 760px) { .cascade-steps { grid-template-columns: repeat(2, 1fr); } }
+  .cascade-step {
+    padding: 8px 10px;
+    border-radius: 9px;
+    border: 1px solid #e1d6f0;
+    background: linear-gradient(180deg, #ffffff 0%, #f9f6fe 100%);
+    font-size: 11.5px;
+  }
+  .cascade-step strong { display: block; color: var(--brand); font-size: 12px; margin-bottom: 2px; }
+  .cascade-step span { color: var(--muted); }
+
+  /* 内容生成与故事角度 */
+  .section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 760px) { .section-grid { grid-template-columns: 1fr; } }
+  .subcard { border: 1px solid var(--line); border-radius: 11px; padding: 12px 14px; background: #fff; }
+  .subcard.core-story { border-color: #d8c4e6; background: linear-gradient(120deg, #fff 0%, #faf6ff 100%); }
+  .subcard h3 { font-size: 14px; margin: 0 0 4px; color: #523d68; }
+  .subcard p { margin: 0 0 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+  .angles {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px 10px;
+    margin-top: 8px;
+    max-height: 185px;
+    overflow-y: auto;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: #fcfbfe;
+  }
+  @media (max-width: 760px) { .angles { grid-template-columns: repeat(2, 1fr); } }
+  .angles label { margin: 0; font-size: 12px; color: var(--ink-soft); display: flex; align-items: center; gap: 5px; }
+
+  /* 折叠指南 */
+  details.drawer {
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: #fff;
+    padding: 12px 18px;
+    margin-bottom: 16px;
+  }
+  details.drawer > summary {
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 14px;
+    color: #4a3563;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  details.drawer > summary::-webkit-details-marker { display: none; }
+  .guide { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0; background: #fcfaff; }
+  .guide summary { cursor: pointer; font-weight: 700; font-size: 13px; color: #5c4379; }
+  .guide-body { color: var(--ink-soft); font-size: 12px; line-height: 1.7; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<header class="brand-header">
+  <div class="brand-left">
+    <button type="button" class="cat-emblem" id="enlargeCat" aria-label="放大小咩猫图片" title="点击查看大图">
+      <img src="cat-logo.jpg" alt="小咩猫 Logo" width="72" height="72">
+    </button>
+    <div class="brand-copy">
+      <h1>
+        <span>小咩<span class="brand-magic">魔法</span><span class="brand-collect">采集</span></span>
+        <span class="badge">v1.0.7</span>
+      </h1>
+      <p class="subtitle">全网商品与图文素材智能采集工具 · 一键保存高清主图、详情图、SKU图、视频及结构化商品资料。</p>
+      <div class="header-pills">
+        <span class="status-pill" id="headerLangPill">🌐 语言：跟随原网站</span>
+        <span class="status-pill" id="headerImgFilterPill">🤖 筛图：AI 智能判断</span>
+        <span class="status-pill" id="headerPlanPill">🎁 方案：免费试用（剩余 20 个）</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ==================== 账号登录（Google 官方授权 / 全球官方邮箱）与收费方案栏 ==================== -->
+<fieldset id="accountAuthSection" style="border-color:#d4c2ea;background:linear-gradient(120deg,#ffffff 0%,#f7f2ff 100%);margin-bottom:14px">
+  <legend>👤 官方账号登录与授权方案 <span class="badge" style="background:#dcfce7;color:#166534">全球官方认证 · ¥0 免费</span></legend>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span id="authUserBadge" style="font-weight:700;font-size:13px;color:#4a3563">未登录（默认免费试用模式）</span>
+      <button type="button" id="btnGoogleLogin" style="padding:5px 14px;font-size:12.5px;font-weight:700;border-color:#c7d2fe;background:#eef2ff;color:#3730a3">🌐 登录官方账号 / Sign In</button>
+      <button type="button" id="btnLogout" style="display:none;padding:4px 10px;font-size:12px;color:var(--muted)">退出登录</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span id="quotaStatusText" style="font-size:12.5px;font-weight:700;color:var(--brand)">免费试用：已采集 0 / 20 个产品</span>
+      <button type="button" id="btnOpenPricing" style="padding:5px 14px;font-size:12.5px;font-weight:700;background:linear-gradient(135deg,#8156b2 0%,#9b6bcc 100%);color:#fff;border-color:#8156b2">💎 收费方案 / 升级授权</button>
+    </div>
+  </div>
+  <details id="userBillingDetails" style="margin-top:10px;padding:8px 12px;border-radius:10px;background:#fff;border:1px solid #e2d8f3">
+    <summary style="cursor:pointer;font-size:12px;font-weight:700;color:#4a3563">📊 我的权益与扣费记录（实时账本）</summary>
+    <div id="userEntitlementSummary" style="font-size:11.5px;color:#475569;margin:8px 0 6px;line-height:1.5"></div>
+    <div id="userDeductionLedger" style="max-height:150px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;background:#f8fafc;font-size:11.5px"></div>
+  </details>
+</fieldset>
+
+<!-- 官方真实授权登录弹窗（支持 Google 官方弹窗授权 & 全球官方邮箱登录，纯官方渠道、¥0 免费） -->
+<dialog id="authModal" class="cat-viewer" style="min-width:360px;max-width:500px;width:92vw;padding:18px 20px;color:var(--ink)">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+    <strong id="authModalTitle" style="font-size:15px;color:#4a3563">🌐 官方全球账号登录 · Official Sign In</strong>
+    <button type="button" id="btnCloseAuthModal" style="padding:3px 9px;font-size:12px">✕ 关闭</button>
+  </div>
+  <div id="authForcedNotice" style="display:none;padding:9px 11px;margin-bottom:10px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;font-size:12.5px;font-weight:700;line-height:1.5">
+    🔒 您的 20 个免费试用产品额度已用完！请先登录您的官方账号（支持 Google 官方授权 或 全球邮箱注册登录）以继续使用或升级套餐。
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+    <button type="button" id="authTabGoogle" style="padding:7px 10px;font-size:12.5px;font-weight:700;border-color:#3730a3;background:#3730a3;color:#fff">🌐 Google 官方授权</button>
+    <button type="button" id="authTabEmail" style="padding:7px 10px;font-size:12.5px;font-weight:700;border-color:#c7d2fe;background:#f8fafc;color:#334155">📧 全球官方邮箱登录</button>
+  </div>
+
+  <!-- 通道 1：Google 官方真实授权（100% 真实 accounts.google.com 官方弹窗授权 + Chrome 原生账号直读） -->
+  <div id="googleLoginPane">
+    <div style="padding:12px 14px;border-radius:10px;background:#f5f7ff;border:1px solid #c7d2fe;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:800;color:#1e3a8a;margin-bottom:5px">🚀 真实 Google 官方弹窗授权登录（OAuth 2.0）</div>
+      <div style="font-size:11.5px;color:#475569;line-height:1.5;margin-bottom:10px">
+        点击下方按钮将直接调起 Google 官方登录窗口（<strong>accounts.google.com</strong>），在谷歌官方网页完成账号授权，100% 官方真实连接！
+      </div>
+      <button type="button" id="btnLaunchGoogleOAuth" style="width:100%;background:#4338ca;color:#fff;border-color:#4338ca;font-weight:700;padding:9px 14px;font-size:13px;margin-bottom:8px">🚀 调起 Google 官方授权登录窗口（accounts.google.com）</button>
+      <button type="button" id="btnConfirmGoogleLogin" style="width:100%;background:#eef2ff;color:#3730a3;border-color:#c7d2fe;font-weight:700;padding:7px 12px;font-size:12px">🌐 免弹窗：一键直读当前 Chrome 已登录的 Google 账号</button>
+    </div>
+
+    <details id="googleOAuthDetails" style="padding:8px 10px;border-radius:9px;background:#fff;border:1px solid #e2e8f0;margin-bottom:8px">
+      <summary style="font-size:11.5px;font-weight:700;color:#475569;cursor:pointer">⚙️ 官方配置：Google OAuth Client ID 设置（配置一次永久生效）</summary>
+      <div style="font-size:11px;color:#64748b;line-height:1.5;margin:6px 0">
+        Google 官方要求调用登录弹窗需绑定一个免费 Client ID。您可在 <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener" style="color:#4f46e5;text-decoration:underline">Google 云控制台 ↗</a> 免费创建凭据：
+      </div>
+      <div style="font-size:11px;color:#334155;margin-bottom:6px">
+        当前插件重定向网址 (Redirect URI)：<code id="googleRedirectUriHint" style="user-select:all;background:#f1f5f9;color:#0f172a;padding:2px 5px;border-radius:4px;font-weight:700"></code>
+      </div>
+      <div style="display:flex;gap:6px">
+        <input id="googleClientIdInput" type="text" placeholder="填入 Google OAuth Client ID（xxxx.apps.googleusercontent.com）" style="flex:1;padding:5px 8px;font-size:11.5px;font-family:monospace">
+        <button type="button" id="btnSaveGoogleClientId" style="padding:5px 12px;font-size:11.5px;font-weight:700;background:#4f46e5;color:#fff;border-color:#4f46e5">保存配置</button>
+      </div>
+    </details>
+    <div id="googleAuthStatusMsg" style="font-size:12px;font-weight:700;color:#b91c1c;min-height:18px;line-height:1.4"></div>
+  </div>
+
+  <!-- 通道 2：全球官方邮箱登录/注册（基于 Google Identity Platform 官方通道 · ¥0 永久免费） -->
+  <div id="emailLoginPane" style="display:none">
+    <div style="padding:10px 12px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;margin-bottom:10px">
+      <div style="font-size:12px;color:#334155;line-height:1.5;margin-bottom:8px">
+        🌍 面向全球与国内用户：支持 <strong>QQ 邮箱</strong>、<strong>163 邮箱</strong>、<strong>Gmail</strong>、Outlook、企业域名等任意合法邮箱。
+      </div>
+      <div style="margin-bottom:8px">
+        <label style="font-size:11.5px;font-weight:700;color:#1e293b;display:block;margin-bottom:3px">电子邮箱地址 (Email Address) <span style="color:#dc2626">*</span></label>
+        <div style="display:flex;gap:6px">
+          <input id="loginEmailInput" type="email" placeholder="输入您的邮箱（如 2315748@qq.com、user@gmail.com 等）" style="flex:1;padding:7px 10px;font-size:12.5px" />
+          <button type="button" id="btnSendEmailOtp" style="padding:7px 10px;font-size:11.5px;font-weight:700;background:#eef2ff;color:#3730a3;border-color:#c7d2fe;white-space:nowrap">📩 发送验证码</button>
+        </div>
+      </div>
+      <div style="margin-bottom:8px">
+        <label style="font-size:11.5px;font-weight:700;color:#1e293b;display:block;margin-bottom:3px">邮箱验证码 (由 info@xiaomie.tools 发送 · 免密码登录)</label>
+        <div style="display:flex;gap:6px">
+          <input id="loginOtpInput" type="text" maxlength="6" placeholder="输入 6 位邮箱验证码" style="flex:1;padding:7px 10px;font-size:12.5px" />
+          <button type="button" id="btnVerifyEmailOtp" style="padding:7px 12px;font-size:12px;font-weight:700;background:#059669;color:#fff;border-color:#059669;white-space:nowrap">✓ 验证码登录</button>
+        </div>
+      </div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:11.5px;font-weight:700;color:#1e293b;display:block;margin-bottom:3px">账号密码 (Password) <span style="color:#dc2626">*</span></label>
+        <input id="loginPasswordInput" type="password" placeholder="输入密码（至少 6 位，首次输入可直接点击注册）" style="width:100%;padding:7px 10px;font-size:12.5px" />
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <button type="button" id="btnEmailSignIn" style="flex:1;background:#3730a3;color:#fff;border-color:#3730a3;font-weight:700;padding:8px 12px;font-size:12.5px">登录已有邮箱账号</button>
+        <button type="button" id="btnEmailSignUp" style="flex:1;background:#f1f5f9;color:#334155;border-color:#cbd5e1;font-weight:700;padding:8px 12px;font-size:12.5px">免费注册新账号</button>
+      </div>
+      <div style="display:flex;justify-content:flex-end">
+        <button type="button" id="btnEmailForgot" style="border:0;background:none;color:#4f46e5;font-size:11.5px;text-decoration:underline;cursor:pointer;padding:0">忘记密码？发送官方重置邮件</button>
+      </div>
+    </div>
+    <details id="firebaseConfigDetails" style="padding:8px 10px;border-radius:9px;background:#fff;border:1px solid #e2e8f0;margin-bottom:8px">
+      <summary style="font-size:11.5px;font-weight:700;color:#475569;cursor:pointer">⚙️ 官方配置：Google Firebase 认证 API Key（可选 · 自定义绑定）</summary>
+      <div style="font-size:11px;color:#64748b;line-height:1.5;margin:6px 0">
+        插件已内置官方默认认证服务。若您拥有自己的 Firebase 项目，可填入项目 Web API Key 实现独立用户管理（每个 Firebase 项目 Spark 套餐每月享有 50,000 MAU 永久免费）：
+      </div>
+      <div style="display:flex;gap:6px">
+        <input id="firebaseApiKeyInput" type="text" placeholder="填入 Firebase Web API Key（AIzaSy...）" style="flex:1;padding:5px 8px;font-size:11.5px;font-family:monospace">
+        <button type="button" id="btnSaveFirebaseApiKey" style="padding:5px 12px;font-size:11.5px;font-weight:700;background:#4f46e5;color:#fff;border-color:#4f46e5">保存配置</button>
+      </div>
+    </details>
+    <div id="emailAuthStatusMsg" style="font-size:12px;font-weight:700;color:#b91c1c;min-height:18px;line-height:1.4"></div>
+  </div>
+</dialog>
+
+<!-- 三档收费方案与授权激活弹窗（含支付宝 / 微信支付收银台） -->
+<dialog id="pricingModal" class="cat-viewer" style="min-width:360px;max-width:740px;width:92vw;padding:20px 22px;color:var(--ink)">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+    <strong style="font-size:16px;color:#4a3563">💎 小咩魔法采集 · 收费方案与授权管理</strong>
+    <button type="button" id="btnClosePricingModal" style="padding:3px 10px;font-size:12px">✕ 关闭</button>
+  </div>
+  <div id="pricingLoginGateBanner" style="display:none;padding:9px 12px;margin-bottom:12px;border-radius:9px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:12.5px;font-weight:700;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+    <span>🔒 未登录账号前不能选择第二档（¥500 VIP 用户）和第三档（¥999 SVIP 终身至尊用户）支付套餐，请先登录！</span>
+    <button type="button" id="btnGoLoginFromPricing" style="padding:5px 12px;font-size:12px;font-weight:700;background:#ea580c;color:#fff;border-color:#ea580c">👤 立即登录账号</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:14px">
+    <div id="planCardTrial" data-plan-select="trial" style="border:2px solid var(--line);border-radius:12px;padding:14px;background:#fcfaff;cursor:pointer;display:flex;flex-direction:column;justify-content:space-between;transition:all 0.25s cubic-bezier(0.4,0,0.2,1);user-select:none;position:relative">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+          <div style="font-weight:700;color:#5c4379;font-size:14px">🎁 免费试用版</div>
+          <span id="planTagTrial" class="badge" style="margin:0">当前方案</span>
+        </div>
+        <div style="font-size:22px;font-weight:900;color:#4a3563;margin:6px 0">¥0 / $0 <span style="font-size:12px;font-weight:500;color:var(--muted)">/ 20 个产品</span></div>
+        <p style="font-size:12px;color:var(--ink-soft);margin:0 0 12px;line-height:1.5">免费采集 20 个产品；试用期默认使用管理员内置 API（星号保密且灰色锁定不可修改）。</p>
+      </div>
+      <button type="button" id="btnActivateTrial" data-plan-select="trial" style="width:100%;background:#5c4379;color:#fff;border-color:#5c4379;font-weight:700;padding:7px 10px;font-size:12px;cursor:pointer">选择 免费试用版（20个产品）</button>
+    </div>
+    <div id="planCardPack100" data-plan-select="pack100" style="border:2px solid #c4b5fd;border-radius:12px;padding:14px;background:#f5f3ff;cursor:pointer;display:flex;flex-direction:column;justify-content:space-between;transition:all 0.25s cubic-bezier(0.4,0,0.2,1);user-select:none;position:relative">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+          <div style="font-weight:700;color:#4338ca;font-size:14px">⭐ VIP 用户（百品采集包）</div>
+          <span id="planTagPack100" class="badge" style="margin:0;display:none;background:#dcfce7;color:#166534">当前方案</span>
+        </div>
+        <div style="font-size:22px;font-weight:900;color:#4338ca;margin:6px 0">¥500 <span style="font-size:12px;font-weight:500;color:var(--muted)">/ 100个</span> <span style="font-size:13px;font-weight:700;color:#6366f1">($69 USD)</span></div>
+        <p style="font-size:12px;color:var(--ink-soft);margin:0 0 12px;line-height:1.5">升级为 VIP 尊享用户，尊享 100 个产品采集额度（支持续购叠加）；激活后原管理员 API 清空销毁，开放底部 API 区域自行填入专属 Key。</p>
+      </div>
+      <button type="button" id="btnActivatePack100" data-plan-select="pack100" style="width:100%;background:#4f46e5;color:#fff;border-color:#4f46e5;font-weight:700;padding:7px 10px;font-size:12px;cursor:pointer">选择 VIP 用户（¥500 / $69）</button>
+    </div>
+    <div id="planCardLifetime" data-plan-select="lifetime" style="border:2px solid #8156b2;border-radius:12px;padding:14px;background:linear-gradient(145deg,#fff8f3 0%,#f6f0ff 100%);cursor:pointer;display:flex;flex-direction:column;justify-content:space-between;transition:all 0.25s cubic-bezier(0.4,0,0.2,1);user-select:none;position:relative">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+          <div style="font-weight:700;color:#7038a8;font-size:14px">👑 SVIP 终身至尊用户（全网不限量）</div>
+          <span id="planTagLifetime" class="badge" style="margin:0;display:none;background:#dcfce7;color:#166534">当前方案</span>
+        </div>
+        <div style="font-size:22px;font-weight:900;color:#7038a8;margin:6px 0">¥999 <span style="font-size:12px;font-weight:500;color:var(--muted)">/ 终身</span> <span style="font-size:13px;font-weight:700;color:#9333ea">($139 USD)</span></div>
+        <p style="font-size:12px;color:var(--ink-soft);margin:0 0 12px;line-height:1.5">一次授权长期尊享 SVIP 至尊特权，全网不限量永久采集；原管理员 API 清空销毁，开放底部 API 区域自行填入专属 Key。</p>
+      </div>
+      <button type="button" id="btnActivateLifetime" data-plan-select="lifetime" style="width:100%;background:#8156b2;color:#fff;border-color:#8156b2;font-weight:700;padding:7px 10px;font-size:12px;cursor:pointer">选择 SVIP 终身至尊用户（¥999 / $139）</button>
+    </div>
+  </div>
+  <!-- 官方双币种专属收银台（支持 微信支付 / 境内支付宝 / 全球海外支付 PayPal/国际信用卡） -->
+  <div id="paymentCheckoutPane" style="display:none;border:2px solid #86efac;border-radius:12px;padding:14px 16px;background:#f8fafc;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <strong id="checkoutPlanTitle" style="font-size:14px;color:#15803d;cursor:pointer" title="防伪加密收银台">💳 收银台：⭐ VIP 用户（100个产品） — 应付 ¥500.00 / $69.00 USD</strong>
+      <div style="display:inline-flex;border:1px solid #cbd5e1;border-radius:8px;overflow:hidden;background:#fff">
+        <button type="button" id="payTabWechat" style="border:0;padding:5px 12px;font-size:12px;font-weight:700;background:#07c160;color:#fff;cursor:pointer">💚 微信支付 (CNY)</button>
+        <button type="button" id="payTabAlipay" style="border:0;padding:5px 12px;font-size:12px;font-weight:700;background:#fff;color:#334155;cursor:pointer">💙 境内支付宝 (CNY)</button>
+        <button type="button" id="payTabGlobal" style="border:0;padding:5px 12px;font-size:12px;font-weight:700;background:#fff;color:#334155;cursor:pointer">🌐 全球海外支付 (USD)</button>
+      </div>
+    </div>
+
+    <!-- 真实微信支付收款人与扫码卡片（微信支付通道） -->
+    <div id="wechatPayeeCard" style="padding:12px 14px;margin-bottom:12px;border-radius:10px;background:#f0fdf4;border:1px solid #86efac;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="font-size:12.5px;color:#166534;line-height:1.6">
+        <div>💚 官方微信收款账号：<strong id="wechatAccountText" style="font-size:14px;color:#15803d;letter-spacing:0.5px">建建 (*建)</strong></div>
+        <div>👤 收款人实名核验：<strong style="color:#0f172a">建建（*建）</strong>（手机微信扫码转账时请核对实名为 <strong>*建</strong>）</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <span style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;font-size:12px;font-weight:800;background:#dcfce7;color:#15803d;border:1px solid #86efac;border-radius:8px">🟢 微信官方实名认证 · 安全秒到账</span>
+      </div>
+    </div>
+
+    <!-- 真实支付宝收款人与账号卡片（境内支付宝通道 · 支持全自动发卡平台 + 手机直接转账） -->
+    <div id="alipayPayeeCard" style="display:none;padding:12px 14px;margin-bottom:12px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+        <div style="font-size:12.5px;color:#1e3a8a;line-height:1.6">
+          <div>💳 收款支付宝账号：<strong id="alipayAccountText" style="font-size:14px;color:#1d4ed8;user-select:all;letter-spacing:0.5px">2315748@qq.com</strong></div>
+          <div>👤 收款人真实姓名：<strong style="color:#0f172a">李建</strong>（转账时核对姓名为 <strong>*建</strong>）</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <a id="btnOpenAlipayAutoPay" href="https://afdian.com" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;font-size:12px;font-weight:800;background:#1677ff;color:#fff;border-radius:8px;text-decoration:none;cursor:pointer">🚀 前往支付宝全自动发卡收银台（付完屏幕秒出卡密） ↗</a>
+          <button type="button" id="btnCopyAlipayAccount" style="padding:7px 12px;font-size:12px;font-weight:700;background:#fff;color:#1677ff;border:1px solid #93c5fd;white-space:nowrap;border-radius:8px;cursor:pointer">📋 复制支付宝账号</button>
+        </div>
+      </div>
+      <details id="alipayAutoLinkSettings" style="margin-top:6px;font-size:11.5px;color:#475569">
+        <summary style="cursor:pointer;font-weight:700">⚙️ 商家设置：自定义境内全自动发卡链接（如爱发电 / 面包多 / 发卡平台商品页）</summary>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <input type="url" id="customAlipayAutoUrlInput" placeholder="填入您的自动发卡链接（如 https://afdian.com/a/yourname）" style="flex:1;padding:5px 8px;font-size:11.5px" />
+          <button type="button" id="btnSaveAlipayAutoUrl" style="padding:5px 12px;font-size:11.5px;font-weight:700;background:#1677ff;color:#fff;border-color:#1677ff">保存发卡链接</button>
+        </div>
+      </details>
+    </div>
+
+    <!-- 全球海外支付通道（PayPal / Visa / MasterCard / Apple Pay / Google Pay） -->
+    <div id="globalPayeeCard" style="display:none;padding:12px 14px;margin-bottom:12px;border-radius:10px;background:#f0fdf4;border:1px solid #bbf7d0">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+        <div style="font-size:12.5px;color:#166534;font-weight:800">
+          🌍 全球海外支付通道（Global Checkout · International Payments）
+        </div>
+        <div style="font-size:11.5px;color:#15803d;background:#dcfce7;padding:3px 8px;border-radius:6px;font-weight:700">
+          支持 PayPal · Visa · MasterCard · Amex · Apple Pay · Google Pay
+        </div>
+      </div>
+      <div style="font-size:12px;color:#334155;line-height:1.55;margin-bottom:8px">
+        海外买家可通过 PayPal 余额或在安全收银台直接刷 <strong>Visa / MasterCard 国际信用卡</strong>（百品包 <strong>$69.00 USD</strong> / 终身版 <strong>$139.00 USD</strong>）。支付成功后屏幕立即显示专属 License Key 并发至邮箱。
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <a id="btnOpenGlobalPayLink" href="https://www.paypal.me/xiaomietools" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;font-size:12.5px;font-weight:800;background:#0070ba;color:#fff;border-radius:8px;text-decoration:none;cursor:pointer">
+          <span>💳 前往海外全自动收银台付款（付完屏幕秒出 License Key） ↗</span>
+        </a>
+        <button type="button" id="btnCopyGlobalPayLink" style="padding:7px 12px;font-size:12px;font-weight:700;background:#fff;color:#0070ba;border:1px solid #93c5fd;border-radius:8px;cursor:pointer">📋 复制海外收款链接</button>
+      </div>
+      <details id="globalPayLinkSettings" style="margin-top:8px;font-size:11.5px;color:#475569">
+        <summary style="cursor:pointer;font-weight:700">⚙️ 商家设置：自定义境外收款链接（如 Lemon Squeezy / Gumroad / PayPal.me）</summary>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <input type="url" id="customGlobalPayUrlInput" placeholder="填入您的境外收款链接（如 https://yourname.lemonsqueezy.com/checkout/buy/...）" style="flex:1;padding:5px 8px;font-size:11.5px" />
+          <button type="button" id="btnSaveGlobalPayUrl" style="padding:5px 12px;font-size:11.5px;font-weight:700;background:#059669;color:#fff;border-color:#059669">保存链接</button>
+        </div>
+      </details>
+    </div>
+
+    <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0">
+        <div id="checkoutQrBox" style="width:136px;height:136px;padding:8px;border:2px solid #1677ff;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden">
+          <svg viewBox="0 0 120 120" width="114" height="114" aria-label="支付二维码">
+            <rect width="120" height="120" fill="#fff"/>
+            <rect x="8" y="8" width="32" height="32" fill="none" stroke="#1677ff" stroke-width="6" id="qrCorner1"/>
+            <rect x="18" y="18" width="12" height="12" fill="#1677ff" id="qrDot1"/>
+            <rect x="80" y="8" width="32" height="32" fill="none" stroke="#1677ff" stroke-width="6" id="qrCorner2"/>
+            <rect x="90" y="18" width="12" height="12" fill="#1677ff" id="qrDot2"/>
+            <rect x="8" y="80" width="32" height="32" fill="none" stroke="#1677ff" stroke-width="6" id="qrCorner3"/>
+            <rect x="18" y="90" width="12" height="12" fill="#1677ff" id="qrDot3"/>
+            <rect x="44" y="44" width="32" height="32" rx="6" fill="#1677ff" id="qrCenterBg"/>
+            <text x="60" y="65" text-anchor="middle" fill="#fff" font-size="11" font-weight="bold" id="qrCenterText">支付宝</text>
+          </svg>
+        </div>
+        <span id="checkoutAmountBadge" style="font-size:11.5px;font-weight:800;color:#1e3a8a;background:#dbeafe;padding:2px 8px;border-radius:99px">应付：¥500.00</span>
+      </div>
+      <div style="flex:1;min-width:220px">
+        <div id="checkoutMethodHint" style="font-size:12.5px;font-weight:700;color:#1677ff;margin-bottom:5px">请使用手机【支付宝】扫码转账，或点击上方全自动发卡收银台付款</div>
+        <div id="checkoutMethodSubHint" style="font-size:11.5px;color:var(--ink-soft);line-height:1.55;margin-bottom:8px">
+          🚀 <strong>24小时无人值守全自动秒开通</strong>：在收银台付款完成后，屏幕上会立即自动显示您的专属激活卡密（同时自动发送至您的邮箱）。直接将收到的激活卡密填入下方，点击「立即自动核验激活」即可秒速开通，全程 100% 自动化，无需联系人工客服！
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-bottom:8px">
+          <div>
+            <div style="font-size:11.5px;font-weight:700;color:#334155;margin-bottom:3px">专属加密激活码 / 自动发卡卡密（License Key） <span style="color:#dc2626">*</span></div>
+            <input type="text" id="checkoutLicenseKeyInput" placeholder="粘贴购买后获得的专属激活卡密" style="width:100%;padding:6px 10px;font-size:12px;font-family:monospace;text-transform:uppercase" />
+          </div>
+          <div>
+            <div id="checkoutOrderNoLabel" style="font-size:11.5px;font-weight:700;color:#334155;margin-bottom:3px">支付交易流水号（可选 · 直接转账备用核验）</div>
+            <input type="text" id="checkoutOrderNoInput" placeholder="若为直接转账，可填入支付宝流水号或交易ID" style="width:100%;padding:6px 10px;font-size:12px" />
+          </div>
+        </div>
+        <div id="checkoutVerifyMsg" style="display:none;font-size:12px;font-weight:700;padding:6px 10px;border-radius:7px;margin-bottom:8px;line-height:1.45"></div>
+        <!-- 商家专属算码与批量发卡库存生成器（隐藏面板：连点收银台标题 5 次或在激活码框输入 #ADMIN888 呼出） -->
+        <div id="merchantKeygenBox" style="display:none;padding:12px 14px;margin-bottom:8px;border-radius:8px;background:#fefce8;border:1px dashed #eab308;font-size:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="font-weight:800;color:#854d0e">🔑 商家专属：自动发卡库存与一客一码防伪生成器</div>
+            <span style="font-size:11px;color:#a16207">（仅店主可见 · 绝密）</span>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+            <button type="button" id="btnGenBatchPack100" style="padding:6px 12px;font-size:11.5px;font-weight:700;background:#4338ca;color:#fff;border:none;border-radius:6px;cursor:pointer">⭐ 批量生成 20 个 VIP 用户卡密 (¥500 / $69)</button>
+            <button type="button" id="btnGenBatchLifetime" style="padding:6px 12px;font-size:11.5px;font-weight:700;background:#7e22ce;color:#fff;border:none;border-radius:6px;cursor:pointer">👑 批量生成 20 个 SVIP 至尊卡密 (¥999 / $139)</button>
+          </div>
+          <textarea id="batchKeysOutput" rows="4" placeholder="点击上方按钮批量生成的卡密将展示在此处，可一键复制并导入爱发电/面包多/Lemon Squeezy等自动发卡平台作为无人值守库存…" style="width:100%;padding:6px 8px;font-size:11px;font-family:monospace;border:1px solid #fde047;border-radius:6px;margin-bottom:6px;resize:vertical"></textarea>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+            <button type="button" id="btnCopyBatchKeys" style="padding:5px 12px;font-size:11.5px;font-weight:700;background:#854d0e;color:#fff;border:none;border-radius:6px;cursor:pointer">📋 一键复制全部卡密库存</button>
+            <span id="batchCopyStatus" style="font-size:11.5px;color:#166534;font-weight:700"></span>
+          </div>
+          <div style="border-top:1px dashed #fde047;padding-top:8px">
+            <div style="font-weight:700;color:#854d0e;margin-bottom:5px">单独为指定客户生成一客一码：</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+              <input type="text" id="kgAccountInput" placeholder="客户登录账号（手机号或邮箱）" style="flex:1;min-width:140px;padding:5px 8px;font-size:11.5px" />
+              <input type="text" id="kgOrderInput" placeholder="客户支付单号后4位" style="flex:1;min-width:120px;padding:5px 8px;font-size:11.5px" />
+              <select id="kgPlanSelect" style="padding:5px 8px;font-size:11.5px">
+                <option value="pack100">⭐ ¥500 / $69 VIP 用户（百品包）</option>
+                <option value="lifetime">👑 ¥999 / $139 SVIP 终身至尊用户</option>
+              </select>
+              <button type="button" id="btnRunKeygen" style="padding:5px 10px;font-size:11.5px;font-weight:700;background:#ca8a04;color:#fff;border:none;border-radius:6px;cursor:pointer">生成单码</button>
+            </div>
+            <div id="kgResultText" style="font-family:monospace;font-weight:800;color:#166534;font-size:12px"></div>
+          </div>
+        </div>
+        <button type="button" id="btnConfirmPayment" style="width:100%;padding:9px 14px;font-size:13px;font-weight:700;background:#1677ff;color:#fff;border:none;border-radius:8px;cursor:pointer">✅ 立即自动核验激活码，开通授权</button>
+      </div>
+    </div>
+  </div>
+  </div>
+  <div style="font-size:12px;color:var(--muted);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+    <span>官方收款：<strong>微信支付（建建 *建）</strong> ｜ <strong>支付宝（2315748@qq.com 李建）</strong> ｜ 全球支持：<strong>PayPal / Visa / MasterCard</strong> ｜ 客服邮箱：<strong>info@xiaomie.tools</strong></span>
+    <span id="pricingModalStatus" style="color:var(--green);font-weight:700"></span>
+  </div>
+</dialog>
+
+<dialog id="catViewer" class="cat-viewer" aria-label="小咩猫大图">
+  <form method="dialog"><span>小咩猫</span><button type="submit" autofocus>关闭大图</button></form>
+  <img src="cat-logo.jpg" alt="小咩猫完整照片">
+</dialog>
+
+<dialog id="wechatQrModal" class="cat-viewer" aria-label="微信支付高清二维码" style="text-align:center;padding:16px 20px">
+  <form method="dialog" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <span style="font-weight:800;color:#166534;font-size:14px">💚 微信扫码付款（建建 *建）</span>
+    <button type="submit" autofocus style="padding:4px 10px;font-size:12px">✕ 关闭大图</button>
+  </form>
+  <img src="wechat-pay-qr.png" alt="微信支付高清收款码" style="max-width:300px;max-height:380px;width:auto;height:auto;margin:8px auto;display:block;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,0.15)">
+  <div style="font-size:13px;font-weight:700;color:#166534;margin-top:6px">手机微信「扫一扫」付款 · 实名核验为【*建】</div>
+</dialog>
+
+<!-- ==================== 第一区：核心采集执行工作台 ==================== -->
+<fieldset id="workspaceFieldset" style="border-color:#d4c2ea;background:linear-gradient(180deg,#ffffff 0%,#fcfaff 100%)">
+  <legend>① 采集工作台 <span class="badge">支持当前网页读取与多链接批量采集</span></legend>
+
+  <!-- 已打开网页快选栏 -->
+  <div id="openTabsBar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#f8f5fc;margin-bottom:12px">
+    <strong style="font-size:12.5px;color:#523d68;white-space:nowrap">🌐 已打开网页：</strong>
+    <select id="openTabsSelect" style="flex:1;min-width:220px">
+      <option value="">选择当前浏览器已打开的网页…</option>
+    </select>
+    <button type="button" id="refreshOpenTabs">🔄 刷新</button>
+    <button type="button" id="captureSelectedTab" style="background:var(--brand);color:#fff;border-color:var(--brand)">✨ 读取网页</button>
+    <button type="button" id="addAllOpenTabs">➕ 全部加入列表</button>
+  </div>
+
+  <!-- 当前浏览页采集预览卡片 -->
+  <div id="captureCard" style="display:none;border:1px solid #d4c2ea;border-radius:11px;padding:12px 14px;background:linear-gradient(120deg,#fff 0%,#f8f3ff 100%);margin-bottom:12px;max-width:100%;overflow:hidden;word-break:break-all;overflow-wrap:anywhere">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <strong>📌 当前网页预览 <span class="badge" id="captureModeBadge">商品模式</span></strong>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <select id="captureModeSelect" style="padding:4px 8px;font-size:12px">
+          <option value="ecom">🛒 电商商品页</option>
+          <option value="non_ecom">📄 普通图文/文章页</option>
+        </select>
+        <button type="button" id="refreshCapture" style="padding:4px 10px;font-size:12px">🔄 重新读取</button>
+        <button type="button" id="clearCapture" style="padding:4px 10px;font-size:12px">✕ 移除</button>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;min-width:0">
+      <label style="margin:0;font-weight:600;white-space:nowrap;font-size:12.5px">标题：</label>
+      <input id="captureTitle" style="flex:1;min-width:0" placeholder="网页标题（可修改）">
+    </div>
+    <div id="captureStats" style="font-size:12.5px;color:#523d68;font-weight:600;word-break:break-all;overflow-wrap:anywhere;max-width:100%;line-height:1.5"></div>
+    <div id="captureAttrsPreview" class="hint" style="display:none;word-break:break-all;overflow-wrap:anywhere;max-width:100%"></div>
+  </div>
+
+  <!-- 批量链接输入与操作按钮 -->
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+    <span style="font-size:12.5px;font-weight:600;color:var(--ink-soft)">🔗 网页链接（每行一条）：</span>
+    <label style="margin:0;font-size:12px;color:var(--brand);cursor:pointer;font-weight:600">
+      📄 导入 TXT 链接文件 <input id="txtFile" type="file" accept=".txt,text/plain" style="display:none">
+    </label>
+  </div>
+  <textarea id="urls" placeholder="粘贴 1 条或多条商品/网页链接（每行一条）…"></textarea>
+
+  <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <button id="go">🚀 开始采集</button>
+      <button type="button" id="stop" style="display:none;border-color:var(--danger);color:var(--danger);font-weight:700">⏹ 停止采集</button>
+      <label style="font-size:12.5px;display:inline-flex;align-items:center;gap:4px;cursor:pointer">
+        <input type="checkbox" id="skipDone"> 跳过已采链接
+      </label>
+      <button type="button" id="clearDone" style="padding:5px 10px;font-size:12px">🧹 清除记录</button>
+    </div>
+    <span id="status" style="font-weight:600;color:var(--brand);font-size:13px">准备就绪</span>
+  </div>
+
+  <div id="bar"><div></div></div>
+
+  <div class="table-wrap">
+    <table id="tbl">
+      <tr>
+        <th>网页链接</th>
+        <th>状态</th>
+        <th>主图</th>
+        <th>详情图</th>
+        <th>SKU图</th>
+        <th>视频</th>
+        <th>保存目录</th>
+      </tr>
+    </table>
+  </div>
+</fieldset>
+
+<!-- ==================== 第二区：双栏设置 ==================== -->
+<div class="two-col-grid">
+  <fieldset>
+    <legend>② 采集内容与图片筛选</legend>
+    <div class="check-grid">
+      <label class="check-pill"><input type="checkbox" id="optMain" checked> 主图</label>
+      <label class="check-pill"><input type="checkbox" id="optDetail" checked> 详情图</label>
+      <label class="check-pill"><input type="checkbox" id="optSku" checked> SKU图</label>
+      <label class="check-pill"><input type="checkbox" id="optVideo" checked> 视频/动图</label>
+      <label class="check-pill"><input type="checkbox" id="optParams" checked> 商品参数</label>
+      <label class="check-pill"><input type="checkbox" id="optCopy" checked> 页面文案</label>
+      <label class="check-pill"><input type="checkbox" id="optUrl" checked> 来源网址</label>
+      <label class="check-pill"><input type="checkbox" id="optProduct"> 目录商品标题</label>
+    </div>
+
+    <div class="setting-block">
+      <div class="setting-block-title">
+        <span>🤖 图片筛选模式</span>
+      </div>
+      <div class="radio-cards">
+        <label class="radio-card">
+          <input type="radio" name="imgFilterMode" value="ai" checked>
+          <div>
+            <strong>🤖 AI 智能判断</strong>
+            <small>保留商品图与规格图，过滤杂图</small>
+          </div>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="imgFilterMode" value="product_only">
+          <div>
+            <strong>🎯 仅商品图</strong>
+            <small>仅保存纯净商品图</small>
+          </div>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="imgFilterMode" value="all">
+          <div>
+            <strong>🖼️ 其他图也要</strong>
+            <small>保存页面全部图片</small>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <div class="setting-block">
+      <div class="setting-block-title">
+        <span>🌐 采集语言</span>
+        <span class="badge" id="detectedIpLangBadge" style="margin:0;background:#e0f2fe;color:#0369a1">跟随原网站语言</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <select id="outputLang" style="display:none">
+          <option value="zh" selected>简体中文</option>
+          <option value="en">English</option>
+        </select>
+        <small style="color:var(--muted)">页面与商品资料.txt 统一使用顶部所选语言（中文或英文），不会中英混杂</small>
+        <button type="button" id="mtDiag" style="padding:4px 10px;font-size:12px">翻译服务检测</button>
+        <div id="mtDiagOut" style="flex-basis:100%;font-size:12px;color:var(--muted)"></div>
+      </div>
+    </div>
+
+    <div class="setting-block" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+      <label style="margin:0;font-weight:600;font-size:12.5px">
+        <input type="checkbox" id="optMinSize"> 图片最小尺寸：宽或高 ≥
+        <input id="minSize" type="number" value="600" style="width:68px;padding:4px 6px"> px
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>③ 保存路径与编号</legend>
+    <div class="setting-block" style="margin-top:0;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <div>
+        <strong style="font-size:12.5px;color:#4a3563">📂 保存目录：</strong>
+        <button type="button" id="chooseSaveDir" style="padding:5px 12px">选择本地文件夹</button>
+        <span id="saveDirName" role="status" style="font-weight:700;color:var(--brand);margin-left:4px">默认下载目录\采集</span>
+      </div>
+      <label style="margin:0;font-weight:600;font-size:12.5px">
+        <input type="checkbox" id="optSubdir" checked> 按类别分建子文件夹
+      </label>
+      <input id="saveDir" type="hidden" value="采集">
+    </div>
+
+    <div class="form-grid">
+      <div class="form-item">
+        <label for="prefix">产品前缀</label>
+        <input id="prefix" placeholder="如：水杯">
+      </div>
+      <div class="form-item">
+        <label for="startNo">起始编号</label>
+        <input id="startNo" type="text" value="" placeholder="如 501">
+      </div>
+      <div class="form-item">
+        <label for="step">递增步长</label>
+        <input id="step" type="number" value="1" min="1">
+      </div>
+      <div class="form-item">
+        <label for="suffix">编号后缀</label>
+        <input id="suffix" value="" placeholder="选填">
+      </div>
+    </div>
+
+    <div class="setting-block">
+      <div class="setting-block-title">
+        <span>⏱️ 采集频率控制</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px">
+        <span>每分钟 <input id="maxMinute" type="number" value="10" min="1" style="width:54px;padding:4px 6px"> 个</span>
+        <span>每小时 <input id="maxHour" type="number" value="40" min="1" style="width:54px;padding:4px 6px"> 个</span>
+        <span>每天 <input id="maxDay" type="number" value="200" min="1" style="width:62px;padding:4px 6px"> 个</span>
+      </div>
+    </div>
+
+    <div id="tip" class="hint" style="margin-top:8px">
+      每个商品自动按编号创建独立文件夹归档保存。
+    </div>
+  </fieldset>
+</div>
+
+<!-- ==================== 第三区：商品页面 / 非商品页面 Tab 采集字段设置 ==================== -->
+<fieldset id="paramsFieldset">
+  <legend>④ 页面采集字段设置（商品页面 ／ 非商品页面 Tab 切换）</legend>
+
+  <!-- 顶部双 Tab 切换栏 -->
+  <div class="field-tabs-bar" role="tablist">
+    <button type="button" id="tabBtnEcom" class="field-tab-btn active" role="tab" aria-selected="true">
+      <span>🛒 商品页面勾选字段</span>
+      <span class="tab-sub">（核心必填 + 次要可选参数）</span>
+    </button>
+    <button type="button" id="tabBtnNonEcom" class="field-tab-btn" role="tab" aria-selected="false">
+      <span>🎬 非商品页面采集</span>
+      <span class="tab-sub">（视频 / 动图 / 图文 / 社媒）</span>
+    </button>
+  </div>
+
+  <!-- ==================== Tab 1：商品页面勾选字段（严格按附件保留） ==================== -->
+  <div id="tabPaneEcom">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;padding:6px 10px;border-radius:8px;background:#f5f0ff;border:1px solid #dfd3f3">
+      <div>
+        <strong style="font-size:13px;color:#4a3563">🌟 一、最重要核心字段（必填 / 默认必选）</strong>
+        <small style="color:var(--muted);margin-left:6px">带 <span style="color:#b04465;font-weight:700">*</span> 为核心必填项，其余核心重要字段可自由勾选或填写默认值</small>
+      </div>
+      <button type="button" id="addCommon" style="padding:4px 12px;font-size:12px">＋ 增加自定义核心字段</button>
+    </div>
+    <div id="commonFields"></div>
+
+    <!-- 次要可选字段区（可要可不要，全部带独立勾选框） -->
+    <div id="secondaryFieldsSection" style="margin-top:12px;padding:10px 12px;border-radius:10px;background:#fcfbfe;border:1px solid var(--line)">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        <div>
+          <strong style="font-size:13px;color:#4a3563">🧩 二、次要可选字段（可要可不要 · 勾选才写入商品资料.txt）</strong>
+          <small style="color:var(--muted);margin-left:6px">已为您筛出次要字段，需要哪项勾哪项，不勾选的次要字段绝不混入商品资料</small>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <button type="button" id="btnSecPresetB2B" style="padding:4px 11px;font-size:11.5px;background:#3730a3;color:#fff;border-color:#3730a3;font-weight:700">🏭 B2B 常用字段自动勾选（外贸/批发）</button>
+          <button type="button" id="btnSecPresetB2C" style="padding:4px 11px;font-size:11.5px;background:#fdf2f8;color:#be185d;border-color:#fbcfe8;font-weight:700">🛍️ B2C 常用字段自动勾选（零售/种草）</button>
+          <button type="button" id="btnSecSelectAll" style="padding:4px 10px;font-size:11.5px">☑️ 全选次要字段</button>
+          <button type="button" id="btnSecClearAll" style="padding:4px 10px;font-size:11.5px;color:#b04465;border-color:#f3c6d3">☐ 全不选次要（只留核心字段）</button>
+        </div>
+      </div>
+      <div id="secPresetActiveHint" style="font-size:11.5px;color:#4a3563;background:#f5f0ff;border:1px solid #e4d8f8;border-radius:7px;padding:5px 10px;margin-bottom:8px;line-height:1.5">💡 当前推荐模式：可一键切换【🏭 B2B 外贸批发重中之重】（聚焦规格、尺寸、单重、容量、包装、加印LOGO、定制、专利、出口资质）或【🛍️ B2C 零售种草重中之重】（聚焦规格、颜色、尺寸、重量、容量、功能、适用人群、风格、送礼场景，自动剔除工厂术语）。</div>
+      <div id="secondaryFieldsBox"></div>
+      <div id="dynamicSecondaryFieldsWrap" style="display:none;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)">
+        <div style="font-size:12px;font-weight:700;color:#5c4379;margin-bottom:6px">🔎 当前网页额外识别到的其他次要字段（可按需勾选）：</div>
+        <div id="dynamicSecondaryFieldsBox" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:6px"></div>
+      </div>
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid #ede7f5;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <label style="margin:0;font-size:12px;font-weight:600;color:var(--ink-soft);cursor:pointer">
+          <input type="checkbox" id="optIncludeUnlistedAttrs"> 同时保留网页上识别到的其余未列出次要属性（取消勾选则严格只输出上方已勾选字段）
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== Tab 2：非商品页面采集（视频 / 动图 / 图文 / 社媒） ==================== -->
+  <div id="tabPaneNonEcom" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;padding:6px 10px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe">
+      <div>
+        <strong style="font-size:13px;color:#1e3a8a">🎬 一、非商品页核心采集项（视频 / 动图 / 配图 / 正文 · 默认必选）</strong>
+        <small style="color:#475569;margin-left:6px">适用于抖音/B站/小红书/YouTube/公众号/知乎/博客/素材网等非商品网页，可自由勾选或填写默认值</small>
+      </div>
+      <button type="button" id="addNonEcomCore" style="padding:4px 12px;font-size:12px">＋ 增加自定义采集项</button>
+    </div>
+    <div id="nonEcomCoreFields"></div>
+
+    <!-- 非商品页次要可选字段区 -->
+    <div id="nonEcomSecondarySection" style="margin-top:12px;padding:10px 12px;border-radius:10px;background:#fcfbfe;border:1px solid var(--line)">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        <div>
+          <strong style="font-size:13px;color:#4a3563">🧩 二、非商品页次要可选字段（可要可不要 · 勾选才写入文案.txt）</strong>
+          <small style="color:var(--muted);margin-left:6px">已为您归纳视频参数、社媒互动数据与 AI 总结项，需要哪项勾哪项</small>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <button type="button" id="btnNonEcomPresetRec" style="padding:3px 10px;font-size:11.5px;background:#eef2ff;color:#3730a3;border-color:#c7d2fe;font-weight:700">⭐ 推荐勾选（常用视频/图文属性）</button>
+          <button type="button" id="btnNonEcomSelectAll" style="padding:3px 10px;font-size:11.5px">☑️ 全选次要字段</button>
+          <button type="button" id="btnNonEcomClearAll" style="padding:3px 10px;font-size:11.5px;color:#b04465;border-color:#f3c6d3">☐ 全不选次要（只留核心项）</button>
+        </div>
+      </div>
+      <div id="nonEcomSecondaryBox"></div>
+    </div>
+  </div>
+</fieldset>
+
+<!-- ==================== 第四区：卖点与故事配置 ==================== -->
+<fieldset id="aiFieldset">
+  <legend>⑤ 卖点与故事设置</legend>
+  <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px;padding:8px 12px;border-radius:9px;background:#f8f5fc;border:1px solid var(--line)">
+    <strong style="color:#4a3563;font-size:13px">🎯 文案风格：</strong>
+    <label style="margin:0;font-weight:600"><input type="radio" name="aiStyle" value="btb" checked> B2B 外贸批发</label>
+    <label style="margin:0;font-weight:600"><input type="radio" name="aiStyle" value="seed"> ToC 真实种草</label>
+    <label style="margin:0;font-weight:600"><input type="radio" name="aiStyle" value="custom"> 自定义风格</label>
+    <input id="aiStyleText" placeholder="输入自定义文案风格要求…" style="flex:1;min-width:240px;display:none" maxlength="100">
+  </div>
+
+  <div class="section-grid">
+    <div class="subcard">
+      <h3>💡 独特卖点</h3>
+      <div id="sellingPointFields"></div>
+    </div>
+    <div class="subcard core-story">
+      <h3>📖 独特故事</h3>
+      <div id="storyFields"></div>
+    </div>
+  </div>
+
+  <div class="subcard" style="margin-top:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <h3>🔄 故事角度选择</h3>
+      <div style="display:flex;gap:6px">
+        <button type="button" id="selectTopAngles" style="padding:3px 10px;font-size:11.5px">常用前8个</button>
+        <button type="button" id="selectAllAngles" style="padding:3px 10px;font-size:11.5px">全选</button>
+        <button type="button" id="clearAllAngles" style="padding:3px 10px;font-size:11.5px">清空</button>
+      </div>
+    </div>
+    <div class="angles" id="storyAngles"></div>
+    <input id="customAngles" placeholder="自定义故事角度（多个用逗号分隔）" style="width:100%;margin-top:8px" maxlength="180">
+  </div>
+
+  <div class="subcard" style="margin-top:10px">
+    <h3>🌟 核心服务优势</h3>
+    <input id="soulLine" style="width:100%;margin-top:4px" value="用心服务，一对一全程跟进，扣细节扣隐患，极致仔细，想客户所想，独家的预防出错机制，经验丰富，大量避坑，守住质量底线" maxlength="300">
+  </div>
+</fieldset>
+
+<fieldset id="apiFieldset">
+  <legend>🔑 API 与 AI 设置（免费 Agnes AI）</legend>
+  <div id="apiTrialLockBanner" style="padding:9px 12px;border-radius:8px;margin-bottom:8px;font-size:12.5px;font-weight:700;background:#f3f0f9;color:#5c4379;border:1px solid #d8c9ef">
+    🔒 试用期模式（免费 20 个产品）：当前默认使用管理员内置 API，已做星号保密且灰色锁定无法修改。付费升级后，原管理员 API 将清空销毁，开放此区域供您自行填入 API。
+  </div>
+  <p class="hint">「独特卖点」「独特故事」和「箱规深度搜索」都由插件里的 AI 完成：AI 会自己上网搜索资料，再生成内容。填写自己的 Key 后点击保存。密钥只保存在本机浏览器的插件存储里，不会上传，也不会写进安装包。</p>
+  <div class="setting-block" style="margin-top:6px">
+    <label style="margin:0;font-weight:600;font-size:12.5px">
+      <input type="checkbox" id="aiWebSearch" checked> 允许 AI 联网搜索（独特卖点 / 独特故事 / 箱规深度搜索）
+    </label>
+  </div>
+  <details class="guide" open><summary>Agnes AI · 模型配置与注册（免费）</summary><div class="guide-body">
+    <p><a href="https://apihub.agnes-ai.com" target="_blank" rel="noopener noreferrer">① 打开 Agnes AI 注册 / Key 控制台</a></p>
+    <label style="display:block">模型 ID <input id="agnesModel" value="agnes-1.5-flash" style="width:65%" placeholder="从控制台复制可用模型 ID"></label>
+    <label style="display:block">接口地址 <input id="agnesBase" value="https://apihub.agnes-ai.com/v1" style="width:65%" type="url"></label>
+    <label style="display:block">API Key <input id="agnesKey" type="password" autocomplete="off" placeholder="② 将你创建的 API Key 粘贴到这里" style="width:65%"></label>
+    <button type="button" data-key-toggle="agnesKey">显示 Key</button> <button type="button" data-api-save="agnes">保存 Agnes 设置</button> <span id="agnesSaved" role="status"></span>
+    <ol><li>点击上方控制台网址，完成注册或登录。</li><li>在网站的密钥管理（API Key）中创建密钥，复制后粘贴到上方 API Key 输入框。只粘贴复制的密钥，不用自己加任何文字。</li><li>接口地址已填好。模型 ID 预填官方目录中的文本生成模型，以你的控制台为准。</li><li>点击“保存 Agnes 设置”，再点下面的“测试 AI 连接与联网搜索”。</li></ol>
+  </div></details>
+  <details class="guide"><summary>InternVL3.5-241B-A28B · 备用模型（可选）</summary><div class="guide-body">
+    <p><a href="https://sso.openxlab.org.cn/login" target="_blank" rel="noopener noreferrer">① 注册 / 登录书生账号</a> · <a href="https://internlm.intern-ai.org.cn/docEn/docs/Authentication/" target="_blank" rel="noopener noreferrer">② 官方获取 Token 指南（含控制台入口）</a></p>
+    <label style="display:block">模型 ID <input id="internModel" value="internvl3.5-241b-a28b" style="width:65%"></label>
+    <label style="display:block">接口地址 <input id="internBase" value="https://chat.intern-ai.org.cn/api/v1" style="width:65%" type="url"></label>
+    <label style="display:block">API Token <input id="internKey" type="password" autocomplete="off" placeholder="③ 将控制台生成的完整 Token 粘贴到这里" style="width:65%"></label>
+    <button type="button" data-key-toggle="internKey">显示 Key</button> <button type="button" data-api-save="intern">保存书生设置</button> <span id="internSaved" role="status"></span>
+    <ol><li>点击注册入口，按页面提示创建或登录账号。</li><li>打开官方指南，点击其中的控制台入口（API Console），创建并复制密钥（网站上叫 Token）。</li><li>将密钥粘贴到上方输入框并保存。Agnes 不可用时，会自动改用这个备用模型。</li></ol>
+  </div></details>
+  <div class="setting-block" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <button type="button" id="aiTest">测试 AI 连接与联网搜索</button>
+    <button type="button" id="ocrCheck">检查 OCR 是否已安装</button>
+    <div id="aiTestOut" role="status" style="flex-basis:100%;font-size:12.5px;color:var(--ink-soft);white-space:pre-wrap"></div>
+  </div>
+</fieldset>
+
+<script src="ocr/tesseract.min.js"></script>
+<script src="i18n.js?v=20261109-1335"></script>
+<script src="panel.js?v=20261109-1335"></script>
+</body>
+</html>

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>小咩魔法采集</title>
+<style>
+  :root {
+    --ink: #2c2538;
+    --muted: #6f657d;
+    --line: #eae3f2;
+    --brand: #7c56b0;
+    --brand-hover: #69449c;
+    --pink: #955178;
+    --caramel: #b77542;
+    --soft: #f6f2fc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    width: 360px;
+    margin: 0;
+    padding: 16px;
+    color: var(--ink);
+    background: #faf9fd;
+  }
+  .brand-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid #eedde9;
+    border-radius: 16px;
+    background: linear-gradient(120deg, #fff4ec 0%, #fff7fa 50%, #f3effe 100%);
+    box-shadow: 0 4px 14px rgba(134, 99, 177, 0.08);
+    margin-bottom: 12px;
+  }
+  .logo {
+    width: 48px;
+    height: 48px;
+    flex: 0 0 48px;
+    border: 2.5px solid #fff;
+    border-radius: 14px;
+    box-shadow: 0 3px 8px rgba(155, 115, 108, 0.18);
+    overflow: hidden;
+    background: #e8d6c5;
+  }
+  .logo img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 15%; display: block; }
+  .title-row { display: flex; align-items: center; gap: 6px; }
+  .title {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    margin: 0;
+    color: var(--pink);
+  }
+  .title .magic { color: var(--brand); }
+  .title .prod { color: var(--caramel); }
+  .ver-pill {
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 99px;
+    background: #fff;
+    color: var(--brand);
+    border: 1px solid #e2d4f0;
+  }
+  .subtitle {
+    display: block;
+    font-size: 11px;
+    color: #7d6684;
+    margin-top: 3px;
+  }
+  .tab-card {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: #fff;
+    margin-bottom: 10px;
+    box-shadow: 0 1px 4px rgba(44, 37, 56, 0.03);
+  }
+  .tab-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--brand);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 3px;
+  }
+  .tab-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+  }
+  .tab-url {
+    color: var(--muted);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .feature-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 10px;
+  }
+  .chip {
+    font-size: 10.5px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: var(--soft);
+    color: #5e487a;
+    border: 1px solid #e6ddf2;
+  }
+  .btn-stack { display: flex; flex-direction: column; gap: 7px; }
+  button {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 10px;
+    border: 1px solid #dfd5e9;
+    background: #fff;
+    color: #544166;
+    transition: all 0.15s ease;
+  }
+  button:hover:not(:disabled) { background: #f8f4fc; border-color: #bfa8d6; }
+  button:disabled { opacity: 0.6; cursor: wait; }
+  #cur {
+    background: var(--brand);
+    color: #fff;
+    border-color: var(--brand);
+    box-shadow: 0 3px 10px rgba(124, 86, 176, 0.22);
+  }
+  #cur:hover:not(:disabled) { background: var(--brand-hover); border-color: var(--brand-hover); }
+  #curImmediate {
+    background: linear-gradient(120deg, #955178, #7c56b0);
+    color: #fff;
+    border-color: #7c56b0;
+  }
+  #curImmediate:hover:not(:disabled) { filter: brightness(0.96); }
+  .status-box {
+    margin-top: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #f4f0fa;
+    color: #534066;
+    font-size: 11.5px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+  <div class="brand-head">
+    <div class="logo"><img src="cat-logo.jpg" alt="小咩猫"></div>
+    <div>
+      <div class="title-row">
+        <div class="title"><span>小咩</span><span class="magic">魔法</span><span class="prod">采集</span></div>
+        <span class="ver-pill">v1.0.8 翻译修复版</span>
+      </div>
+      <span class="subtitle">全网通用采集 · 智能筛图 · 卖点故事生成</span>
+    </div>
+  </div>
+  <div class="tab-card" id="tabBox">
+    <div class="tab-label">当前活动网页</div>
+    <div class="tab-title" id="tabTitle">正在检测当前标签页…</div>
+    <div class="tab-url" id="tabUrl">请打开任意要采集的商品页或图文网页</div>
+  </div>
+  <div class="btn-stack">
+    <button id="cur">✨ 采集当前浏览页（进入工作台预览）</button>
+    <button id="curImmediate">⚡ 一键立即采集并保存当前页</button>
+    <button id="panel">📂 打开批量采集与配置工作台</button>
+  </div>
+  <div class="status-box" id="msg">支持全网电商商品页、品牌独立站及图文网页一键采集。</div>
+  <script src="i18n.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

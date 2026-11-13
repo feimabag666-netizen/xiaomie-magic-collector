@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "小咩魔法采集",
+  "version": "1.0.8",
+  "version_name": "1.0.8 微信扫码支付实名集成与双币收银版 20261110-1630",
+  "description": "全网通用商品与图文采集：支持AI图片筛选、IP多语言输出、防卡死长图OCR与四级箱规参数补查",
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "downloads",
+    "storage",
+    "scripting",
+    "declarativeNetRequest",
+    "identity",
+    "identity.email"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://detail.1688.com/offer/*",
+        "https://m.1688.com/offer/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "小咩魔法采集"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "ocr/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}
