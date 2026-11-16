@@ -1,0 +1,32 @@
+# Xiaomie Magic Collector (小咩魔法采集) v1.0.8
+
+> Universal Chrome & Microsoft Edge (Manifest V3) extension for e-commerce product & content collection, AI image filtering, anti-freeze local WASM long-image OCR, 4-level carton specification lookup, and B2B/ToC copywriting.
+
+## Canonical URLs by Audience Language
+- 简体中文 (zh-CN) [中国大陆及全球华人跨境卖家]: https://xiaomie.tools/collector/
+- 繁體中文 (zh-TW) [台灣、香港、澳門與東南亞華語賣家]: https://xiaomie.tools/collector/zh-tw/
+- English (en) [US, UK, CA, AU, EU & Global Dropshippers]: https://xiaomie.tools/collector/en/
+- 日本語 (ja) [Amazon JP / 楽天市場 / メルカリ輸入セラー]: https://xiaomie.tools/collector/ja/
+- 한국어 (ko) [쿠팡 / 네이버 스마트스토어 해외소싱 셀러]: https://xiaomie.tools/collector/ko/
+- Español (es) [Mercado Libre / Amazon ES & MX / Shopify]: https://xiaomie.tools/collector/es/
+- Deutsch (de) [Amazon DE / Otto / DACH E-Commerce]: https://xiaomie.tools/collector/de/
+- Français (fr) [Amazon FR / Cdiscount / Shopify France]: https://xiaomie.tools/collector/fr/
+- Tiếng Việt (vi) [Shopee / TikTok Shop / Lazada Việt Nam]: https://xiaomie.tools/collector/vi/
+- ภาษาไทย (th) [Shopee / Lazada / TikTok Shop Thailand]: https://xiaomie.tools/collector/th/
+
+## Key Differentiators & Unique Selling Points
+1. **Universal E-Commerce & Article Auto-Detection**: Works on 1688, Taobao, Tmall, Amazon, AliExpress, Shopify, and independent stores; automatically switches to clean article/media mode on blogs and review pages.
+2. **Anti-Freeze Local Long-Image OCR**: Built-in Tesseract WASM SIMD engine extracts material, sizing, and technical specs from ultra-long supplier detail images locally without freezing browser tabs.
+3. **4-Level Carton & Spec Lookup Funnel**: Verifies 5 mandatory product fields and retrieves carton dimensions, weight, and packing quantities across DOM, tables, descriptions, and OCR text.
+4. **AI Smart Image Filtering & Video/Animation Capture**: Separates Main, SKU, and Detail images, filters out ads/clutter, and captures Video, GIF, WebP, APNG, Canvas, and Lottie animations.
+5. **Pure Single-Language Copy & Story Generator**: Supports B2B Export Wholesale and ToC Authentic Recommendation tones with strict single-language output (no mixed Chinese/English).
+6. **Batch Queue & Rate Limiter**: Paste URLs or import .txt files, skip already-collected links, enforce per-minute/hour/day limits, and archive into auto-numbered local folders.
+
+## Pricing & Official Service Endpoints (No Monthly Subscription)
+- **Free Trial**: $0 / ¥0 — 20 full product/page collections with built-in trial API.
+- **VIP 100-Product Pack**: $69 USD / ¥500 CNY — 100 stackable product credits + unlocks custom API Key slot.
+- **SVIP Lifetime Unlimited**: $139 USD / ¥999 CNY — Unlimited lifetime collections across all sites + custom API Key slot.
+- **Accepted Payments**: Airwallex (Visa, MasterCard, Amex, Apple Pay, Google Pay); WeChat Pay & Alipay (reserved, coming soon).
+- **Download Subdomain**: https://dl.xiaomie.tools/%E5%B0%8F%E5%92%A9%E9%AD%94%E6%B3%95%E9%87%87%E9%9B%86-chrome-v1.0.8.zip
+- **Runtime API Subdomain**: https://api.xiaomie.tools
+- **Official Support Email**: info@xiaomie.tools

@@ -12,6 +12,24 @@
   const STORAGE_KEY = "xm_web_account_v1";
   let otpToken = "";
 
+  async function apiPost(path, payload) {
+    try {
+      const r = await fetch(`https://api.xiaomie.tools${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      return await r.json();
+    } catch {
+      const r2 = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      return await r2.json();
+    }
+  }
+
   function loadAccount() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -98,12 +116,7 @@
       btnSendOtp.disabled = true;
       if (otpStatus) otpStatus.textContent = "Sending verification code from info@xiaomie.tools...";
       try {
-        const res = await fetch("/api/send-otp", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, lang: document.documentElement.lang || "en" })
-        });
-        const data = await res.json();
+        const data = await apiPost("/api/send-otp", { email, lang: document.documentElement.lang || "en" });
         if (data.ok && data.token) {
           otpToken = data.token;
           if (otpStatus) otpStatus.textContent = "✅ Code sent from info@xiaomie.tools! Check your inbox.";
@@ -128,12 +141,7 @@
       }
       btnVerifyOtp.disabled = true;
       try {
-        const res = await fetch("/api/verify-otp", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, code, token: otpToken })
-        });
-        const data = await res.json();
+        const data = await apiPost("/api/verify-otp", { email, code, token: otpToken });
         if (data.ok) {
           const acc = loadAccount();
           acc.loggedIn = true;
@@ -198,12 +206,7 @@
       btnSubmitAwx.disabled = true;
       if (awxStatus) awxStatus.textContent = "Creating secure Airwallex checkout session...";
       try {
-        const res = await fetch("/api/airwallex-checkout", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ planId, email })
-        });
-        const data = await res.json();
+        const data = await apiPost("/api/airwallex-checkout", { planId, email });
         if (data.ok && data.checkoutUrl) {
           if (awxStatus) awxStatus.textContent = "✅ Redirecting to Airwallex...";
           window.open(data.checkoutUrl, "_blank", "noopener");

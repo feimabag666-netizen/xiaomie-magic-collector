@@ -3,5 +3,5 @@
   X-Frame-Options: SAMEORIGIN
   Referrer-Policy: strict-origin-when-cross-origin
 
-/assets/*
+/collector/assets/*
   Cache-Control: public, max-age=86400

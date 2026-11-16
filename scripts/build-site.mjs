@@ -1,14 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LANGUAGES, PAYMENTS_BY_LANG, SITE_BASE_URL, TRANSLATIONS } from "./i18n-data.mjs";
+import { API_BASE_URL, DOWNLOAD_BASE_URL, LANGUAGES, PAYMENTS_BY_LANG, SITE_BASE_URL, TRANSLATIONS } from "./i18n-data.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, "..");
 const SITE_DIR = path.join(ROOT_DIR, "site");
+const COLLECTOR_DIR = path.join(SITE_DIR, "collector");
 
 const ZIP_FILENAME = "小咩魔法采集-chrome-v1.0.8.zip";
-const DOWNLOAD_URL = `/downloads/${encodeURIComponent(ZIP_FILENAME)}`;
+const DOWNLOAD_URL = `${DOWNLOAD_BASE_URL}/${encodeURIComponent(ZIP_FILENAME)}`;
 
 function escapeHtml(str) {
   return String(str)
@@ -23,7 +24,7 @@ function pageUrlFor(lang) {
 }
 
 function relPathFor(lang) {
-  return lang.slug ? `/${lang.slug}/` : `/`;
+  return lang.slug ? `/collector/${lang.slug}/` : `/collector/`;
 }
 
 function buildJsonLd(lang, t) {
@@ -37,7 +38,7 @@ function buildJsonLd(lang, t) {
     "operatingSystem": "Chrome, Microsoft Edge (Manifest V3, Windows / macOS)",
     "softwareVersion": "1.0.8",
     "url": url,
-    "downloadUrl": `${SITE_BASE_URL}${DOWNLOAD_URL}`,
+    "downloadUrl": DOWNLOAD_URL,
     "image": `${SITE_BASE_URL}/assets/cat-logo.jpg`,
     "description": t.description,
     "inLanguage": lang.code,
@@ -189,8 +190,8 @@ ${hreflangTags}
   <meta name="twitter:title" content="${escapeHtml(t.title)}" />
   <meta name="twitter:description" content="${escapeHtml(t.description)}" />
   <meta name="twitter:image" content="${SITE_BASE_URL}/assets/cat-logo.jpg" />
-  <link rel="icon" type="image/jpeg" href="/assets/cat-logo.jpg" />
-  <link rel="stylesheet" href="/assets/style.css" />
+  <link rel="icon" type="image/jpeg" href="/collector/assets/cat-logo.jpg" />
+  <link rel="stylesheet" href="/collector/assets/style.css" />
   <script type="application/ld+json">
 ${buildJsonLd(lang, t)}
   </script>
@@ -199,7 +200,7 @@ ${buildJsonLd(lang, t)}
   <header class="site-header">
     <div class="container header-inner">
       <a class="brand" href="${relPathFor(lang)}">
-        <img src="/assets/cat-logo.jpg" alt="Xiaomie Magic Collector Logo" width="38" height="38" />
+        <img src="/collector/assets/cat-logo.jpg" alt="Xiaomie Magic Collector Logo" width="38" height="38" />
         <span>小咩魔法采集 · Xiaomie</span>
       </a>
       <nav class="nav-links" aria-label="Primary">
@@ -236,7 +237,7 @@ ${buildJsonLd(lang, t)}
           </ul>
         </div>
         <aside class="hero-card">
-          <img class="hero-mascot" src="/assets/cat-logo.jpg" alt="Xiaomie Magic Collector v1.0.8" width="148" height="148" />
+          <img class="hero-mascot" src="/collector/assets/cat-logo.jpg" alt="Xiaomie Magic Collector v1.0.8" width="148" height="148" />
           <strong style="font-size:1.1rem;color:var(--primary-dark)">Xiaomie Magic Collector v1.0.8</strong>
           <p style="font-size:0.88rem;color:var(--ink-soft);margin:8px 0 0">Chrome &amp; Microsoft Edge · Manifest V3</p>
           <div class="hero-card-tags">
@@ -413,7 +414,7 @@ ${buildJsonLd(lang, t)}
     <div id="awxCheckoutStatus" class="xm-status"></div>
   </dialog>
 
-  <script src="/assets/app.js" defer></script>
+  <script src="/collector/assets/app.js" defer></script>
 </body>
 </html>
 `;
@@ -480,11 +481,13 @@ ${LANGUAGES.map((l) => `- ${l.label} (${l.code}) [${l.market}]: ${pageUrlFor(l)}
 5. **Pure Single-Language Copy & Story Generator**: Supports B2B Export Wholesale and ToC Authentic Recommendation tones with strict single-language output (no mixed Chinese/English).
 6. **Batch Queue & Rate Limiter**: Paste URLs or import .txt files, skip already-collected links, enforce per-minute/hour/day limits, and archive into auto-numbered local folders.
 
-## Pricing (No Monthly Subscription)
+## Pricing & Official Service Endpoints (No Monthly Subscription)
 - **Free Trial**: $0 / ¥0 — 20 full product/page collections with built-in trial API.
 - **VIP 100-Product Pack**: $69 USD / ¥500 CNY — 100 stackable product credits + unlocks custom API Key slot.
 - **SVIP Lifetime Unlimited**: $139 USD / ¥999 CNY — Unlimited lifetime collections across all sites + custom API Key slot.
-- **Accepted Payments**: PayPal, Visa, MasterCard, Amex, Apple Pay, Google Pay, WeChat Pay, Alipay.
+- **Accepted Payments**: Airwallex (Visa, MasterCard, Amex, Apple Pay, Google Pay); WeChat Pay & Alipay (reserved, coming soon).
+- **Download Subdomain**: ${DOWNLOAD_URL}
+- **Runtime API Subdomain**: ${API_BASE_URL}
 - **Official Support Email**: info@xiaomie.tools
 `;
 }
@@ -495,39 +498,55 @@ function buildHeaders() {
   X-Frame-Options: SAMEORIGIN
   Referrer-Policy: strict-origin-when-cross-origin
 
-/assets/*
+/collector/assets/*
   Cache-Control: public, max-age=86400
 `;
 }
 
 function main() {
   fs.mkdirSync(SITE_DIR, { recursive: true });
+  fs.mkdirSync(COLLECTOR_DIR, { recursive: true });
   fs.mkdirSync(path.join(SITE_DIR, "assets"), { recursive: true });
+  fs.mkdirSync(path.join(COLLECTOR_DIR, "assets"), { recursive: true });
   fs.mkdirSync(path.join(SITE_DIR, "downloads"), { recursive: true });
 
-  // Copy logo & extension zip into site/
+  // Copy static assets into site/collector/assets and zip into site/downloads (and root for dl.xiaomie.tools)
+  for (const assetName of ["style.css", "app.js"]) {
+    const src = path.join(SITE_DIR, "assets", assetName);
+    if (fs.existsSync(src)) {
+      fs.copyFileSync(src, path.join(COLLECTOR_DIR, "assets", assetName));
+    }
+  }
   const logoSrc = path.join(ROOT_DIR, "cat-logo.jpg");
   if (fs.existsSync(logoSrc)) {
     fs.copyFileSync(logoSrc, path.join(SITE_DIR, "assets", "cat-logo.jpg"));
+    fs.copyFileSync(logoSrc, path.join(COLLECTOR_DIR, "assets", "cat-logo.jpg"));
   }
   const zipSrc = path.join(ROOT_DIR, ZIP_FILENAME);
   if (fs.existsSync(zipSrc)) {
     fs.copyFileSync(zipSrc, path.join(SITE_DIR, "downloads", ZIP_FILENAME));
+    fs.copyFileSync(zipSrc, path.join(SITE_DIR, ZIP_FILENAME));
   }
 
   for (const lang of LANGUAGES) {
     const t = TRANSLATIONS[lang.code];
-    const outDir = lang.slug ? path.join(SITE_DIR, lang.slug) : SITE_DIR;
+    const outDir = lang.slug ? path.join(COLLECTOR_DIR, lang.slug) : COLLECTOR_DIR;
     fs.mkdirSync(outDir, { recursive: true });
     fs.writeFileSync(path.join(outDir, "index.html"), renderHtml(lang, t), "utf8");
   }
 
-  fs.writeFileSync(path.join(SITE_DIR, "sitemap.xml"), buildSitemap(), "utf8");
-  fs.writeFileSync(path.join(SITE_DIR, "robots.txt"), buildRobotsTxt(), "utf8");
-  fs.writeFileSync(path.join(SITE_DIR, "llms.txt"), buildLlmsTxt(), "utf8");
+  // Root redirect to /collector/
+  const rootRedirect = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" /><meta http-equiv="refresh" content="0; url=/collector/" /><link rel="canonical" href="${SITE_BASE_URL}/" /><title>小咩魔法采集 · Xiaomie Magic Collector</title></head><body><p>Redirecting to <a href="/collector/">/collector/</a>...</p></body></html>\n`;
+  fs.writeFileSync(path.join(SITE_DIR, "index.html"), rootRedirect, "utf8");
+
+  for (const dir of [SITE_DIR, COLLECTOR_DIR]) {
+    fs.writeFileSync(path.join(dir, "sitemap.xml"), buildSitemap(), "utf8");
+    fs.writeFileSync(path.join(dir, "robots.txt"), buildRobotsTxt(), "utf8");
+    fs.writeFileSync(path.join(dir, "llms.txt"), buildLlmsTxt(), "utf8");
+  }
   fs.writeFileSync(path.join(SITE_DIR, "_headers"), buildHeaders(), "utf8");
 
-  console.log(`Generated ${LANGUAGES.length} localized landing pages in ${SITE_DIR}`);
+  console.log(`Generated ${LANGUAGES.length} localized landing pages in ${COLLECTOR_DIR}`);
 }
 
 main();

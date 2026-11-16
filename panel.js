@@ -7631,7 +7631,21 @@ window.addEventListener("load", async () => {
     };
   }
   let _emailOtpToken = "";
-  const OTP_API_BASE = "https://xiaomie-magic-collector-cvz.pages.dev";
+  const OTP_API_BASES = ["https://api.xiaomie.tools", "https://xiaomie-magic-collector-cvz.pages.dev"];
+  async function postOtpApi(path, payload) {
+    let lastErr = null;
+    for (const base of OTP_API_BASES) {
+      try {
+        const res = await fetch(`${base}${path}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        return await res.json();
+      } catch (e) { lastErr = e; }
+    }
+    throw lastErr || new Error("OTP API unreachable");
+  }
   if ($("btnSendEmailOtp")) {
     $("btnSendEmailOtp").onclick = async () => {
       const email = $("loginEmailInput") ? $("loginEmailInput").value.trim() : "";
@@ -7642,12 +7656,7 @@ window.addEventListener("load", async () => {
       }
       if (msgEl) { msgEl.style.color = "#3730a3"; msgEl.textContent = "⏳ 正在通过 info@xiaomie.tools 发送验证码…"; }
       try {
-        const res = await fetch(`${OTP_API_BASE}/api/send-otp`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, lang: "zh-CN" }),
-        });
-        const data = await res.json();
+        const data = await postOtpApi("/api/send-otp", { email, lang: "zh-CN" });
         if (data.ok && data.token) {
           _emailOtpToken = data.token;
           if (msgEl) { msgEl.style.color = "#166534"; msgEl.textContent = "✅ 验证码已由 info@xiaomie.tools 发出，请查收邮箱！"; }
@@ -7669,12 +7678,7 @@ window.addEventListener("load", async () => {
         return;
       }
       try {
-        const res = await fetch(`${OTP_API_BASE}/api/verify-otp`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, code, token: _emailOtpToken }),
-        });
-        const data = await res.json();
+        const data = await postOtpApi("/api/verify-otp", { email, code, token: _emailOtpToken });
         if (!data.ok) {
           if (msgEl) { msgEl.style.color = "#b91c1c"; msgEl.textContent = `❌ 验证失败：${data.error || "验证码错误"}`; }
           return;
