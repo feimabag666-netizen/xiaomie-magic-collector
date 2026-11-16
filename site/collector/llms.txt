@@ -27,6 +27,6 @@
 - **VIP 100-Product Pack**: $69 USD / ¥500 CNY — 100 stackable product credits + unlocks custom API Key slot.
 - **SVIP Lifetime Unlimited**: $139 USD / ¥999 CNY — Unlimited lifetime collections across all sites + custom API Key slot.
 - **Accepted Payments**: Airwallex (Visa, MasterCard, Amex, Apple Pay, Google Pay); WeChat Pay & Alipay (reserved, coming soon).
-- **Download Subdomain**: https://dl.xiaomie.tools/%E5%B0%8F%E5%92%A9%E9%AD%94%E6%B3%95%E9%87%87%E9%9B%86-chrome-v1.0.8.zip
+- **Download Subdomain**: https://collector.xiaomie.tools/%E5%B0%8F%E5%92%A9%E9%AD%94%E6%B3%95%E9%87%87%E9%9B%86-chrome-v1.0.8.zip
 - **Runtime API Subdomain**: https://api.xiaomie.tools
 - **Official Support Email**: info@xiaomie.tools

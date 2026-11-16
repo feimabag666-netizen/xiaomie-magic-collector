@@ -7639,7 +7639,7 @@ window.addEventListener("load", async () => {
         const res = await fetch(`${base}${path}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ app_id: "collector", ...payload }),
         });
         return await res.json();
       } catch (e) { lastErr = e; }
@@ -7654,12 +7654,12 @@ window.addEventListener("load", async () => {
         if (msgEl) { msgEl.style.color = "#b91c1c"; msgEl.textContent = "请输入您的邮箱地址。"; }
         return;
       }
-      if (msgEl) { msgEl.style.color = "#3730a3"; msgEl.textContent = "⏳ 正在通过 info@xiaomie.tools 发送验证码…"; }
+      if (msgEl) { msgEl.style.color = "#3730a3"; msgEl.textContent = "⏳ 正在通过 noreply@xiaomie.tools 发送验证码…"; }
       try {
         const data = await postOtpApi("/api/send-otp", { email, lang: "zh-CN" });
         if (data.ok && data.token) {
           _emailOtpToken = data.token;
-          if (msgEl) { msgEl.style.color = "#166534"; msgEl.textContent = "✅ 验证码已由 info@xiaomie.tools 发出，请查收邮箱！"; }
+          if (msgEl) { msgEl.style.color = "#166534"; msgEl.textContent = "✅ 验证码已由 noreply@xiaomie.tools 发出，请查收邮箱！"; }
         } else {
           if (msgEl) { msgEl.style.color = "#b91c1c"; msgEl.textContent = `⚠️ 发送失败：${data.error || "请稍后重试"}`; }
         }

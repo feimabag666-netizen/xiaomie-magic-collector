@@ -364,7 +364,7 @@ ${buildJsonLd(lang, t)}
       <button type="button" id="btnCloseAccountPortal" class="btn btn-secondary btn-sm">✕</button>
     </div>
     <div id="portalLoginBox">
-      <p style="font-size:0.86rem;color:var(--ink-soft);margin-top:0">Sign in via Email Verification Code (sent from <strong>info@xiaomie.tools</strong>):</p>
+      <p style="font-size:0.86rem;color:var(--ink-soft);margin-top:0">Sign in via Email Verification Code (sent from <strong>noreply@xiaomie.tools</strong>):</p>
       <div class="xm-field">
         <label for="webOtpEmail">Email Address / 邮箱地址</label>
         <div class="xm-row">

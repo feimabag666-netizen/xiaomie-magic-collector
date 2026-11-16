@@ -1,5 +1,5 @@
 ﻿export const SITE_BASE_URL = "https://xiaomie.tools/collector";
-export const DOWNLOAD_BASE_URL = "https://dl.xiaomie.tools";
+export const DOWNLOAD_BASE_URL = "https://collector.xiaomie.tools";
 export const API_BASE_URL = "https://api.xiaomie.tools";
 
 export const LANGUAGES = [

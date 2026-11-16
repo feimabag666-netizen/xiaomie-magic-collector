@@ -13,18 +13,19 @@
   let otpToken = "";
 
   async function apiPost(path, payload) {
+    const body = JSON.stringify({ app_id: "collector", ...payload });
     try {
       const r = await fetch(`https://api.xiaomie.tools${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body
       });
       return await r.json();
     } catch {
       const r2 = await fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body
       });
       return await r2.json();
     }
@@ -114,12 +115,12 @@
         return;
       }
       btnSendOtp.disabled = true;
-      if (otpStatus) otpStatus.textContent = "Sending verification code from info@xiaomie.tools...";
+      if (otpStatus) otpStatus.textContent = "Sending verification code from noreply@xiaomie.tools...";
       try {
         const data = await apiPost("/api/send-otp", { email, lang: document.documentElement.lang || "en" });
         if (data.ok && data.token) {
           otpToken = data.token;
-          if (otpStatus) otpStatus.textContent = "✅ Code sent from info@xiaomie.tools! Check your inbox.";
+          if (otpStatus) otpStatus.textContent = "✅ Code sent from noreply@xiaomie.tools! Check your inbox.";
         } else {
           if (otpStatus) otpStatus.textContent = `⚠️ ${data.error || "Failed to send code"}`;
         }

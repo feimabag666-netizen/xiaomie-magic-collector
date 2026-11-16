@@ -80,6 +80,7 @@ async function sendSmtpEmail({ host, port, user, pass, to, subject, textBody }) 
     const msg = [
       `From: "Xiaomie Magic Collector" <${user}>`,
       `To: <${to}>`,
+      `Reply-To: <info@xiaomie.tools>`,
       `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
       `MIME-Version: 1.0`,
       `Content-Type: text/plain; charset=UTF-8`,
@@ -110,10 +111,10 @@ export async function onRequestPost(context) {
       return json({ ok: false, error: "Invalid email address" }, 400);
     }
 
-    const smtpPass = context.env.PURELYMAIL_PASSWORD || "";
+    const smtpPass = context.env.PURELYMAIL_NOREPLY_PASSWORD || context.env.PURELYMAIL_PASSWORD || "";
     const otpSecret = context.env.OTP_SECRET || smtpPass || "xiaomie-default-otp-secret-2026";
     if (!smtpPass) {
-      return json({ ok: false, error: "SMTP service not configured (PURELYMAIL_PASSWORD missing)" }, 503);
+      return json({ ok: false, error: "SMTP service not configured (PURELYMAIL_NOREPLY_PASSWORD missing)" }, 503);
     }
 
     const code = String(Math.floor(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000)));
@@ -133,7 +134,7 @@ export async function onRequestPost(context) {
     await sendSmtpEmail({
       host: "smtp.purelymail.com",
       port: 465,
-      user: "info@xiaomie.tools",
+      user: "noreply@xiaomie.tools",
       pass: smtpPass,
       to: email,
       subject,
