@@ -3772,79 +3772,109 @@ function toSingleLineText(val) {
     .trim();
 }
 
-// 四维高转化卖点生成器（B2B外贸采购视角 / ToC种草视角，单行紧凑排列，带硬核数据与独特结构亮点）
+function formatSellingPointsLines(rawVal, langCode = "zh") {
+  const colon = langCode === "zh" || langCode === "ja" || langCode === "ko" ? "：" : ": ";
+  const cleanPunct = (s) =>
+    String(s || "")
+      .replace(/[【】\[\]「」『』《》*•▪◆▶★☆✓✔]/g, "")
+      .replace(/[;；]+\s*$/g, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+
+  let text = String(rawVal ?? "").replace(/\r\n/g, "\n").trim();
+  if (!text) return "";
+  // 将 ①②③④ 或同行内的 1. 2. 3. 4. 拆成独立行
+  text = text
+    .replace(/\s*([①②③④⑤⑥⑦⑧⑨⑩])\s*/g, (_, c) => `\n${"①②③④⑤⑥⑦⑧⑨⑩".indexOf(c) + 1}. `)
+    .replace(/(?:^|\s)(\d{1,2})\s*[.、)\]]\s*/g, "\n$1. ");
+
+  const rawLines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const out = [];
+  rawLines.forEach((line, idx) => {
+    let body = line.replace(/^\d{1,2}\s*[.、:：)\]]\s*/, "");
+    body = cleanPunct(body);
+    if (!body) return;
+    // 确保“左侧标题：右侧内容”只保留一个清晰冒号
+    const m = body.match(/^([^:：]{2,28})\s*[:：]\s*(.+)$/);
+    const formatted = m ? `${cleanPunct(m[1])}${colon}${cleanPunct(m[2])}` : body;
+    out.push(`${out.length + 1}. ${formatted}`);
+  });
+  return out.join("\n");
+}
+
+// 四维高转化卖点生成器（左右结构：序号 + 标题：内容，逐行排列，无多余符号，清楚简洁明了）
 function buildMasterSellingPoints(p, req, isSeed, lang = "zh") {
-  const reqLine = req ? (lang === "zh" ? `；并严格落实「${req}」专属定制与品控标准` : ` | Custom focus: ${req}`) : "";
+  const reqLine = req ? (lang === "zh" ? `，落实${req}标准` : `, custom focus: ${req}`) : "";
 
   if (lang === "en") {
     if (isSeed) {
       return [
-        `1. [Unique Structural Highlights] "${p.shortName}" features ${translateCommonValue(p.coreFeatures, "en")} with genuine ${translateCommonValue(p.material, "en")} for a noticeably superior everyday experience;`,
-        `2. [Proven Specs & Variants] Engineered around ${translateCommonValue(p.specBits, "en")} in popular options (${p.variants})${p.model ? `, Model ${p.model}` : ""};`,
-        `3. [Verified Market Reputation] Backed by real buyer adoption (${translateCommonValue(p.marketProof, "en")}), built to withstand daily high-frequency use${reqLine};`,
-        `4. [Hygienic & Gift-Ready Pack] Comes in ${translateCommonValue(p.packWay, "en")}, ideal for personal use, family stocking, or thoughtful gifting.`,
-      ].join(" ");
+        `1. Structural Highlight: ${p.shortName} features ${translateCommonValue(p.coreFeatures, "en")} with ${translateCommonValue(p.material, "en")}`,
+        `2. Specs and Options: Built around ${translateCommonValue(p.specBits, "en")} in popular variants ${p.variants}${p.model ? `, Model ${p.model}` : ""}`,
+        `3. Market Reputation: Backed by real buyer feedback (${translateCommonValue(p.marketProof, "en")}) for daily use${reqLine}`,
+        `4. Clean Packaging: Packed in ${translateCommonValue(p.packWay, "en")} for home or gifting`,
+      ].join("\n");
     }
     return [
-      `1. [Differentiated Core Features & Material] "${p.shortName}"${p.model ? ` (Model: ${p.model})` : ""} is built with ${translateCommonValue(p.material, "en")} and ${translateCommonValue(p.coreFeatures, "en")}, solving common end-user pain points;`,
-      `2. [Proven High-Conversion SKU Matrix] Offers best-selling variants (${p.variants}) backed by verified market traction (${translateCommonValue(p.marketProof, "en")});`,
-      `3. [Exact Export Carton & Container Data] Packed at ${translateCommonValue(p.cartonSummary, "en")} (${p.containerEstimate}), enabling instant and accurate FBA/sea-freight cost calculation;`,
-      `4. [Flexible Factory Direct Supply] Direct from ${translateCommonValue(p.origin, "en")}, ${translateCommonValue(p.moq, "en")}, lead time ${translateCommonValue(p.leadTime, "en")} with 100% first-article & AQL pre-shipment inspection${reqLine}.`,
-    ].join(" ");
+      `1. Core Structure and Material: ${p.shortName}${p.model ? ` (Model ${p.model})` : ""} uses ${translateCommonValue(p.material, "en")} with ${translateCommonValue(p.coreFeatures, "en")}`,
+      `2. High-Conversion SKU Matrix: Offers popular options (${p.variants}) backed by ${translateCommonValue(p.marketProof, "en")}`,
+      `3. Export Carton Data: ${translateCommonValue(p.cartonSummary, "en")}, ${p.containerEstimate} for fast freight calculation`,
+      `4. Factory Direct Supply: From ${translateCommonValue(p.origin, "en")}, ${translateCommonValue(p.moq, "en")}, lead time ${translateCommonValue(p.leadTime, "en")}${reqLine}`,
+    ].join("\n");
   }
 
   if (lang === "ru") {
     return [
-      `1. [Уникальная конструкция и материалы] Модель «${p.shortName}» (${translateCommonValue(p.material, "ru")}) отличается продуманными деталями (${p.coreFeatures});`,
-      `2. [Ходовая матрица SKU и спрос] Популярные варианты (${p.variants})${p.model ? `, арт. ${p.model}` : ""}, подтвержденные продажами (${p.marketProof});`,
-      `3. [Точная логистика и кубатура] Мастер-короб: ${translateCommonValue(p.cartonSummary, "ru")} (${p.containerEstimate}) для точного расчета КАРГО и контейнеров;`,
-      `4. [Гибкие условия с фабрики] MOQ: ${translateCommonValue(p.moq, "ru")}, отгрузка ${translateCommonValue(p.leadTime, "ru")}, строгий контроль качества каждой партии${reqLine}.`,
-    ].join(" ");
+      `1. Конструкция и материалы: ${p.shortName}, ${translateCommonValue(p.material, "ru")}, ${p.coreFeatures}`,
+      `2. Ассортимент SKU: ${p.variants}${p.model ? `, арт. ${p.model}` : ""}, ${p.marketProof}`,
+      `3. Упаковка и логистика: ${translateCommonValue(p.cartonSummary, "ru")}, ${p.containerEstimate}`,
+      `4. Условия поставки: MOQ ${translateCommonValue(p.moq, "ru")}, срок ${translateCommonValue(p.leadTime, "ru")}${reqLine}`,
+    ].join("\n");
   }
 
   if (lang === "ja") {
     return [
-      `1. 【独自構造と厳選素材】「${p.shortName}」は${translateCommonValue(p.material, "ja")}を採用し、「${p.coreFeatures}」の細部設計で他社汎用品と明確に差別化；`,
-      `2. 【実績ある売れ筋SKU】人気の「${p.variants}」${p.model ? `（型番：${p.model}）` : ""}を展開し、市場実績（${p.marketProof}）に裏付けられた高い転換率を実現；`,
-      `3. 【正確な外箱・コンテナ積載データ】外箱規格は「${translateCommonValue(p.cartonSummary, "ja")}」（${p.containerEstimate}）、CBM容積や国際送料の精密な試算が可能；`,
-      `4. 【柔軟な小ロット対応と短納期】最小注文数 ${translateCommonValue(p.moq, "ja")}、納期 ${translateCommonValue(p.leadTime, "ja")}、初回品確認から出荷前検品まで徹底管理${reqLine}。`,
-    ].join(" ");
+      `1. 独自構造と素材：${p.shortName}は${translateCommonValue(p.material, "ja")}を採用し、${p.coreFeatures}を実現`,
+      `2. 売れ筋SKU展開：${p.variants}${p.model ? `、型番${p.model}` : ""}、実績${p.marketProof}`,
+      `3. 外箱と積載規格：${translateCommonValue(p.cartonSummary, "ja")}、${p.containerEstimate}`,
+      `4. 小ロットと短納期：MOQ ${translateCommonValue(p.moq, "ja")}、納期 ${translateCommonValue(p.leadTime, "ja")}${reqLine}`,
+    ].join("\n");
   }
 
   if (lang === "ko") {
     return [
-      `1. [차별화된 핵심 구조 및 소재] 「${p.shortName}」 제품은 ${translateCommonValue(p.material, "ko")}와 「${p.coreFeatures}」 설계를 적용하여 실사용 만족도를 극대화했습니다;`,
-      `2. [검증된 인기 옵션 라인업] ${p.variants}${p.model ? ` (모델명: ${p.model})` : ""} 구성 및 시장 검증 데이터(${p.marketProof}) 보유;`,
-      `3. [정확한 수출 카톤 및 컨테이너 적재 규격] ${translateCommonValue(p.cartonSummary, "ko")} (${p.containerEstimate}) 스펙으로 물류비(CBM) 계산이 투명합니다;`,
-      `4. [유연한 MOQ 및 빠른 납기] 최소주문 ${translateCommonValue(p.moq, "ko")}, 납기 ${translateCommonValue(p.leadTime, "ko")} 준수 및 출고 전 철저한 검수 진행${reqLine}.`,
-    ].join(" ");
+      `1. 핵심 구조와 소재：${p.shortName}는 ${translateCommonValue(p.material, "ko")} 소재와 ${p.coreFeatures} 설계 적용`,
+      `2. 인기 옵션 구성：${p.variants}${p.model ? `, 모델명 ${p.model}` : ""}, ${p.marketProof}`,
+      `3. 수출 박스 규격：${translateCommonValue(p.cartonSummary, "ko")}, ${p.containerEstimate}`,
+      `4. 유연한 납기와 검수：MOQ ${translateCommonValue(p.moq, "ko")}, 납기 ${translateCommonValue(p.leadTime, "ko")}${reqLine}`,
+    ].join("\n");
   }
 
   if (lang !== "zh") {
     return [
-      `1. [${OUTPUT_LANG_PACKS[lang]?.label || lang} · Core Features & Material] "${p.shortName}" — ${p.coreFeatures}, ${p.material};`,
-      `2. [Variants & Market Proof] ${p.variants}${p.model ? ` (${p.model})` : ""} | ${p.marketProof};`,
-      `3. [Master Carton & Container Loading] ${p.cartonSummary} (${p.containerEstimate});`,
-      `4. [MOQ & Lead Time] ${p.moq}, ${p.leadTime}${reqLine}.`,
-    ].join(" ");
+      `1. Features and Material: ${p.shortName}, ${p.coreFeatures}, ${p.material}`,
+      `2. Variants and Proof: ${p.variants}${p.model ? `, ${p.model}` : ""}, ${p.marketProof}`,
+      `3. Carton and Loading: ${p.cartonSummary}, ${p.containerEstimate}`,
+      `4. MOQ and Lead Time: ${p.moq}, ${p.leadTime}${reqLine}`,
+    ].join("\n");
   }
 
-  // 默认简体中文四维高转化结构（带独特结构卖点 + 硬核实测数据 + 箱规装柜核算 + 履约保障）
+  // 默认简体中文：左右结构，按序号逐行排列，只留冒号，清楚简洁明了
   if (isSeed) {
     return [
-      `①【微距结构直击痛点】专为解决日常盲区打造「${p.coreFeatures}」，精选${p.material}，上手扎实细腻、毫无廉价塑料感；`,
-      `②【高颜值实用规格】提供「${p.variants}」多款组合${p.model ? `（型号：${p.model}）` : ""}，人体工学比例顺手好握，日常居家与差旅便携皆宜；`,
-      `③【真实口碑数据验证】线上已创下「${p.marketProof}」的实测佳绩，高频使用依然稳固耐造、不易藏污纳垢${reqLine}；`,
-      `④【独立卫生体面包装】采用${p.packWay}，防尘防潮好收纳，无论个人换新还是全家囤货都超值省心。`,
-    ].join(" ");
+      `1. 核心结构与材质：${p.coreFeatures}，选用${p.material}，上手扎实不廉价`,
+      `2. 实用规格与款式：提供${p.variants}${p.model ? `，型号${p.model}` : ""}，居家与差旅都顺手`,
+      `3. 真实口碑与销量：线上已验证${p.marketProof}，高频使用依然稳固耐用${reqLine}`,
+      `4. 卫生体面包装：采用${p.packWay}，防尘防潮好收纳，自用送礼都省心`,
+    ].join("\n");
   }
 
   return [
-    `①【差异化结构与足标主材】针对终端高频痛点打造「${p.coreFeatures}」，主体严选${p.material}，拒绝回收次料，拆箱上手质感远超普通公模；`,
-    `②【市场验证高转化SKU矩阵】涵盖「${p.variants}」等主力规格${p.model ? `（货号/型号：${p.model}）` : ""}，背靠「${p.marketProof}」真实动销数据，上架即自带转化率；`,
-    `③【精准外箱与装柜数据好算账】整箱执行「${p.cartonSummary}」标准，${p.containerEstimate}，头程海运立方数与海外仓尾程运费一算即明；`,
-    `④【源头厂柔性起订与极速履约】${p.origin}直供，支持「${p.moq}」，交期「${p.leadTime}」，大货出厂前必过首件签样与1.2米六角跌落抽检${reqLine}。`,
-  ].join(" ");
+    `1. 差异化结构与主材：${p.coreFeatures}，采用${p.material}，拒绝回收次料`,
+    `2. 热销规格与动销数据：涵盖${p.variants}${p.model ? `，型号${p.model}` : ""}，已验证${p.marketProof}`,
+    `3. 精准外箱与装柜核算：${p.cartonSummary}，${p.containerEstimate}，头程海运运费一目了然`,
+    `4. 源头直供与履约保障：${p.origin}直供，${p.moq}，交期${p.leadTime}，出厂过首件签样与跌落抽检${reqLine}`,
+  ].join("\n");
 }
 
 function buildMasterMultiLangStory(angle, p, req, isSeed, lang) {
@@ -3877,7 +3907,7 @@ function synthesizeGroundedAiField(fieldObj, ctx) {
   const isSeed = /消费者|种草|真实买家/.test(ctx.style || "");
   const profile = extractStoryProductProfile(ctx);
   if (group === "point") {
-    return toSingleLineText(buildMasterSellingPoints(profile, req, isSeed, lang));
+    return formatSellingPointsLines(buildMasterSellingPoints(profile, req, isSeed, lang), lang);
   }
   const angle = String(ctx.angles || "服务细节故事").trim();
   return toSingleLineText(buildMasterMultiLangStory(angle, profile, req, isSeed, lang));
@@ -4252,11 +4282,13 @@ async function aiGenOnce(provider, field, req, ctx, group) {
     `2. 细节抓人、紧扣本品：把这款「${profile.shortName}」独有的微距特征（${profile.coreFeatures}）、材质手感（${profile.material}）、款式（${profile.variants}${profile.model ? `，型号${profile.model}` : ""}）以及真实数据（${profile.cartonSummary}，${profile.containerEstimate}，${profile.marketProof}，起订量${profile.moq}）自然融进人物的动作、对话、小插曲和感官细节（声音、光线、温度、重量、指尖触感）里，写出有波折、有反转、读起来像真人微信语音口述或茶水间聊真事的画面感。`,
     `3. 彻底去AI味（违者重写）：严禁任何AI八股与营销套话！绝不许出现“在这个快节奏的时代、你是否还在为…烦恼、今天给大家种草、让我们一起、赋能、致力于、品质卓越、深受好评、远销海外、匠心打造、不二之选、完美契合、闭环、抓手、天花板、闭眼入、YYDS、神器”；不要“总-分-总”排比句，不要堆砌空洞形容词，用真人说话的节奏把事情讲活。`,
     `4. 精神内核化为具体行动：严禁机械照抄口号原句，要把用心或专业藏在人物顺手多做的那个动作里（Show, Don't Tell）。`,
-    `5. 直接输出最终正文，不加字段名前缀、不加标题、不加引号或前言后语，且必须合并为单行一段话输出（中间严禁回车换行）。`,
+    group === "point"
+      ? `5. 直接输出最终正文，不加字段名前缀、不加标题、不加引号或前言后语；按“1. 小标题：简洁内容”逐条换行排列 4 条，不要任何多余符号（只留序号点号和冒号）。`
+      : `5. 直接输出最终正文，不加字段名前缀、不加标题、不加引号或前言后语，且必须合并为单行一段话输出（中间严禁回车换行）。`,
   ].join("\n");
 
   const userTask = group === "point"
-    ? `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n请基于以上真实商品参数与联网检索素材，写出极具说服力、带真实物理/箱规数据与使用画面感、毫无AI套话的「${field}」${req ? `（特别要求：${req}）` : ""}，160~280字，严格使用${langPack.label}，合并为单行输出（不要换行）。`
+    ? `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n请基于以上真实商品参数与联网检索素材，输出「${field}」${req ? `（特别要求：${req}）` : ""}。\n【严格格式要求】：\n1. 按序号逐行排列 4 条，每条单独占一行，格式为：1. 小标题：简洁卖点内容\n2. 左右结构，只保留序号后的点号和标题后的冒号，严禁使用【】、[]、「」、①②③④、**、•、；等多余符号，清楚简洁明了；\n3. 严格使用${langPack.label}，直接输出这 4 行，不要加任何前缀或开场白。`
     : `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n本次唯一故事角度：【${ctx.angles || "服务细节故事"}】（只围绕这一个角度写透，绝不混杂其他角度！）\n精神内核（必须化为具体人物动作与现场细节，严禁照抄口号）：${ctx.soul || "用心服务"}\n请基于当前商品真实参数与联网搜索素材，写出一段【必须包含具体人物、具体时间、具体地点，非常真实、生动形象吸引人、毫无AI味】的「${field}」${req ? `（特别要求：${req}）` : ""}，180~300字，严格使用${langPack.label}，合并为单行输出（不要换行）。`;
 
   const messages = [
@@ -4268,7 +4300,8 @@ async function aiGenOnce(provider, field, req, ctx, group) {
     maxSteps: 3, webSearch: cfg.webSearch, maxTokens: 950,
     onStatus: t => { try { $("status").innerText = t; } catch (e) {} },
   });
-  return toSingleLineText(String(r.text || "").replace(new RegExp(`^${escRe(field)}\\s*[:：]\\s*`, "i"), ""));
+  const rawOut = String(r.text || "").replace(new RegExp(`^${escRe(field)}\\s*[:：]\\s*`, "i"), "");
+  return group === "point" ? formatSellingPointsLines(rawOut, langCode) : toSingleLineText(rawOut);
 }
 
 async function aiGen(fieldObj, ctx) {
@@ -4286,7 +4319,7 @@ async function aiGen(fieldObj, ctx) {
       const g = await aiGenOnce(p, field, req, ctx, group);
       if (g && g.length >= 55 && !isLowQualityOrAiFluff(g, langCode)) {
         if (!p.configured) llmConsecutiveFailures = 0;
-        return toSingleLineText(g);
+        return group === "point" ? formatSellingPointsLines(g, langCode) : toSingleLineText(g);
       }
       lastErr = `${p.name} 返回内容过短或不符合质量要求`;
     } catch (e) {
@@ -4306,7 +4339,8 @@ async function aiGen(fieldObj, ctx) {
     window.__aiLastError = lastErr;
   }
   try { const cfg = await getAiConfig(); if (cfg.webSearch) await aiWebSearch(`${extractStoryProductProfile(ctx).shortName} 卖点 规格`, 3); } catch (e) {}
-  return toSingleLineText(synthesizeGroundedAiField(fieldObj, ctx));
+  const fallbackOut = synthesizeGroundedAiField(fieldObj, ctx);
+  return group === "point" ? formatSellingPointsLines(fallbackOut, langCode) : toSingleLineText(fallbackOut);
 }
 
 /* ---- 全网跨平台箱规搜索引擎关键词提取与同款核验 ---- */
@@ -5526,10 +5560,21 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       const allLines = [];
 
       const profileLines = [];
-      const pushFieldLine = async (label, rawVal, targetArr = null, srcStage = "", rawLabel = "", allowEmpty = false) => {
+      const pushFieldLine = async (label, rawVal, targetArr = null, srcStage = "", rawLabel = "", allowEmpty = false, preserveLines = false) => {
         // 单一语言铁律：标签与内容统一净化为所选语言（全中文或全英文），杜绝中英混杂
         const cleanLabel = toSingleLineText(await purifyToLang(toSingleLineText(label), outLang)).replace(/\s*[:：]+\s*$/, "");
-        const cleanVal = toSingleLineText(await purifyToLang(toSingleLineText(rawVal), outLang));
+        let cleanVal = "";
+        if (preserveLines) {
+          const lines = String(rawVal ?? "").split(/\r?\n+/).map(s => s.trim()).filter(Boolean);
+          const purified = [];
+          for (const ln of lines) {
+            const p = toSingleLineText(await purifyToLang(ln, outLang));
+            if (p) purified.push(p);
+          }
+          cleanVal = formatSellingPointsLines(purified.join("\n"), outLang);
+        } else {
+          cleanVal = toSingleLineText(await purifyToLang(toSingleLineText(rawVal), outLang));
+        }
         if (!cleanLabel) return;
         if (!cleanVal) {
           if (!allowEmpty) return;
@@ -5643,10 +5688,12 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
             ...preStoryDir,
           };
           for (const f of onAi) {
+            const isPointGroup = (f.group || (f.n === "独特卖点" ? "point" : "story")) === "point";
             $("status").innerText = `AGNES AI 正在联网生成「${f.n}」（${langPack.label}）…`;
             const g = allowRemoteAi ? await aiGen(f, ctx) : synthesizeGroundedAiField(f, ctx);
-            const cleanAiVal = toSingleLineText(g || synthesizeGroundedAiField(f, ctx));
-            await pushFieldLine(formatFieldDisplayName(f.n), cleanAiVal, builtAiOut, builtStoryAngle, f.n);
+            const rawAiVal = g || synthesizeGroundedAiField(f, ctx);
+            const cleanAiVal = isPointGroup ? formatSellingPointsLines(rawAiVal, outLang) : toSingleLineText(rawAiVal);
+            await pushFieldLine(formatFieldDisplayName(f.n), cleanAiVal, builtAiOut, builtStoryAngle, f.n, false, isPointGroup);
           }
         }
       }
