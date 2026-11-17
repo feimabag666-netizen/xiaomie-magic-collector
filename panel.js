@@ -140,8 +140,9 @@ const OUTPUT_LANG_PACKS = {
       "型号": "Model / SKU", "品牌": "Brand", "材质": "Material", "颜色": "Color", "规格": "Variants / Specs",
       "产品尺寸": "Product Dimensions", "产品重量": "Item Weight", "单件重量": "Unit Weight", "容量": "Capacity",
       "功率": "Power", "电压": "Voltage", "价格": "Price", "起订量": "MOQ", "交期": "Lead Time", "产地": "Origin",
-      "产品参数": "Product Specifications", "装箱数": "Qty / Carton (PCS/CTN)", "箱子毛重": "Carton Gross Weight (G.W.)",
-      "箱子净重": "Carton Net Weight (N.W.)", "箱子尺寸": "Carton Dimensions (MEAS)",
+      "产品参数": "Product Specifications", "每箱多少个": "Qty / Carton (PCS/CTN)", "箱子毛净重": "Carton G.W. / N.W.",
+      "箱子尺寸": "Carton Dimensions (MEAS)", "箱子立方数": "Carton Volume (CBM)",
+      "装箱数": "Qty / Carton (PCS/CTN)", "箱子毛重": "Carton Gross Weight (G.W.)", "箱子净重": "Carton Net Weight (N.W.)",
       "独特卖点": "Unique Selling Points", "独特故事": "Exclusive Product Story"
     },
   },
@@ -2656,12 +2657,12 @@ async function ocrImg(imgAsset) {
 }
 
 /* ================= 核心必填字段区 + 次要可选字段区 ================= */
-const CARTON_FIELDS = ["装箱数", "箱子毛重", "箱子净重", "箱子尺寸"];
+const CARTON_FIELDS = ["每箱多少个", "箱子毛净重", "箱子尺寸", "箱子立方数"];
 const DEF_COMMON = [
   { n: "商品标题", c: true, v: "" },
   { n: "型号", c: true, v: "" },
-  { n: "装箱数", c: true, v: "" }, { n: "箱子毛重", c: true, v: "" },
-  { n: "箱子净重", c: true, v: "" }, { n: "箱子尺寸", c: true, v: "" },
+  { n: "每箱多少个", c: true, v: "" }, { n: "箱子毛净重", c: true, v: "" },
+  { n: "箱子尺寸", c: true, v: "" }, { n: "箱子立方数", c: true, v: "" },
   { n: "交期", c: true, v: "" }, { n: "起订量", c: true, v: "现货500，定制颜色1000" },
   { n: "材质", c: true, v: "" }, { n: "产地", c: true, v: "永康市，浙江省，中国" },
   { n: "品牌", c: true, v: "" },
@@ -2688,31 +2689,18 @@ const DEF_SECONDARY = [
   { n: "价格区间", group: "trade", b2b: false, b2c: false, rec: false, c: false, aliases: ["价格区间", "价格段", "price range"] },
   { n: "加印LOGO", group: "trade", b2b: true, b2c: false, rec: true, c: true, aliases: ["加印logo", "印logo", "定制logo", "print logo"] },
   { n: "是否支持定制", group: "trade", b2b: true, b2c: false, rec: true, c: true, aliases: ["是否支持定制", "加工定制", "支持定制", "does it support customization?", "customization"] },
-  { n: "主要下游平台", group: "trade", b2b: false, b2c: false, rec: false, c: false, aliases: ["主要下游平台", "下游平台", "main downstream platforms"] },
   { n: "主要销售地区", group: "trade", b2b: true, b2c: false, rec: true, c: true, aliases: ["主要销售地区", "销售地区", "main sales regions"] },
   { n: "产品上市时间", group: "trade", b2b: false, b2c: true, rec: false, c: false, aliases: ["产品上市时间", "上市时间", "上市年份季节", "product launch time"] },
   { n: "专利类型", group: "trade", b2b: true, b2c: false, rec: true, c: true, aliases: ["专利类型", "是否有专利", "专利", "专利号", "is there a patent?", "patent"] },
   { n: "版权", group: "trade", b2b: true, b2c: false, rec: true, c: true, aliases: ["版权", "著作权", "copyright"] },
   { n: "送礼用途", group: "trade", b2b: false, b2c: true, rec: false, c: false, aliases: ["送礼用途", "适用送礼场合", "适用送礼关系", "gift giving purpose", "suitable for gift-giving occasions", "applicable to gift-giving relationships"] },
   { n: "是否跨境出口专供货源", group: "trade", b2b: true, b2c: false, rec: true, c: true, aliases: ["是否跨境出口专供货源", "跨境专供", "跨境出口专供"] },
-  { n: "是否进口", group: "trade", b2b: false, b2c: false, rec: false, c: false, aliases: ["是否进口", "进口"] },
-  { n: "是否一次性", group: "trade", b2b: false, b2c: false, rec: false, c: false, aliases: ["是否一次性", "一次性"] },
   { n: "是否量贩装", group: "trade", b2b: false, b2c: true, rec: false, c: false, aliases: ["是否量贩装", "量贩装"] },
-  // C. 平台代发与店铺运营次要数据（默认不勾选，想要时可勾选）
-  { n: "24h揽收率", group: "platform", b2b: false, b2c: false, rec: false, c: false, aliases: ["24h揽收率", "24小时揽收率", "24h collection rate"] },
-  { n: "48h揽收率", group: "platform", b2b: false, b2c: false, rec: false, c: false, aliases: ["48h揽收率", "48小时揽收率", "48h collection rate"] },
-  { n: "代发品质达标率", group: "platform", b2b: false, b2c: false, rec: false, c: false, aliases: ["代发品质达标率", "品质达标率"] },
-  { n: "近7天代发数量", group: "platform", b2b: false, b2c: false, rec: false, c: false, aliases: ["近7天代发数量", "近7天发货数", "7天代发数"] },
-  { n: "近30天代发数量", group: "platform", b2b: false, b2c: false, rec: false, c: false, aliases: ["近30天代发数量", "近30天发货数", "近30天成交", "number of shipments in the past 30 days"] },
-  { n: "下游铺货数", group: "platform", b2b: false, b2c: false, rec: false, c: false, aliases: ["下游铺货数", "铺货数"] },
-  { n: "铺货分销商数", group: "platform", b2b: false, b2c: false, rec: false, c: false, aliases: ["铺货分销商数", "分销商数", "代发分销商数"] },
-  { n: "商家代发热度", group: "platform", b2b: false, b2c: false, rec: false, c: false, aliases: ["商家代发热度", "代发热度", "口腔清洁护理代发商家榜", "代发商家榜", "榜单排名"] },
 ];
 
 const SECONDARY_GROUP_LABELS = {
-  basic: "📦 1. 常用产品次要参数（可要可不要 · 默认勾选）",
-  trade: "🚢 2. 外贸定制与资质参数（可要可不要 · 按需勾选）",
-  platform: "📊 3. 平台代发与店铺运营数据（如揽收率/铺货数/代发热度 · 默认不勾选，需要时可勾上）",
+  basic: "📦 1. 产品可选属性（独立站 / 店铺通用 · 搜不到不显示）",
+  trade: "🚢 2. B2B 独立站外贸定制与资质（按需勾选 · 搜不到不显示）",
 };
 
 const DEF_AI = [
@@ -2729,6 +2717,13 @@ async function loadFields(key, defNames, defChecked) {
   const defaults = defNames.map(d => typeof d === "string" ? ({ n: d, c: defChecked, v: "" }) : ({ ...d }));
   if (Array.isArray(o[key]) && o[key].length) {
     let arr = o[key].filter(f => f.n !== "货号");
+    if (key === "commonFields") {
+      arr = arr.filter(f => f.n !== "装箱数" && f.n !== "箱子毛重" && f.n !== "箱子净重");
+    }
+    if (key === "secondaryFields") {
+      const removedNames = new Set(["主要下游平台", "是否进口", "是否一次性", "24h揽收率", "48h揽收率", "代发品质达标率", "近7天代发数量", "近30天代发数量", "下游铺货数", "铺货分销商数", "商家代发热度"]);
+      arr = arr.filter(f => !removedNames.has(f.n));
+    }
     for (const d of defaults) if (!arr.some(f => f.n === d.n)) arr.push(d);
     if (key === "commonFields") {
       const defOrder = new Map(defaults.map((d, idx) => [d.n, idx]));
@@ -3404,10 +3399,10 @@ function renderStoryAngles(saved, mode) {
 /* ---- 字段值自动查找（覆盖中/英/俄/日/韩/西/葡/法/德常见电商参数名） ---- */
 const FIELD_ALIAS = {
   "型号": ["型号", "货号", "款号", "产品型号", "商品型号", "编码", "编号", "model", "model number", "item model number", "part number", "mpn", "sku", "артикул", "модель", "型番", "모델", "modelo", "modèle", "modell"],
-  "装箱数": ["装箱数量", "装箱数", "每箱数量", "箱装数量", "装箱规格", "一箱装", "装箱率", "整箱数量", "外箱数量", "件/箱", "只/箱", "个/箱", "支/箱", "卡/箱", "盒/箱", "套/箱", "pcs/ctn", "qty/ctn", "carton qty", "carton quantity", "quantity per carton", "packing quantity", "packing qty", "pkg qty", "units per carton", "кол-во в коробке", "штук в коробке", "入数", "カートン入数", "박스당 입수량", "입수량", "unidades por caja", "qtd/caixa", "qté/carton", "stück/karton"],
-  "箱子毛重": ["箱子毛重", "外箱毛重", "整箱毛重", "箱毛重", "毛重", "外箱重", "整箱重", "gross weight", "g.w.", "g.w", "gw", "carton gross weight", "вес брутто", "総重量", "총중량", "peso bruto", "poids brut", "bruttogewicht"],
-  "箱子净重": ["箱子净重", "外箱净重", "整箱净重", "箱净重", "净重", "net weight", "n.w.", "n.w", "nw", "carton net weight", "вес нетто", "純重量", "순중량", "peso neto", "peso líquido", "poids net", "nettogewicht"],
+  "每箱多少个": ["每箱多少个", "装箱数量", "装箱数", "每箱数量", "箱装数量", "装箱规格", "一箱装", "装箱率", "整箱数量", "外箱数量", "件/箱", "只/箱", "个/箱", "支/箱", "卡/箱", "盒/箱", "套/箱", "pcs/ctn", "qty/ctn", "carton qty", "carton quantity", "quantity per carton", "packing quantity", "packing qty", "pkg qty", "units per carton", "кол-во в коробке", "штук в коробке", "入数", "カートン入数", "박스당 입수량", "입수량", "unidades por caja", "qtd/caixa", "qté/carton", "stück/karton"],
+  "箱子毛净重": ["箱子毛净重", "毛净重", "外箱毛净重", "箱子毛重", "外箱毛重", "整箱毛重", "毛重", "箱子净重", "外箱净重", "整箱净重", "净重", "gross weight", "net weight", "g.w./n.w.", "g.w.", "n.w.", "carton gross weight", "carton net weight"],
   "箱子尺寸": ["箱子尺寸", "外箱尺寸", "箱规尺寸", "纸箱尺寸", "包装尺寸", "外箱规格", "纸箱规格", "箱规", "carton size", "carton dimensions", "package dimensions", "master carton dimensions", "meas", "measurement", "ctn size", "габариты короба", "размер коробки", "外箱サイズ", "カートンサイズ", "박스 크기", "카톤 사이즈", "dimensiones de la caja", "medidas da caixa", "dimensions du carton", "kartonabmessungen", "umkartonmaß"],
+  "箱子立方数": ["箱子立方数", "外箱体积", "箱子体积", "外箱立方数", "整箱体积", "体积", "立方数", "cbm", "carton volume", "volume/ctn", "m3", "m³"],
   "交期": ["交期", "交货期", "货期", "发货时间", "发货期限", "最晚发货时间", "lead time", "delivery time", "срок поставки", "納期", "납기"],
   "起订量": ["起订量", "起批量", "最低起订", "最小起订量", "moq", "minimum order quantity", "min. order", "минимальный заказ", "最小注文数", "최소주문수량"],
   "材质": ["材质", "材料", "面料", "主材质", "内胆材质", "外壳材质", "外壳材料", "材质成分", "刷毛材质", "刷柄材质", "material", "fabric", "material type", "материал", "素材", "材質", "재질", "소재", "matériau", "matière", "werkstoff"],
@@ -4554,9 +4549,9 @@ async function aiCartonLookup(field, data, sourceUrl, ocrText, cache) {
       const messages = [
         { role: "system", content: [
           "你是 AGNES 外贸跟单箱规核验专家，负责查出并核准这个商品的【出口外箱规格（Master Carton Specs）】。",
-          "需要核准的四项：装箱数（每整箱装多少件/支/卡，如 240支/箱、120卡/箱、48个/箱，严禁把内盒/单卡零售包装数量2或4当成外箱装箱数！）、箱子毛重（如 9.6kg）、箱子净重（如 8.4kg）、箱子尺寸（长×宽×高，如 48×36×32cm）。",
+          "需要核准的四项：每箱多少个（如 240支/箱、48个/箱，严禁把内盒/单卡零售包装数量2或4当成外箱数量！）、箱子毛净重（如 毛重 9.6kg / 净重 8.4kg）、箱子尺寸（长×宽×高，如 48×36×32cm）、箱子立方数（如 0.0553 m³）。",
           "请结合商品信息、图片OCR文字以及我提供的全网检索摘要进行核验；若摘要中仍有缺失，可使用 SEARCH: 和 OPEN: 工具继续搜索同品类标准外箱规格。",
-          "最终答案只输出一行 JSON，键固定为：装箱数、箱子毛重、箱子净重、箱子尺寸、来源网址。",
+          "最终答案只输出一行 JSON，键固定为：每箱多少个、箱子毛净重、箱子尺寸、箱子立方数、来源网址。",
         ].join("\n") },
         { role: "user", content: `商品标题：${title}\n来源网址：${sourceUrl}\n商品参数：\n${attrs}\n图片识别文字：\n${String(ocrText || "").slice(0, 1000)}\nAGNES 全网预检索同品类箱规参考：\n${webSnippetsForAi.slice(0, 8).join("\n") || "暂无直接摘要，请使用 SEARCH: 搜索同品类外箱规格"}\n\n请核验并输出完整的外箱规格 JSON（注意：装箱数必须是外贸整箱数量并带单位如“${catProfile.defaultQty}”，毛重必须大于净重）。` },
       ];
@@ -4575,7 +4570,7 @@ async function aiCartonLookup(field, data, sourceUrl, ocrText, cache) {
           let hitAny = false;
           for (const f of CARTON_FIELDS) {
             let v = String(j[f] || "").replace(/\s+/g, " ").trim();
-            if (f === "装箱数" && v) {
+            if (f === "每箱多少个" && v) {
               const qn = parseInt((v.match(/\d+/) || ["0"])[0], 10);
               if (qn < catProfile.minValidQty) continue; // 拦截把零售内包装(如2支/4支)误当整箱数的结果
               v = _normalizeCartonQty(v, title, data.attrs);
@@ -4601,42 +4596,30 @@ async function aiCartonLookup(field, data, sourceUrl, ocrText, cache) {
         return out;
       }
 
-      // 3) 物理合理性交叉核验与缺失项补全（确保装箱数、箱子毛重、箱子净重、箱子尺寸四项严丝合缝，绝不出现“装箱数4、毛重3.2kg”这种内盒乌龙）
+      // 3) 物理合理性交叉核验与缺失项补全（确保每箱多少个、箱子毛净重、箱子尺寸、箱子立方数四项严丝合缝）
       if (totalSearchHits > 0 || Object.keys(out).some(k => CARTON_FIELDS.includes(k))) {
-        if (out["装箱数"]) {
-          const qn = parseInt((out["装箱数"].match(/\d+/) || ["0"])[0], 10);
+        if (out["每箱多少个"]) {
+          const qn = parseInt((out["每箱多少个"].match(/\d+/) || ["0"])[0], 10);
           if (qn < catProfile.minValidQty) {
-            out["装箱数"] = catProfile.defaultQty;
+            out["每箱多少个"] = catProfile.defaultQty;
           } else {
-            out["装箱数"] = _normalizeCartonQty(out["装箱数"], title, data.attrs);
+            out["每箱多少个"] = _normalizeCartonQty(out["每箱多少个"], title, data.attrs);
           }
         } else {
-          out["装箱数"] = catProfile.defaultQty;
+          out["每箱多少个"] = catProfile.defaultQty;
         }
 
-        const qtyNum = parseInt((out["装箱数"].match(/\d+/) || [String(catProfile.defaultQtyNum)])[0], 10) || catProfile.defaultQtyNum;
+        const qtyNum = parseInt((out["每箱多少个"].match(/\d+/) || [String(catProfile.defaultQtyNum)])[0], 10) || catProfile.defaultQtyNum;
         if (!out["箱子尺寸"]) {
           out["箱子尺寸"] = catProfile.defaultSize;
         }
-
-        if (out["箱子毛重"] && !out["箱子净重"]) {
-          const gw = parseFloat((out["箱子毛重"].match(/\d+(?:\.\d+)?/) || ["10"])[0]);
-          out["箱子净重"] = `${Math.max(1, Number((gw * 0.89).toFixed(1)))}kg`;
-        } else if (out["箱子净重"] && !out["箱子毛重"]) {
-          const nw = parseFloat((out["箱子净重"].match(/\d+(?:\.\d+)?/) || ["9"])[0]);
-          out["箱子毛重"] = `${Number((nw + Math.max(1.0, nw * 0.11)).toFixed(1))}kg`;
-        } else if (!out["箱子毛重"] && !out["箱子净重"]) {
+        if (!out["箱子立方数"] && out["箱子尺寸"]) {
+          out["箱子立方数"] = _calcCbmFromDim(out["箱子尺寸"]);
+        }
+        if (!out["箱子毛净重"]) {
           const nw = Math.max(3.5, Number((qtyNum * catProfile.unitKg).toFixed(1)));
           const gw = Number((nw + catProfile.tareKg).toFixed(1));
-          out["箱子净重"] = `${nw}kg`;
-          out["箱子毛重"] = `${gw}kg`;
-        } else {
-          // 若毛重与净重都存在，校验毛重是否大于净重
-          const gw = parseFloat((out["箱子毛重"].match(/\d+(?:\.\d+)?/) || ["0"])[0]);
-          const nw = parseFloat((out["箱子净重"].match(/\d+(?:\.\d+)?/) || ["0"])[0]);
-          if (gw > 0 && nw > 0 && gw <= nw) {
-            out["箱子毛重"] = `${Number((nw + catProfile.tareKg).toFixed(1))}kg`;
-          }
+          out["箱子毛净重"] = `毛重 ${gw}kg / 净重 ${nw}kg`;
         }
       }
       return out;
@@ -4676,18 +4659,22 @@ function validCartonValue(name, value) {
   if (!text || /未查到|未提供|不详|未知|暂无|待定|不适用|咨询/i.test(text)) return false;
   const nums = text.match(/\d+(?:\.\d+)?/g) || [];
   if (name === "箱子尺寸") return nums.length >= 3 && nums.slice(0, 3).every(n => Number(n) >= 5 && Number(n) <= 250);
-  if (name === "装箱数") {
+  if (name === "箱子立方数") {
+    if (!nums.length) return false;
+    const n = Number(nums[0]);
+    return n > 0.0005 && n <= 5.0;
+  }
+  if (name === "每箱多少个" || name === "装箱数") {
     if (!nums.length) return false;
     const n = Number(nums[0]);
     if (n <= 0 || n > 5000) return false;
     // 剔除明显是零售内盒/单卡包装的表达（如“2支/卡”、“4支/盒”、“2个/包”）
     if (/[/／每]\s*(?:卡|盒|包|袋|板|组|排|blister|pack|bag)$/i.test(text)) return false;
     const hasCartonUnit = /[/／每]\s*(?:箱|外箱|整箱|件|ctn|carton|case|кор)|(?:箱装|整箱|外箱)/i.test(text);
-    // 无“/箱”后缀且数字小于6（如“包装数量: 4”、“2支装”）绝不当作外贸整箱装箱数
     if (!hasCartonUnit && n < 6) return false;
     return /^\d+\s*(?:个|件|只|套|支|卡|包|盒|双|条|张|本|把|台|pcs|sets?|pairs?|units?|bags?|boxes?|cards?|шт|本|세트|uds|unidades|pièces|sätze)?(?:\s*[/／每]\s*(?:箱|外箱|整箱|件|ctn|carton|box|case|кор))?(?:\s*[（(][^）)]*[）)])?$/i.test(text);
   }
-  if (name === "箱子毛重" || name === "箱子净重") {
+  if (name === "箱子毛净重" || name === "箱子毛重" || name === "箱子净重") {
     if (!nums.length) return false;
     const n = Number(nums[0]);
     if (/(?:^|\d)\s*(?:g|克)$/i.test(text) && !/kg|千克|公斤/i.test(text) && n < 2000) return false;
@@ -4695,6 +4682,18 @@ function validCartonValue(name, value) {
     return n >= 0.5 && n < 1000;
   }
   return nums.length > 0 && Number(nums[0]) > 0 && Number(nums[0]) < 5000;
+}
+
+function _calcCbmFromDim(dimStr) {
+  const nums = String(dimStr || "").match(/\d+(?:\.\d+)?/g) || [];
+  if (nums.length < 3) return "";
+  const [l, w, h] = nums.slice(0, 3).map(Number);
+  if (!(l > 0 && w > 0 && h > 0)) return "";
+  const isMm = /mm|毫米/i.test(String(dimStr || ""));
+  const div = isMm ? 1e9 : 1e6;
+  const cbm = (l * w * h) / div;
+  if (cbm <= 0.0005 || cbm > 5.0) return "";
+  return `${Number(cbm.toFixed(4))} m³`;
 }
 
 function _normalizeCartonDim(rawDim) {
@@ -4751,7 +4750,7 @@ function extractCartonValue(name, attrs, text) {
     return "";
   }
 
-  if (name === "装箱数") {
+  if (name === "每箱多少个" || name === "装箱数") {
     const qtyValPattern = "([0-9]{1,4}\\s*(?:个|件|只|套|支|卡|包|盒|双|条|本|把|台|pcs|sets?|pairs?|units?|cards?|шт|세트|uds|unidades|pièces|sätze)?(?:\\s*[/／每]\\s*(?:箱|外箱|整箱|件|ctn|carton|box))?)";
     for (const key of keys) {
       const re = new RegExp(escRe(key) + "(?:\\s*\\([^)]*\\)|\\s*（[^）]*）|[约为是大概\\s:：~≈]){0,6}" + qtyValPattern, "i");
@@ -4777,7 +4776,24 @@ function extractCartonValue(name, attrs, text) {
     return "";
   }
 
-  // 箱子毛重 / 箱子净重
+  if (name === "箱子立方数") {
+    const cbmRe = /(?:箱子立方数|外箱体积|箱子体积|立方数|体积|cbm|carton\s*volume|volume)\s*[:：约=]?\s*(\d+(?:\.\d+)?)\s*(?:m³|m3|cbm|立方|方)?/i;
+    const mCbm = fullText.match(cbmRe);
+    if (mCbm && validCartonValue("箱子立方数", mCbm[1])) return `${Number(mCbm[1])} m³`;
+    const dim = extractCartonValue("箱子尺寸", attrs, fullText);
+    if (dim) return _calcCbmFromDim(dim);
+    return "";
+  }
+
+  // 箱子毛净重 / 箱子毛重 / 箱子净重
+  if (name === "箱子毛净重") {
+    const gw = extractCartonValue("箱子毛重", attrs, fullText);
+    const nw = extractCartonValue("箱子净重", attrs, fullText);
+    if (gw && nw) return `毛重 ${gw} / 净重 ${nw}`;
+    if (gw) return `毛重 ${gw}`;
+    if (nw) return `净重 ${nw}`;
+    return "";
+  }
   const cmText = fullText.match(combinedRe);
   if (cmText) {
     const unit = (cmText[3] || "kg").toLowerCase();
@@ -4998,7 +5014,7 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
     if (isCarton) {
       const raw = extractCartonValue(field, attrs, text);
       if (!raw) return "";
-      if (field === "装箱数") {
+      if (field === "每箱多少个" || field === "装箱数") {
         const qn = parseInt((raw.match(/\d+/) || ["0"])[0], 10);
         const explicitCtn = /[/／每]\s*(?:箱|外箱|整箱|ctn|carton)/i.test(raw);
         if (catProfile && qn < catProfile.minValidQty && !explicitCtn) return "";
@@ -5637,13 +5653,18 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
             builtMissingRequired.push(f.n);
           }
           if (isCarton) {
-            // 箱规若最终采集不到，则值为空（不填“未查到”）
+            // 箱子立方数若未直接提取到，自动按已提取的箱子尺寸换算
+            if (f.n === "箱子立方数" && !v) {
+              const dimRow = builtCommonOut.find(x => x[0] === formatFieldDisplayName("箱子尺寸"));
+              if (dimRow && dimRow[1]) v = _calcCbmFromDim(dimRow[1]);
+            }
+            // 常用参数尽量不留空，实在搜不到则留空
             const finalVal = v ? translateCommonValue(v, outLang) : "";
             await pushFieldLine(formatFieldDisplayName(f.n), finalVal, builtCommonOut, srcStage, f.n, true);
           } else {
-            const fallbackEmpty = "未查到";
-            const finalVal = translateCommonValue(v || fallbackEmpty, outLang);
-            await pushFieldLine(formatFieldDisplayName(f.n), finalVal, builtCommonOut, srcStage, f.n);
+            // 常用参数尽量不留空，实在搜不到则留空（不再输出“未查到”）
+            const finalVal = v ? translateCommonValue(v, outLang) : "";
+            await pushFieldLine(formatFieldDisplayName(f.n), finalVal, builtCommonOut, srcStage, f.n, true);
           }
         }
 
