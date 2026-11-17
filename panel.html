@@ -992,14 +992,29 @@
     </button>
   </div>
 
-  <!-- ==================== Tab 1：商品页面勾选字段（严格按附件保留） ==================== -->
+  <!-- ==================== Tab 1：商品页面勾选字段（B2B/B2C 分离 + 3套常用参数模板 + 双击互转） ==================== -->
   <div id="tabPaneEcom">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;padding:8px 10px;border-radius:9px;background:#f8f5ff;border:1px solid #dfd3f3">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <strong style="font-size:12.5px;color:#4a3563">🎯 业务模式：</strong>
+        <button type="button" id="btnSecPresetB2B" style="padding:4px 11px;font-size:11.5px;background:#3730a3;color:#fff;border-color:#3730a3;font-weight:700">🏭 B2B 独立站模式（外贸/批发）</button>
+        <button type="button" id="btnSecPresetB2C" style="padding:4px 11px;font-size:11.5px;background:#fdf2f8;color:#be185d;border-color:#fbcfe8;font-weight:700">🛍️ B2C 独立站/店铺模式（零售/种草）</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+        <strong style="font-size:12px;color:#4a3563">📋 常用参数模板：</strong>
+        <button type="button" id="btnCommonTpl1" class="common-tpl-btn" data-tpl="1" style="padding:3px 9px;font-size:11.5px;font-weight:700">🎒 模板1：箱包/日用（尺寸）</button>
+        <button type="button" id="btnCommonTpl2" class="common-tpl-btn" data-tpl="2" style="padding:3px 9px;font-size:11.5px;font-weight:700">🥤 模板2：杯壶/容器（容量）</button>
+        <button type="button" id="btnCommonTpl3" class="common-tpl-btn" data-tpl="3" style="padding:3px 9px;font-size:11.5px;font-weight:700">⚙️ 模板3：设备/机械（详细规格）</button>
+      </div>
+    </div>
+    <div id="secPresetActiveHint" style="font-size:11.5px;color:#4a3563;background:#f5f0ff;border:1px solid #e4d8f8;border-radius:7px;padding:5px 10px;margin-bottom:8px;line-height:1.5">💡 B2B 与 B2C 常用/可选参数已独立分开；常用参数搜不到则留空，可选参数搜不到则不显示。支持<strong>双击参数卡片</strong>在「常用参数」与「可选参数」之间快速互转！</div>
+
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;padding:6px 10px;border-radius:8px;background:#f5f0ff;border:1px solid #dfd3f3">
       <div>
-        <strong style="font-size:13px;color:#4a3563">🌟 一、最重要核心字段（必填 / 默认必选）</strong>
-        <small style="color:var(--muted);margin-left:6px">带 <span style="color:#b04465;font-weight:700">*</span> 为核心必填项，其余核心重要字段可自由勾选或填写默认值</small>
+        <strong style="font-size:13px;color:#4a3563">🌟 一、常用参数（尽力搜全，实在搜不到则留空）</strong>
+        <small style="color:var(--muted);margin-left:6px">带 <span style="color:#b04465;font-weight:700">*</span> 为核心必采项；<strong>双击</strong>非必采常用参数可移至下方「可选参数」</small>
       </div>
-      <button type="button" id="addCommon" style="padding:4px 12px;font-size:12px">＋ 增加自定义核心字段</button>
+      <button type="button" id="addCommon" style="padding:4px 12px;font-size:12px">＋ 增加自定义常用参数</button>
     </div>
     <div id="commonFields"></div>
 
@@ -1007,17 +1022,14 @@
     <div id="secondaryFieldsSection" style="margin-top:12px;padding:10px 12px;border-radius:10px;background:#fcfbfe;border:1px solid var(--line)">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
         <div>
-          <strong style="font-size:13px;color:#4a3563">🧩 二、次要可选字段（可要可不要 · 勾选才写入商品资料.txt）</strong>
-          <small style="color:var(--muted);margin-left:6px">已为您筛出次要字段，需要哪项勾哪项，不勾选的次要字段绝不混入商品资料</small>
+          <strong style="font-size:13px;color:#4a3563">🧩 二、可选参数（按需勾选 · 搜不到不显示）</strong>
+          <small style="color:var(--muted);margin-left:6px"><strong>双击</strong>任意可选参数可直接升为上方「常用参数」</small>
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <button type="button" id="btnSecPresetB2B" style="padding:4px 11px;font-size:11.5px;background:#3730a3;color:#fff;border-color:#3730a3;font-weight:700">🏭 B2B 独立站可选参数（外贸/批发）</button>
-          <button type="button" id="btnSecPresetB2C" style="padding:4px 11px;font-size:11.5px;background:#fdf2f8;color:#be185d;border-color:#fbcfe8;font-weight:700">🛍️ B2C 独立站/店铺可选参数（零售/种草）</button>
           <button type="button" id="btnSecSelectAll" style="padding:4px 10px;font-size:11.5px">☑️ 全选可选参数</button>
           <button type="button" id="btnSecClearAll" style="padding:4px 10px;font-size:11.5px;color:#b04465;border-color:#f3c6d3">☐ 全不选可选（只留常用参数）</button>
         </div>
       </div>
-      <div id="secPresetActiveHint" style="font-size:11.5px;color:#4a3563;background:#f5f0ff;border:1px solid #e4d8f8;border-radius:7px;padding:5px 10px;margin-bottom:8px;line-height:1.5">💡 当前推荐模式：可一键切换【🏭 B2B 独立站可选参数】（聚焦规格、尺寸、单重、容量、包装、加印LOGO、定制、专利、出口资质）或【🛍️ B2C 独立站/店铺可选参数】（聚焦规格、颜色、尺寸、重量、容量、功能、适用人群、风格、送礼场景）；可选参数搜不到时不显示。</div>
       <div id="secondaryFieldsBox"></div>
       <div id="dynamicSecondaryFieldsWrap" style="display:none;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)">
         <div style="font-size:12px;font-weight:700;color:#5c4379;margin-bottom:6px">🔎 当前网页额外识别到的其他次要字段（可按需勾选）：</div>

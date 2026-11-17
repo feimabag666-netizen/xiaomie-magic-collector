@@ -2656,37 +2656,75 @@ async function ocrImg(imgAsset) {
   }
 }
 
-/* ================= 核心必填字段区 + 次要可选字段区 ================= */
+/* ================= 常用参数（B2B / B2C 独立 + 3套品类模板） + 可选参数（1688 实用对照 + 双击互转） ================= */
 const CARTON_FIELDS = ["每箱多少个", "箱子毛净重", "箱子尺寸", "箱子立方数"];
-const DEF_COMMON = [
-  { n: "商品标题", c: true, v: "" },
-  { n: "型号", c: true, v: "" },
-  { n: "每箱多少个", c: true, v: "" }, { n: "箱子毛净重", c: true, v: "" },
-  { n: "箱子尺寸", c: true, v: "" }, { n: "箱子立方数", c: true, v: "" },
-  { n: "交期", c: true, v: "" }, { n: "起订量", c: true, v: "现货500，定制颜色1000" },
-  { n: "材质", c: true, v: "" }, { n: "产地", c: true, v: "永康市，浙江省，中国" },
-  { n: "品牌", c: true, v: "" },
-  { n: "产品参数", c: true, v: "" },
-];
+const COMMON_TEMPLATE_PRESETS = {
+  "1": { label: "模板1：箱包/日用（尺寸）", fields: ["产品尺寸", "单件重量", "功能", "产品类别"] },
+  "2": { label: "模板2：杯壶/容器（容量）", fields: ["容量", "产品尺寸", "单件重量", "功能"] },
+  "3": { label: "模板3：设备/机械（详细规格）", fields: ["详细规格", "功率", "电压", "产品尺寸"] },
+};
+let activeBizMode = "b2b";
+let activeCommonTpl = "1";
 
-// 次要可选字段（可要可不要，全部带独立勾选框：区分 b2b 重中之重 与 b2c 重中之重，支持一键切换预设）
+function buildDefaultCommonFields(mode = "b2b", tpl = "1") {
+  const isB2C = mode === "b2c";
+  const baseBefore = isB2C
+    ? [
+        { n: "商品标题", c: true, v: "" },
+        { n: "型号", c: true, v: "" },
+        { n: "颜色", c: true, v: "" },
+        { n: "包装方式", c: true, v: "" },
+        { n: "价格", c: true, v: "" },
+        { n: "材质", c: true, v: "" },
+        { n: "品牌", c: true, v: "" },
+      ]
+    : [
+        { n: "商品标题", c: true, v: "" },
+        { n: "型号", c: true, v: "" },
+        { n: "每箱多少个", c: true, v: "" },
+        { n: "箱子毛净重", c: true, v: "" },
+        { n: "箱子尺寸", c: true, v: "" },
+        { n: "箱子立方数", c: true, v: "" },
+        { n: "颜色", c: true, v: "" },
+        { n: "包装方式", c: true, v: "" },
+        { n: "交期", c: true, v: "" },
+        { n: "起订量", c: true, v: "现货500，定制颜色1000" },
+        { n: "材质", c: true, v: "" },
+        { n: "产地", c: true, v: "永康市，浙江省，中国" },
+        { n: "品牌", c: true, v: "" },
+      ];
+  const tplList = (COMMON_TEMPLATE_PRESETS[String(tpl)] || COMMON_TEMPLATE_PRESETS["1"]).fields;
+  const seen = new Set(baseBefore.map(x => x.n));
+  for (const fn of tplList) {
+    if (!seen.has(fn)) {
+      baseBefore.push({ n: fn, c: true, v: "" });
+      seen.add(fn);
+    }
+  }
+  baseBefore.push({ n: "产品参数", c: true, v: "" });
+  return baseBefore;
+}
+
+const DEF_COMMON = buildDefaultCommonFields("b2b", "1");
+
+// 可选参数（参照 1688 页面参数种类，去掉与箱规重复的“包装规格”与无关项；双击可升为常用参数）
 const DEF_SECONDARY = [
-  // A. 常用商品次要属性
-  { n: "规格", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["规格", "款式", "型号规格", "规格型号", "variants", "options", "specifications"] },
+  // A. 1688 产品实用属性
+  { n: "详细规格", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["详细规格", "规格", "款式", "型号规格", "规格型号", "技术参数", "variants", "options", "specifications"] },
   { n: "颜色", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["颜色", "颜色分类", "花色", "色号", "配色", "color", "colour"] },
+  { n: "包装方式", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["包装方式", "包装", "包装类型", "package", "packaging"] },
   { n: "产品尺寸", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["产品尺寸", "尺寸", "单品尺寸", "外形尺寸", "规格尺寸", "size", "dimensions", "product dimensions", "item dimensions"] },
   { n: "单件重量", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["单件重量", "重量", "产品重量", "单品重量", "克重", "单重", "weight", "unit weight", "item weight"] },
   { n: "容量", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["容量", "容积", "capacity", "volume"] },
+  { n: "功率", group: "basic", b2b: true, b2c: true, rec: false, c: false, aliases: ["功率", "额定功率", "power", "wattage"] },
+  { n: "电压", group: "basic", b2b: true, b2c: true, rec: false, c: false, aliases: ["电压", "额定电压", "voltage"] },
   { n: "功能", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["功能", "产品功能", "特点", "function", "feature", "special feature"] },
-  { n: "包装方式", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["包装方式", "包装", "包装类型", "package", "packaging"] },
-  { n: "包装规格", group: "basic", b2b: true, b2c: false, rec: true, c: true, aliases: ["包装规格", "装数", "packaging specifications"] },
   { n: "适用人群", group: "basic", b2b: false, b2c: true, rec: true, c: false, aliases: ["适用人群", "人群", "适用对象", "target audience"] },
   { n: "产品类别", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["产品类别", "类别", "品类", "产品分类", "product category", "category"] },
   { n: "单位", group: "basic", b2b: true, b2c: false, rec: true, c: true, aliases: ["单位", "计价单位", "计量单位", "unit"] },
   { n: "风格", group: "basic", b2b: false, b2c: true, rec: true, c: false, aliases: ["风格", "款式风格", "设计风格", "style"] },
-  // B. 外贸定制与资质次要属性
+  // B. 价格、外贸定制与资质属性
   { n: "价格", group: "trade", b2b: false, b2c: true, rec: false, c: false, aliases: ["价格", "单价", "批发价", "参考价", "price"] },
-  { n: "价格区间", group: "trade", b2b: false, b2c: false, rec: false, c: false, aliases: ["价格区间", "价格段", "price range"] },
   { n: "加印LOGO", group: "trade", b2b: true, b2c: false, rec: true, c: true, aliases: ["加印logo", "印logo", "定制logo", "print logo"] },
   { n: "是否支持定制", group: "trade", b2b: true, b2c: false, rec: true, c: true, aliases: ["是否支持定制", "加工定制", "支持定制", "does it support customization?", "customization"] },
   { n: "主要销售地区", group: "trade", b2b: true, b2c: false, rec: true, c: true, aliases: ["主要销售地区", "销售地区", "main sales regions"] },
@@ -2696,11 +2734,18 @@ const DEF_SECONDARY = [
   { n: "送礼用途", group: "trade", b2b: false, b2c: true, rec: false, c: false, aliases: ["送礼用途", "适用送礼场合", "适用送礼关系", "gift giving purpose", "suitable for gift-giving occasions", "applicable to gift-giving relationships"] },
   { n: "是否跨境出口专供货源", group: "trade", b2b: true, b2c: false, rec: true, c: true, aliases: ["是否跨境出口专供货源", "跨境专供", "跨境出口专供"] },
   { n: "是否量贩装", group: "trade", b2b: false, b2c: true, rec: false, c: false, aliases: ["是否量贩装", "量贩装"] },
+  { n: "交期", group: "trade", b2b: true, b2c: false, rec: true, c: false, aliases: ["交期", "交货期", "货期", "lead time"] },
+  { n: "起订量", group: "trade", b2b: true, b2c: false, rec: true, c: false, aliases: ["起订量", "最小起订量", "moq"] },
+  { n: "产地", group: "trade", b2b: true, b2c: false, rec: true, c: false, aliases: ["产地", "生产地", "origin"] },
+  { n: "每箱多少个", group: "trade", b2b: true, b2c: false, rec: false, c: false, aliases: ["每箱多少个", "装箱数", "pcs/ctn"] },
+  { n: "箱子毛净重", group: "trade", b2b: true, b2c: false, rec: false, c: false, aliases: ["箱子毛净重", "毛净重"] },
+  { n: "箱子尺寸", group: "trade", b2b: true, b2c: false, rec: false, c: false, aliases: ["箱子尺寸", "外箱尺寸"] },
+  { n: "箱子立方数", group: "trade", b2b: true, b2c: false, rec: false, c: false, aliases: ["箱子立方数", "cbm"] },
 ];
 
 const SECONDARY_GROUP_LABELS = {
-  basic: "📦 1. 产品可选属性（独立站 / 店铺通用 · 搜不到不显示）",
-  trade: "🚢 2. B2B 独立站外贸定制与资质（按需勾选 · 搜不到不显示）",
+  basic: "📦 1. 产品可选属性（双击可升为常用参数 · 搜不到不显示）",
+  trade: "🚢 2. 价格、外贸定制与物流可选属性（双击可升为常用参数 · 搜不到不显示）",
 };
 
 const DEF_AI = [
@@ -2721,8 +2766,8 @@ async function loadFields(key, defNames, defChecked) {
       arr = arr.filter(f => f.n !== "装箱数" && f.n !== "箱子毛重" && f.n !== "箱子净重");
     }
     if (key === "secondaryFields") {
-      const removedNames = new Set(["主要下游平台", "是否进口", "是否一次性", "24h揽收率", "48h揽收率", "代发品质达标率", "近7天代发数量", "近30天代发数量", "下游铺货数", "铺货分销商数", "商家代发热度"]);
-      arr = arr.filter(f => !removedNames.has(f.n));
+      const removedNames = new Set(["包装规格", "价格区间", "主要下游平台", "是否进口", "是否一次性", "24h揽收率", "48h揽收率", "代发品质达标率", "近7天代发数量", "近30天代发数量", "下游铺货数", "铺货分销商数", "商家代发热度"]);
+      arr = arr.map(f => (f.n === "规格" ? { ...f, n: "详细规格" } : f)).filter(f => !removedNames.has(f.n));
     }
     for (const d of defaults) if (!arr.some(f => f.n === d.n)) arr.push(d);
     if (key === "commonFields") {
@@ -2987,12 +3032,93 @@ function saveSecondaryFields() {
   return chrome.storage.local.set({ secondaryFields: compact });
 }
 
+function getProfileStorageKey(mode = activeBizMode, tpl = activeCommonTpl) {
+  const m = mode === "b2c" ? "b2c" : "b2b";
+  const t = ["1", "2", "3"].includes(String(tpl)) ? String(tpl) : "1";
+  return `fieldProfile_${m}_tpl${t}`;
+}
+
+async function saveActiveFieldProfile() {
+  const key = getProfileStorageKey(activeBizMode, activeCommonTpl);
+  const compactCommon = COMMON_FIELDS.map(f => ({ n: f.n, c: Boolean(f.c), v: String(f.v || "") }));
+  const compactSec = SECONDARY_FIELDS.map(f => ({ n: f.n, c: Boolean(f.c) }));
+  await chrome.storage.local.set({
+    [key]: { common: compactCommon, secondary: compactSec },
+    commonFields: compactCommon,
+    secondaryFields: compactSec,
+    secPresetMode: activeBizMode,
+    commonTplMode: activeCommonTpl,
+  });
+}
+
+async function loadActiveFieldProfile(mode = activeBizMode, tpl = activeCommonTpl) {
+  activeBizMode = mode === "b2c" ? "b2c" : "b2b";
+  activeCommonTpl = ["1", "2", "3"].includes(String(tpl)) ? String(tpl) : "1";
+  const key = getProfileStorageKey(activeBizMode, activeCommonTpl);
+  const stored = await chrome.storage.local.get(key);
+  const prof = stored?.[key];
+  if (prof && Array.isArray(prof.common) && prof.common.length) {
+    COMMON_FIELDS = prof.common
+      .filter(f => f && f.n && f.n !== "货号" && f.n !== "包装规格")
+      .map(f => ({ n: f.n === "规格" ? "详细规格" : f.n, c: Boolean(f.c), v: String(f.v || "") }));
+  } else {
+    COMMON_FIELDS = buildDefaultCommonFields(activeBizMode, activeCommonTpl);
+  }
+  const commonNames = new Set(COMMON_FIELDS.map(f => f.n));
+  const secSavedMap = new Map(
+    (Array.isArray(prof?.secondary) ? prof.secondary : []).map(x => [x.n === "规格" ? "详细规格" : x.n, Boolean(x.c)])
+  );
+  SECONDARY_FIELDS = DEF_SECONDARY.map(d => ({
+    ...d,
+    aliases: [...(d.aliases || [])],
+    c: secSavedMap.has(d.n)
+      ? secSavedMap.get(d.n)
+      : (activeBizMode === "b2b" ? Boolean(d.b2b) : Boolean(d.b2c)),
+  }));
+  // 确保常用参数中已有的自定义项若曾属于可选，不重复；并在保存一次
+  for (const sf of SECONDARY_FIELDS) {
+    if (commonNames.has(sf.n)) sf.c = false;
+  }
+  await saveActiveFieldProfile();
+}
+
+async function promoteOptionalToCommon(fieldName) {
+  const cleanName = String(fieldName || "").trim();
+  if (!cleanName) return;
+  if (!COMMON_FIELDS.some(f => f.n === cleanName)) {
+    const paramIdx = COMMON_FIELDS.findIndex(f => f.n === "产品参数");
+    const newItem = { n: cleanName, c: true, v: "" };
+    if (paramIdx >= 0) COMMON_FIELDS.splice(paramIdx, 0, newItem);
+    else COMMON_FIELDS.push(newItem);
+  }
+  await saveActiveFieldProfile();
+  renderAllFieldBoxes();
+}
+
+async function demoteCommonToOptional(fieldName) {
+  const cleanName = String(fieldName || "").trim();
+  if (!cleanName) return;
+  const locked = cleanName === "产品参数" || cleanName === "商品标题" || (activeBizMode === "b2b" && CARTON_FIELDS.includes(cleanName));
+  if (locked) return;
+  COMMON_FIELDS = COMMON_FIELDS.filter(f => f.n !== cleanName);
+  let sec = SECONDARY_FIELDS.find(f => f.n === cleanName);
+  if (!sec) {
+    sec = { n: cleanName, group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: FIELD_ALIAS[cleanName] || [cleanName] };
+    SECONDARY_FIELDS.push(sec);
+  } else {
+    sec.c = true;
+  }
+  await saveActiveFieldProfile();
+  renderAllFieldBoxes();
+}
+
 function renderSecondaryFields() {
   const box = $("secondaryFieldsBox");
   if (!box) return;
   box.innerHTML = "";
-  for (const grpKey of ["basic", "trade", "platform"]) {
-    const items = SECONDARY_FIELDS.filter(f => f.group === grpKey);
+  const commonSet = new Set(COMMON_FIELDS.map(f => f.n));
+  for (const grpKey of ["basic", "trade"]) {
+    const items = SECONDARY_FIELDS.filter(f => f.group === grpKey && !commonSet.has(f.n));
     if (!items.length) continue;
     const grpDiv = document.createElement("div");
     grpDiv.style.cssText = "margin-bottom:8px";
@@ -3004,17 +3130,22 @@ function renderSecondaryFields() {
     for (const f of items) {
       const lbl = document.createElement("label");
       lbl.style.cssText = `display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid ${f.c ? "#cbbbe0" : "#e9e3f2"};border-radius:7px;background:${f.c ? "#f6f1fd" : "#fff"};font-size:12px;font-weight:${f.c ? "700" : "500"};color:${f.c ? "#4a3563" : "#64748b"};cursor:pointer;margin:0;user-select:none`;
+      lbl.title = "双击直接升为「常用参数」";
+      lbl.ondblclick = (e) => {
+        e.preventDefault();
+        promoteOptionalToCommon(f.n);
+      };
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.checked = Boolean(f.c);
       cb.dataset.secField = f.n;
       cb.onchange = () => {
         f.c = cb.checked;
-        saveSecondaryFields();
+        saveActiveFieldProfile();
         renderSecondaryFields();
       };
       const span = document.createElement("span");
-      span.textContent = f.n;
+      span.textContent = f.n === "详细规格" ? "详细规格（设备类）" : f.n;
       lbl.append(cb, span);
       grid.appendChild(lbl);
     }
@@ -3094,14 +3225,26 @@ function renderFields(boxId, key, arr, isAi) {
   box.innerHTML = "";
   arr.forEach((f, i) => {
     const row = document.createElement("div");
-    row.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid #ede7f5;border-radius:8px;background:#fcfbfe";
+    const required = !isAi && (f.n === "产品参数" || f.n === "商品标题" || (activeBizMode === "b2b" && CARTON_FIELDS.includes(f.n)));
+    row.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid #ede7f5;border-radius:8px;background:#fcfbfe;user-select:none";
+    if (!isAi && !required) {
+      row.title = "双击移至「可选参数」";
+      row.ondblclick = (e) => {
+        if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "BUTTON")) return;
+        demoteCommonToOptional(f.n);
+      };
+    }
     const cb = document.createElement("input");
-    const required = !isAi && (f.n === "产品参数" || CARTON_FIELDS.includes(f.n));
     cb.type = "checkbox"; cb.checked = required || !!f.c;
     if (required) { f.c = true; cb.disabled = true; }
-    cb.onchange = () => { f.c = cb.checked; saveFields(key, AI_FIELDS.includes(f) ? AI_FIELDS : arr); };
+    cb.onchange = () => {
+      f.c = cb.checked;
+      if (isAi) saveFields(key, AI_FIELDS);
+      else saveActiveFieldProfile();
+    };
     const nm = document.createElement("span");
-    nm.innerText = f.n; nm.style.cssText = "min-width:86px;font-weight:700;font-size:12.5px;color:#4a3563";
+    nm.innerText = f.n === "详细规格" ? "详细规格（设备类）" : f.n;
+    nm.style.cssText = "min-width:96px;font-weight:700;font-size:12.5px;color:#4a3563;cursor:" + (!isAi && !required ? "pointer" : "default");
     if (required) {
       const star = document.createElement("span");
       star.textContent = " *";
@@ -3125,12 +3268,22 @@ function renderFields(boxId, key, arr, isAi) {
       inp.style.cssText = "flex:1;min-width:0;padding:5px 8px;font-size:12px";
       inp.placeholder = isAi ? "选填：补充具体要求" : (f.n === "商品标题" ? "留空自动提取网页标题（可填写改写商品标题）" : "留空自动提取");
       if (isAi) inp.maxLength = 100;
-      inp.onchange = () => { f.v = inp.value.slice(0, isAi ? 100 : 200); inp.value = f.v; saveFields(key, AI_FIELDS.includes(f) ? AI_FIELDS : arr); };
+      inp.onchange = () => {
+        f.v = inp.value.slice(0, isAi ? 100 : 200);
+        inp.value = f.v;
+        if (isAi) saveFields(key, AI_FIELDS);
+        else saveActiveFieldProfile();
+      };
     }
     const del = document.createElement("button");
     del.innerText = "✕"; del.title = "删除这个字段";
     del.style.cssText = "padding:2px 7px;font-size:11px";
-    del.onclick = () => { arr.splice(i, 1); saveFields(key, arr); renderFields(boxId, key, arr, isAi); };
+    del.onclick = () => {
+      arr.splice(i, 1);
+      if (isAi) saveFields(key, AI_FIELDS);
+      else saveActiveFieldProfile();
+      renderAllFieldBoxes();
+    };
     row.append(cb, nm, inp);
     if (!required && boxId !== "sellingPointFields" && boxId !== "storyFields") row.appendChild(del);
     box.appendChild(row);
@@ -3169,8 +3322,10 @@ async function getStoryDirection() {
   return { angles: angle, soul: $("soulLine")?.value?.trim() || s.soulLine || "用心服务，一对一全程跟进，扣细节扣隐患，极致仔细，想客户所想，独家的预防出错机制，经验丰富，大量避坑，守住质量底线" };
 }
 async function initFields() {
-  COMMON_FIELDS = await loadFields("commonFields", DEF_COMMON, true);
-  await loadSecondaryFields();
+  const modeInit = await chrome.storage.local.get(["secPresetMode", "commonTplMode"]);
+  activeBizMode = modeInit?.secPresetMode === "b2c" ? "b2c" : "b2b";
+  activeCommonTpl = ["1", "2", "3"].includes(String(modeInit?.commonTplMode || "")) ? String(modeInit.commonTplMode) : "1";
+  await loadActiveFieldProfile(activeBizMode, activeCommonTpl);
   await loadNonEcomFields();
   AI_FIELDS = await loadFields("aiFields", DEF_AI, true);
   renderAllFieldBoxes();
@@ -3210,28 +3365,34 @@ async function initFields() {
       renderNonEcomSecondaryFields();
     };
   }
-  const applySecPresetMode = (presetMode) => {
+  const syncTplBtns = () => {
+    document.querySelectorAll(".common-tpl-btn").forEach(btn => {
+      const isAct = btn.dataset.tpl === String(activeCommonTpl);
+      btn.style.background = isAct ? "#4a3563" : "#fff";
+      btn.style.color = isAct ? "#fff" : "#4a3563";
+      btn.style.borderColor = isAct ? "#4a3563" : "#d8cceb";
+    });
+  };
+  const applyCommonTplMode = async (tpl) => {
+    await loadActiveFieldProfile(activeBizMode, tpl);
+    renderAllFieldBoxes();
+    syncTplBtns();
+    applySecPresetMode(activeBizMode, true);
+  };
+  document.querySelectorAll(".common-tpl-btn").forEach(btn => {
+    btn.onclick = () => applyCommonTplMode(btn.dataset.tpl || "1");
+  });
+  syncTplBtns();
+
+  const applySecPresetMode = async (presetMode, uiOnly = false) => {
     const isB2B = presetMode === "b2b";
     const isB2C = presetMode === "b2c";
-    if (isB2B || isB2C) {
-      SECONDARY_FIELDS.forEach(f => {
-        f.c = isB2B ? Boolean(f.b2b) : Boolean(f.b2c);
-      });
-      // 同步核心字段区中的交期与起订量（B2B 外贸批发必选交期/起订量；B2C 零售种草自动取消交期/起订量，避免出现“现货500”等批发词）
-      COMMON_FIELDS.forEach(cf => {
-        if (cf.n === "交期" || cf.n === "起订量") {
-          cf.c = isB2B;
-        } else {
-          cf.c = true;
-        }
-      });
-      saveFields("commonFields", COMMON_FIELDS);
-      renderFields("commonFields", "commonFields", COMMON_FIELDS, false);
+    if (!uiOnly && (isB2B || isB2C)) {
+      await loadActiveFieldProfile(presetMode, activeCommonTpl);
       DYNAMIC_SECONDARY_FIELDS.forEach(f => { f.c = false; });
       if ($("optIncludeUnlistedAttrs")) $("optIncludeUnlistedAttrs").checked = false;
-      chrome.storage.local.set({ optIncludeUnlistedAttrs: false, secPresetMode: presetMode });
-      saveSecondaryFields();
-      renderSecondaryFields();
+      await chrome.storage.local.set({ optIncludeUnlistedAttrs: false, secPresetMode: presetMode });
+      renderAllFieldBoxes();
       if (pendingCapture?.attrs) renderDynamicSecondaryFields(pendingCapture.attrs);
     }
     const btnB2B = $("btnSecPresetB2B");
@@ -3249,54 +3410,52 @@ async function initFields() {
     const hintEl = $("secPresetActiveHint");
     if (hintEl) {
       hintEl.dataset.presetMode = presetMode || "default";
+      const tplName = (COMMON_TEMPLATE_PRESETS[activeCommonTpl] || COMMON_TEMPLATE_PRESETS["1"]).label;
       const isEn = (window.XM_I18N && window.XM_I18N.lang === "en") || document.documentElement.lang === "en";
       if (isB2B) {
         hintEl.style.background = "#eef2ff";
         hintEl.style.borderColor = "#c7d2fe";
         hintEl.style.color = "#1e3a8a";
         hintEl.textContent = isEn
-          ? "✅ Activated [🏭 B2B Export / Wholesale Priorities] (16 Secondary + All 12 Core Fields): Automatically checked Lead Time, MOQ, Specification, Color, Product Dimensions, Unit Weight, Capacity, Function, Packaging, Packaging Specs, Product Category, Unit, Print LOGO, Customization Support, Main Sales Regions, Patent Type, Copyright, Cross-border Exclusive Supply (automatically hides 1688 wholesale unit price & retail clutter)."
-          : "✅ 当前已启用【🏭 B2B 外贸/批发重中之重】（共 15 项次要 + 全部 12 项核心）：已自动勾选 交期、起订量、规格、颜色、产品尺寸、单件重量、容量、功能、包装方式、包装规格、产品类别、单位、加印LOGO、是否支持定制、主要销售地区、专利类型、版权、是否跨境出口专供货源（自动屏蔽 1688 拿货单价与零售杂项）。";
+          ? `✅ [🏭 B2B Independent Site Mode · ${tplName}]: Common & Optional params are isolated from B2C. Double-click any field to move between Common and Optional.`
+          : `✅ 当前已启用【🏭 B2B 独立站模式 · ${tplName}】：常用参数（含箱规4项/颜色/包装方式/交期/起订量）与可选参数均独立保存；双击任意参数可互转！`;
       } else if (isB2C) {
         hintEl.style.background = "#fdf2f8";
         hintEl.style.borderColor = "#fbcfe8";
         hintEl.style.color = "#9d174d";
         hintEl.textContent = isEn
-          ? "✅ Activated [🛍️ B2C Retail / Social Priorities] (14 Secondary + 10 Core Fields): Automatically checked Specification, Color, Product Dimensions, Unit Weight, Capacity, Function, Packaging, Target Audience, Product Category, Style, Price, Product Launch Time, Gift Purpose, Bulk Pack (automatically excludes MOQ, Lead Time, Print LOGO & other factory wholesale terms)."
-          : "✅ 当前已启用【🛍️ B2C 零售/种草重中之重】（共 14 项次要 + 10 项核心）：已自动勾选 规格、颜色、产品尺寸、单件重量、容量、功能、包装方式、适用人群、产品类别、风格、价格、产品上市时间、送礼用途、是否量贩装（自动剔除起订量、交期、加印LOGO等工厂批发术语）。";
+          ? `✅ [🛍️ B2C Site & Store Mode · ${tplName}]: Common & Optional params are isolated from B2B. Double-click any field to move between Common and Optional.`
+          : `✅ 当前已启用【🛍️ B2C 独立站/店铺模式 · ${tplName}】：常用参数（含颜色/包装方式/价格/材质/品牌）与可选参数均独立保存；双击任意参数可互转！`;
       } else if (presetMode === "all") {
         hintEl.style.background = "#f0fdf4";
         hintEl.style.borderColor = "#bbf7d0";
         hintEl.style.color = "#166534";
         hintEl.textContent = isEn
-          ? "☑️ Selected all secondary optional fields (including dynamically detected attributes)."
-          : "☑️ 当前已全选所有次要可选字段（含动态识别属性）。";
+          ? "☑️ Selected all optional fields."
+          : "☑️ 当前已全选所有可选参数（搜不到仍不显示）。";
       } else if (presetMode === "none") {
         hintEl.style.background = "#fff1f2";
         hintEl.style.borderColor = "#fecdd3";
         hintEl.style.color = "#9f1239";
         hintEl.textContent = isEn
-          ? "☐ Cleared all secondary optional fields (outputs core required fields only)."
-          : "☐ 当前已清空所有次要可选字段（仅输出上方核心必填字段）。";
+          ? "☐ Cleared all optional fields (common fields only)."
+          : "☐ 当前已清空所有可选参数（仅输出上方常用参数）。";
       } else {
         hintEl.style.background = "#f5f0ff";
         hintEl.style.borderColor = "#e4d8f8";
         hintEl.style.color = "#4a3563";
         hintEl.textContent = isEn
-          ? "💡 Current Preset Mode: One-click switch between [🏭 B2B Export / Wholesale Priorities] (Specs, Dimensions, Unit Weight, Capacity, Packaging, Print LOGO, Customization, Patent & Export Supply) or [🛍️ B2C Retail / Social Priorities] (Specs, Color, Dimensions, Weight, Capacity, Function, Target Audience, Style & Gift Purpose, excluding factory terms)."
-          : "💡 当前推荐模式：可一键切换【🏭 B2B 外贸批发重中之重】（聚焦规格、尺寸、单重、容量、包装、加印LOGO、定制、专利、出口资质）或【🛍️ B2C 零售种草重中之重】（聚焦规格、颜色、尺寸、重量、容量、功能、适用人群、风格、送礼场景，自动剔除工厂术语）。";
+          ? "💡 B2B & B2C params are separated. Double-click any field to swap between Common and Optional."
+          : "💡 B2B 与 B2C 参数已独立分开；常用参数搜不到则留空，可选参数搜不到则不显示。双击参数可互转！";
       }
       try { if (window.XM_I18N && typeof window.XM_I18N.apply === "function") window.XM_I18N.apply(); } catch {}
     }
   };
   window.onXmLangChange = () => {
-    const curMode = $("secPresetActiveHint")?.dataset?.presetMode || "default";
-    applySecPresetMode(curMode);
+    const curMode = $("secPresetActiveHint")?.dataset?.presetMode || activeBizMode;
+    applySecPresetMode(curMode, true);
   };
-  chrome.storage.local.get("secPresetMode").then(s => {
-    if (s?.secPresetMode) applySecPresetMode(s.secPresetMode);
-    else applySecPresetMode("default");
-  }).catch(() => {});
+  applySecPresetMode(activeBizMode, true);
   if ($("btnSecPresetB2B")) {
     $("btnSecPresetB2B").onclick = () => applySecPresetMode("b2b");
   }
@@ -3407,6 +3566,9 @@ const FIELD_ALIAS = {
   "起订量": ["起订量", "起批量", "最低起订", "最小起订量", "moq", "minimum order quantity", "min. order", "минимальный заказ", "最小注文数", "최소주문수량"],
   "材质": ["材质", "材料", "面料", "主材质", "内胆材质", "外壳材质", "外壳材料", "材质成分", "刷毛材质", "刷柄材质", "material", "fabric", "material type", "материал", "素材", "材質", "재질", "소재", "matériau", "matière", "werkstoff"],
   "产地": ["产地", "货源地", "生产地", "所在地", "发货地", "origin", "country of origin", "place of origin", "страна производства", "原産国", "生産国", "원산지", "origen", "origem", "origine", "herkunftsland"],
+  "详细规格": ["详细规格", "规格", "款式", "型号规格", "规格型号", "技术参数", "variants", "options", "specifications"],
+  "功率": ["功率", "额定功率", "power", "wattage"],
+  "电压": ["电压", "额定电压", "voltage"],
   "品牌": ["品牌", "商标", "brand", "brand name", "марка", "бренд", "ブランド", "브랜드", "marca", "marque", "marke"],
 };
 
