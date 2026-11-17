@@ -837,7 +837,7 @@ $("chooseSaveDir").onclick = async () => {
     const directory = await window.showDirectoryPicker({ mode: "readwrite", id: "collector-output" });
     selectedSaveDirectory = directory;
     $("saveDirName").textContent = directory.name;
-    $("tip").textContent = "保存到指定目录下的商品编号文件夹；勾选“子文件夹”时，按图片类别建立“主图、详情图、SKU图”子文件夹，视频单独存放；不勾选则直接存入商品编号文件夹。来源URL.txt 和商品资料.txt 均直接保存在商品编号文件夹内，不另建子文件夹。刷新页面后请重新选择保存位置。";
+    $("tip").textContent = "保存到指定目录下的商品编号文件夹；勾选“子文件夹”时，按图片类别建立“主图、详情图、SKU图”子文件夹，视频单独存放；不勾选则直接存入商品编号文件夹。来源URL.html 和商品资料.txt 均直接保存在商品编号文件夹内，不另建子文件夹。刷新页面后请重新选择保存位置。";
   } catch (error) {
     if (error.name !== "AbortError") $("saveDirName").textContent = "未能选择文件夹，请重新点击选择";
   }
@@ -891,22 +891,51 @@ async function dl(url, filename, saveDir = "采集", blobObj = null) {
   });
 }
 
-// 专用于保存《商品资料.txt》与《来源URL.txt》的高可靠落盘函数：
-// 采用 data: URL 避免大批量采集到第 10+ 个商品时因图片下载队列拥堵或 Blob URL 提前释放导致丢失 TXT 字段文件；若长标题目录名超长则自动回退短编号目录
-async function saveTextFileGuaranteed(textContent, primaryRelPath, fallbackRelPath, saveDir = "采集") {
+// 专用于保存《商品资料.txt》与《来源URL.html》的高可靠落盘函数：
+// 采用 data: URL 避免大批量采集到第 10+ 个商品时因图片下载队列拥堵或 Blob URL 提前释放导致丢失文件；若长标题目录名超长则自动回退短编号目录
+async function saveTextFileGuaranteed(textContent, primaryRelPath, fallbackRelPath, saveDir = "采集", mimeType = "text/plain;charset=utf-8") {
   const fullText = String(textContent || "").endsWith("\n") ? String(textContent || "") : String(textContent || "") + "\n";
-  const txtBlob = new Blob([fullText], { type: "text/plain;charset=utf-8" });
-  const dataUri = "data:text/plain;charset=utf-8," + encodeURIComponent(fullText);
+  const fileBlob = new Blob([fullText], { type: mimeType });
+  const dataUri = `data:${mimeType},` + encodeURIComponent(fullText);
 
-  let ok = await dl(dataUri, primaryRelPath, saveDir, txtBlob);
+  let ok = await dl(dataUri, primaryRelPath, saveDir, fileBlob);
   if (!ok && fallbackRelPath && fallbackRelPath !== primaryRelPath) {
-    ok = await dl(dataUri, fallbackRelPath, saveDir, txtBlob);
+    ok = await dl(dataUri, fallbackRelPath, saveDir, fileBlob);
   }
   if (!ok) {
-    const blobUrl = URL.createObjectURL(txtBlob);
-    ok = await dl(blobUrl, fallbackRelPath || primaryRelPath, saveDir, txtBlob);
+    const blobUrl = URL.createObjectURL(fileBlob);
+    ok = await dl(blobUrl, fallbackRelPath || primaryRelPath, saveDir, fileBlob);
   }
   return ok;
+}
+
+function buildSourceUrlHtml(rawUrl, rawTitle = "") {
+  const safeHref = String(rawUrl || "").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const safeText = String(rawUrl || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const safeTitle = String(rawTitle || "采集来源网页").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="refresh" content="0; url=${safeHref}" />
+  <title>${safeTitle} - 来源网页</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f8fafc;color:#0f172a;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px}
+    .card{max-width:680px;width:100%;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;box-shadow:0 8px 24px rgba(15,23,42,.06)}
+    h1{font-size:18px;margin:0 0 10px}
+    p{font-size:13px;color:#475569;word-break:break-all;line-height:1.6}
+    a.btn{display:inline-block;margin-top:12px;padding:10px 18px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>${safeTitle}</h1>
+    <p>来源网址：<a href="${safeHref}">${safeText}</a></p>
+    <a class="btn" href="${safeHref}">打开原商品/来源网页 ↗</a>
+  </div>
+  <script>try{if(/^https?:/i.test(${JSON.stringify(String(rawUrl || ""))}))location.replace(${JSON.stringify(String(rawUrl || ""))});}catch(e){}</script>
+</body>
+</html>`;
 }
 
 // 通用网页注入提取函数（供打开任意网页、快选已打开标签页或重读当前页时调用）
@@ -2736,7 +2765,7 @@ const DEF_NON_ECOM_CORE = [
   { n: "动图与动画采集", c: true, v: "", ph: "自动采集 GIF / WebP / APNG / SVG 动图" },
   { n: "视频封面/首图", c: true, v: "", ph: "自动提取视频封面海报与首图" },
   { n: "正文高清配图", c: true, v: "", ph: "自动采集文章/帖子正文高清插图" },
-  { n: "正文文案提取", c: true, v: "", req: true, ph: "自动提取正文文案/视频简介写入文案.txt" },
+  { n: "正文文案提取", c: true, v: "", req: true, ph: "自动提取正文文案/视频简介" },
   { n: "作者/来源账号", c: true, v: "", ph: "留空自动提取（可填写指定作者/频道名）" },
   { n: "发布时间", c: true, v: "", ph: "留空自动提取发布日期" },
   { n: "话题标签/关键词", c: true, v: "", ph: "留空自动提取 #话题标签 / 关键词" },
@@ -3859,7 +3888,7 @@ function isLowQualityOrAiFluff(text, langCode = "zh") {
   if (!text || text.length < 55) return true;
   if (/rate\s*limit|too\s*many\s*requests|quota|exceeded|cloudflare|bad\s*gateway|service\s*unavailable|internal\s*server\s*error|apologize|cannot\s*fulfill|429|502|503|504/i.test(text)) return true;
   if (/让我分析|分析一下|\*\*商品|步骤|首先|现在我需要|思考过程|作为AI|我是AI/.test(text)) return true;
-  if (/赋能|致力于|品质卓越|深受好评|远销海外|不二之选|匠心打造|全方位满足|完美契合|闭环|抓手/.test(text)) return true;
+  if (/赋能|致力于|品质卓越|深受好评|远销海外|不二之选|匠心打造|全方位满足|完美契合|闭环|抓手|在这个快节奏|你是否还在为|今天给大家种草|闭眼入|天花板|YYDS|绝对是你的|不可或缺的|让我们一起/.test(text)) return true;
   if (/我们始终贯彻|整理这款.*的业务跟单素材|贯彻.*的工作准则/.test(text)) return true;
   if (langCode === "zh" && (text.match(/[\u4e00-\u9fa5]/g) || []).length < 35) return true;
   return false;
@@ -4216,20 +4245,19 @@ async function aiGenOnce(provider, field, req, ctx, group) {
   }
 
   const sysPrompt = [
-    `你是 AGNES 旗下拥有15年一线实战经验的「小咩金牌外贸老业务 & 爆款故事主笔 (ecommerce-story-master v3.0)」。`,
+    `你是拥有15年一线生活与外贸实战阅历的真人故事讲述者。`,
     `必须严格使用【${langPack.promptLang}】输出最终正文！整段只能出现这一种语言，不许夹杂其他语言（品牌名、型号除外）。`,
-    `【AGNES 五维高分故事铁律（更生动、更独特、更真实、带数据、带感情）】：`,
-    `1. 更生动（画面感拉满）：第一句话直接切入有温度的具体场景（如凌晨一点半收到老客户催返单的60秒语音、在D65对色灯箱下盯着首件样品、拿着游标卡尺和电子秤在仓库拍视频算海运费、或清晨洗漱台/办公桌前拿起它的真实触感），严禁空洞说教。`,
-    `2. 更独特（专属本品细节）：必须紧扣这款「${profile.shortName}」独有的微距特征（${profile.coreFeatures}）与款式（${profile.variants}${profile.model ? `，型号${profile.model}` : ""}），让人一眼看出是专为这款产品量身撰写的，绝不能套在别的商品上。`,
-    `3. 更真实（去AI味铁律）：严禁出现“赋能、致力于、品质卓越、深受好评、远销海外、匠心打造、不二之选、完美契合、闭环、抓手”等廉价AI套话；严禁机械照抄“我们始终贯彻用心服务”口号原句，必须把精神内核化为车间停机重检、盒饭放凉、百格胶带实测、1.2米六面跌落测试等真实动作（Show, Don't Tell）。`,
-    `4. 带硬核数据（至少融入3组真实数字）：必须把真实物理与经营数据自然织入叙事——材质（${profile.material}）、箱规与装柜数据（${profile.cartonSummary}，${profile.containerEstimate}）、市场表现与履约数据（${profile.marketProof}，起订量${profile.moq}，交期${profile.leadTime}）。`,
-    `5. 带真挚感情（有血有肉的人情味）：写出中国源头工厂手艺人的死磕底线、替客户省每一分海运费的将心比心、陪小买家一路成长为行业大牌的托底情谊，让人读完眼眶发热、产生极强的合作信任感。`,
-    `6. 直接输出最终正文，不加字段名前缀、不加标题、不加引号或前言后语，且必须合并为单行一段话输出（中间严禁回车换行）。`,
+    `【核心创作铁律（人物+时间+地点缺一不可，极度真实、生动抓人、零AI味）】：`,
+    `1. 必须包含真实明确的【时间 + 地点 + 具体人物】：开头前两句话就把读者拉进一个具体的现场——写清“什么时候”（如去年10月下旬一个下冷雨的周二夜里十点半、上周五早高峰刚过、广交会撤展前两小时）、“在哪里”（如3号车间打包台旁、汉堡街角咖啡馆吧台、深圳盐田港装箱堆场、家里刚拆开快递的玄关地垫上）、“是谁”（有具体称呼或鲜活身份的人，如做德国站的陈姐、仓库老刘、柏林买手 Lukas、赶早班机的林工），禁止用“某客户”“消费者们”这种空洞代词。`,
+    `2. 细节抓人、紧扣本品：把这款「${profile.shortName}」独有的微距特征（${profile.coreFeatures}）、材质手感（${profile.material}）、款式（${profile.variants}${profile.model ? `，型号${profile.model}` : ""}）以及真实数据（${profile.cartonSummary}，${profile.containerEstimate}，${profile.marketProof}，起订量${profile.moq}）自然融进人物的动作、对话、小插曲和感官细节（声音、光线、温度、重量、指尖触感）里，写出有波折、有反转、读起来像真人微信语音口述或茶水间聊真事的画面感。`,
+    `3. 彻底去AI味（违者重写）：严禁任何AI八股与营销套话！绝不许出现“在这个快节奏的时代、你是否还在为…烦恼、今天给大家种草、让我们一起、赋能、致力于、品质卓越、深受好评、远销海外、匠心打造、不二之选、完美契合、闭环、抓手、天花板、闭眼入、YYDS、神器”；不要“总-分-总”排比句，不要堆砌空洞形容词，用真人说话的节奏把事情讲活。`,
+    `4. 精神内核化为具体行动：严禁机械照抄口号原句，要把用心或专业藏在人物顺手多做的那个动作里（Show, Don't Tell）。`,
+    `5. 直接输出最终正文，不加字段名前缀、不加标题、不加引号或前言后语，且必须合并为单行一段话输出（中间严禁回车换行）。`,
   ].join("\n");
 
   const userTask = group === "point"
-    ? `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n请基于以上真实商品参数与联网检索素材，按照「①差异化结构与足标主材 ②市场验证高转化SKU与口碑数据 ③精准外箱CBM与装柜核算 ④源头柔性起订与品控保障」四维结构，输出极具说服力、带真实数据、毫无AI套话的「${field}」${req ? `（特别要求：${req}）` : ""}，160~280字，严格使用${langPack.label}，合并为单行输出（不要换行）。`
-    : `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n本次唯一故事角度：【${ctx.angles || "服务细节故事"}】（只围绕这一个角度写透，绝不混杂其他角度！）\n精神内核（必须化为具体人物动作、车间细节与情感温度，严禁原句照抄口号）：${ctx.soul || "用心服务"}\n请基于当前商品真实参数与联网搜索素材，写出一段【更生动、更独特、更真实、带硬核数据、带真挚感情】的「${field}」${req ? `（特别要求：${req}）` : ""}，180~290字，严格使用${langPack.label}，合并为单行输出（不要换行）。`;
+    ? `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n请基于以上真实商品参数与联网检索素材，写出极具说服力、带真实物理/箱规数据与使用画面感、毫无AI套话的「${field}」${req ? `（特别要求：${req}）` : ""}，160~280字，严格使用${langPack.label}，合并为单行输出（不要换行）。`
+    : `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n本次唯一故事角度：【${ctx.angles || "服务细节故事"}】（只围绕这一个角度写透，绝不混杂其他角度！）\n精神内核（必须化为具体人物动作与现场细节，严禁照抄口号）：${ctx.soul || "用心服务"}\n请基于当前商品真实参数与联网搜索素材，写出一段【必须包含具体人物、具体时间、具体地点，非常真实、生动形象吸引人、毫无AI味】的「${field}」${req ? `（特别要求：${req}）` : ""}，180~300字，严格使用${langPack.label}，合并为单行输出（不要换行）。`;
 
   const messages = [
     { role: "system", content: sysPrompt },
@@ -5644,9 +5672,15 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       return bundle;
     };
 
-    // 来源URL.txt：在下载大批量图片之前先行落盘，确保下载队列零拥堵（铁律 #7）
+    // 来源URL.html：在下载大批量图片之前先行落盘，确保下载队列零拥堵（铁律 #7）
     if (opts.url) {
-      await saveTextFileGuaranteed(url + "\n", `${folder}/来源URL.txt`, `${code}/来源URL.txt`, saveDir);
+      await saveTextFileGuaranteed(
+        buildSourceUrlHtml(url, data.title || title),
+        `${folder}/来源URL.html`,
+        `${code}/来源URL.html`,
+        saveDir,
+        "text/html;charset=utf-8"
+      );
     }
 
     // 非电商网页（如视频/博客/公众号/知乎/CSDN/掘金/小红书）或勾选了“页面文案”时：按非商品页勾选字段先行输出结构化《文案.txt》
@@ -5775,7 +5809,6 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       };
       _xmMixed = false; _xmNoMt = false;
       savedCopyText = await composeCopy(outLang, langPack);
-      await saveTextFileGuaranteed(savedCopyText, `${folder}/文案.txt`, `${code}/文案.txt`, saveDir);
     }
 
     // 【核心防丢字段机制 · 阶段A】：预先在内存中构建第1级保底字段包；若第1级已找齐四项箱规且已选本地目录则先行落盘，否则待四级检索补齐箱规后一次性落盘（并在 finally 兜底防丢）
