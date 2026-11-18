@@ -2713,8 +2713,6 @@ function buildDefaultCommonFields(mode = "b2b", tpl = "1") {
   return baseBefore;
 }
 
-const DEF_COMMON = buildDefaultCommonFields("b2b", "1");
-
 // 可选参数（参照 1688 页面参数种类，去掉与箱规重复的“包装规格”与无关项；双击可升为常用参数）
 const DEF_SECONDARY = [
   // A. 1688 产品实用属性
@@ -2755,6 +2753,7 @@ const SECONDARY_GROUP_LABELS = {
   basic: "📦 1. 产品可选属性（双击可升为常用参数 · 搜不到不显示）",
   trade: "🚢 2. 价格、外贸定制与物流可选属性（双击可升为常用参数 · 搜不到不显示）",
 };
+const DEF_COMMON = buildDefaultCommonFields("b2b", "1");
 
 const DEF_AI = [
   { n: "独特卖点", group: "point", c: true, v: "" },
