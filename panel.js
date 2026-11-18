@@ -2659,7 +2659,7 @@ async function ocrImg(imgAsset) {
 /* ================= 常用参数（B2B / B2C 独立 + 3套品类模板） + 可选参数（1688 实用对照 + 双击互转） ================= */
 const CARTON_FIELDS = ["每箱多少个", "箱子毛净重", "箱子尺寸", "箱子立方数"];
 const COMMON_TEMPLATE_PRESETS = {
-  "1": { label: "模板1：箱包/日用（尺寸）", fields: ["产品尺寸", "单件重量", "功能", "产品类别"] },
+  "1": { label: "模板1：箱包/日用（尺寸）", fields: ["产品尺寸", "单件重量", "功能"] },
   "2": { label: "模板2：杯壶/容器（容量）", fields: ["容量", "产品尺寸", "单件重量", "功能"] },
   "3": { label: "模板3：设备/机械（详细规格）", fields: ["详细规格", "功率", "电压", "产品尺寸"] },
 };
@@ -2726,7 +2726,6 @@ const DEF_SECONDARY = [
   { n: "电压", group: "basic", b2b: true, b2c: true, rec: false, c: false, aliases: ["电压", "额定电压", "voltage"] },
   { n: "功能", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["功能", "产品功能", "特点", "function", "feature", "special feature"] },
   { n: "适用人群", group: "basic", b2b: false, b2c: true, rec: true, c: false, aliases: ["适用人群", "人群", "适用对象", "target audience"] },
-  { n: "产品类别", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["产品类别", "类别", "品类", "产品分类", "product category", "category"] },
   { n: "单位", group: "basic", b2b: true, b2c: false, rec: true, c: true, aliases: ["单位", "计价单位", "计量单位", "unit"] },
   { n: "风格", group: "basic", b2b: false, b2c: true, rec: true, c: false, aliases: ["风格", "款式风格", "设计风格", "style"] },
   // B. 价格、外贸定制与资质属性
@@ -3073,7 +3072,7 @@ async function loadActiveFieldProfile(mode = activeBizMode, tpl = activeCommonTp
   const prof = stored?.[key];
   if (prof && Array.isArray(prof.common) && prof.common.length) {
     COMMON_FIELDS = prof.common
-      .filter(f => f && f.n && f.n !== "货号" && f.n !== "包装规格")
+      .filter(f => f && f.n && f.n !== "货号" && f.n !== "包装规格" && f.n !== "产品类别")
       .map(f => ({ n: f.n === "规格" ? "详细规格" : f.n, c: Boolean(f.c), v: String(f.v || "") }));
     const existingSet = new Set(COMMON_FIELDS.map(f => f.n));
     for (const sec of DEF_SECONDARY) {
@@ -3953,11 +3952,20 @@ function toSingleLineText(val) {
     .trim();
 }
 
+function stripBracketsAndBoxes(s) {
+  return String(s ?? "")
+    .replace(/[【】\[\]「」『』《》]/g, "")
+    .replace(/[（(]\s*/g, " ")
+    .replace(/\s*[）)]/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function formatSellingPointsLines(rawVal, langCode = "zh") {
   const colon = langCode === "zh" || langCode === "ja" || langCode === "ko" ? "：" : ": ";
   const cleanPunct = (s) =>
-    String(s || "")
-      .replace(/[【】\[\]「」『』《》*•▪◆▶★☆✓✔]/g, "")
+    stripBracketsAndBoxes(s)
+      .replace(/[*•▪◆▶★☆✓✔]/g, "")
       .replace(/[;；]+\s*$/g, "")
       .replace(/\s{2,}/g, " ")
       .trim();
@@ -4040,21 +4048,21 @@ function buildMasterSellingPoints(p, req, isSeed, lang = "zh") {
     ].join("\n");
   }
 
-  // 默认简体中文：左右结构，按序号逐行排列，只留冒号，清楚简洁明了
+  // 默认简体中文：聚焦商品本身最突出的真实特点总结（不凑规格参数，无括号方框，无人造AI味）
   if (isSeed) {
     return [
-      `1. 核心结构与材质：${p.coreFeatures}，选用${p.material}，上手扎实不廉价`,
-      `2. 实用规格与款式：提供${p.variants}${p.model ? `，型号${p.model}` : ""}，居家与差旅都顺手`,
-      `3. 真实口碑与销量：线上已验证${p.marketProof}，高频使用依然稳固耐用${reqLine}`,
-      `4. 卫生体面包装：采用${p.packWay}，防尘防潮好收纳，自用送礼都省心`,
+      `1. 直击痛点的实用设计：针对日常使用最容易出毛病的地方做了${p.coreFeatures}，拿在手里顺手稳当，用久也不易松垮变形`,
+      `2. 实打实的好材质手感：用足${p.material}，表面平整无毛刺、不粘灰不留异味，贴身或高频使用都放心`,
+      `3. 挑不出毛病的细节做工：边角收口干净利落，耐摔抗磨好冲洗，放在家里或随身带着都显得干净利索`,
+      `4. 闭眼好搭的日常颜值：提供${p.variants}等耐看配色，自用顺眼、拿来送人也体面大方${reqLine}`,
     ].join("\n");
   }
 
   return [
-    `1. 差异化结构与主材：${p.coreFeatures}，采用${p.material}，拒绝回收次料`,
-    `2. 热销规格与动销数据：涵盖${p.variants}${p.model ? `，型号${p.model}` : ""}，已验证${p.marketProof}`,
-    `3. 精准外箱与装柜核算：${p.cartonSummary}，${p.containerEstimate}，头程海运运费一目了然`,
-    `4. 源头直供与履约保障：${p.origin}直供，${p.moq}，交期${p.leadTime}，出厂过首件签样与跌落抽检${reqLine}`,
+    `1. 一眼能看出的产品优势：主打${p.coreFeatures}，把普通同类最常被吐槽的短板一次改到位，客户拿到样品上手就能摸出差距`,
+    `2. 耐用抗造的用料标准：主体用料扎实，坚持原生${p.material}不掺回料，长期高频使用依然稳固不掉链子`,
+    `3. 省心好卖的成品品相：细节收口和表面处理工整统一，${p.variants}都是经过市场验证的常青款式，退货率低、回头客多`,
+    `4. 场景适配面广好推款：兼顾日常实用性与耐用度，摆在货架或独立站主图上卖点清晰，新手买家也能一眼看懂为什么值得买${reqLine}`,
   ].join("\n");
 }
 
@@ -4455,18 +4463,26 @@ async function aiGenOnce(provider, field, req, ctx, group) {
     } catch (e) {}
   }
 
-  const sysPrompt = [
-    `你是拥有15年一线生活与外贸实战阅历的真人故事讲述者。`,
-    `必须严格使用【${langPack.promptLang}】输出最终正文！整段只能出现这一种语言，不许夹杂其他语言（品牌名、型号除外）。`,
-    `【核心创作铁律（人物+时间+地点缺一不可，极度真实、生动抓人、零AI味）】：`,
-    `1. 必须包含真实明确的【时间 + 地点 + 具体人物】：开头前两句话就把读者拉进一个具体的现场——写清“什么时候”（如去年10月下旬一个下冷雨的周二夜里十点半、上周五早高峰刚过、广交会撤展前两小时）、“在哪里”（如3号车间打包台旁、汉堡街角咖啡馆吧台、深圳盐田港装箱堆场、家里刚拆开快递的玄关地垫上）、“是谁”（有具体称呼或鲜活身份的人，如做德国站的陈姐、仓库老刘、柏林买手 Lukas、赶早班机的林工），禁止用“某客户”“消费者们”这种空洞代词。`,
-    `2. 细节抓人、紧扣本品：把这款「${profile.shortName}」独有的微距特征（${profile.coreFeatures}）、材质手感（${profile.material}）、款式（${profile.variants}${profile.model ? `，型号${profile.model}` : ""}）以及真实数据（${profile.cartonSummary}，${profile.containerEstimate}，${profile.marketProof}，起订量${profile.moq}）自然融进人物的动作、对话、小插曲和感官细节（声音、光线、温度、重量、指尖触感）里，写出有波折、有反转、读起来像真人微信语音口述或茶水间聊真事的画面感。`,
-    `3. 彻底去AI味（违者重写）：严禁任何AI八股与营销套话！绝不许出现“在这个快节奏的时代、你是否还在为…烦恼、今天给大家种草、让我们一起、赋能、致力于、品质卓越、深受好评、远销海外、匠心打造、不二之选、完美契合、闭环、抓手、天花板、闭眼入、YYDS、神器”；不要“总-分-总”排比句，不要堆砌空洞形容词，用真人说话的节奏把事情讲活。`,
-    `4. 精神内核化为具体行动：严禁机械照抄口号原句，要把用心或专业藏在人物顺手多做的那个动作里（Show, Don't Tell）。`,
-    group === "point"
-      ? `5. 直接输出最终正文，不加字段名前缀、不加标题、不加引号或前言后语；按“1. 小标题：简洁内容”逐条换行排列 4 条，不要任何多余符号（只留序号点号和冒号）。`
-      : `5. 直接输出最终正文，不加字段名前缀、不加标题、不加引号或前言后语，且必须合并为单行一段话输出（中间严禁回车换行）。`,
-  ].join("\n");
+  const sysPrompt = group === "point"
+    ? [
+        `你是一位懂产品、会挑货的资深买手与产品主编。`,
+        `必须严格使用【${langPack.promptLang}】输出最终正文！整段只能出现这一种语言，不许夹杂其他语言（品牌名除外）。`,
+        `【独特卖点创作铁律（只写产品本身最突出的特点，绝不凑规格参数，零AI味，无任何括号方框）】：`,
+        `1. 严禁把装箱数、箱规尺寸、立方数、毛净重、MOQ起订量、交期、货号等规格参数当成卖点来凑数！客户看卖点是为了知道“这件东西到底好在哪里、为什么比别家更值得买”。`,
+        `2. 必须紧扣这款「${profile.shortName}」最突出的 4 个真实特点来写：比如它解决了什么实际使用痛点、结构或功能上有什么巧思（${profile.coreFeatures}）、用料和手感好在哪里（${profile.material}）、为什么更耐用好打理或更受终端买家喜欢。`,
+        `3. 彻底去AI味（违者重写）：严禁任何AI套话和营销黑话！绝不许出现“赋能、致力于、品质卓越、深受好评、远销海外、匠心打造、不二之选、完美契合、闭环、抓手、天花板、闭眼入、YYDS、神器、在这个快节奏的时代”；说人话，写得像懂行的老手在面对面给你点破这款货的核心优势，生动抓人、一针见血。`,
+        `4. 排版铁律：按 1. 卖点标题：卖点内容 逐条换行排列 4 条，左右结构，只保留序号点号和标题后的冒号，严禁使用任何括号或方框（禁止 ()、（） 、【】、[]、「」、<>）。`,
+      ].join("\n")
+    : [
+        `你是拥有15年一线生活与外贸实战阅历的真人故事讲述者。`,
+        `必须严格使用【${langPack.promptLang}】输出最终正文！整段只能出现这一种语言，不许夹杂其他语言（品牌名、型号除外）。`,
+        `【核心创作铁律（人物+时间+地点缺一不可，极度真实、生动抓人、零AI味，无任何括号方框）】：`,
+        `1. 必须包含真实明确的【时间 + 地点 + 具体人物】：开头前两句话就把读者拉进一个具体的现场——写清“什么时候”、“在哪里”、“是谁”，禁止用“某客户”“消费者们”这种空洞代词。`,
+        `2. 细节抓人、紧扣本品：把这款「${profile.shortName}」独有的微距特征（${profile.coreFeatures}）、材质手感（${profile.material}）、款式（${profile.variants}）自然融进人物的动作、对话、小插曲和感官细节里，读起来像真人微信语音口述或茶水间聊真事的画面感。`,
+        `3. 彻底去AI味（违者重写）：严禁任何AI八股与营销套话！绝不许出现“在这个快节奏的时代、你是否还在为…烦恼、今天给大家种草、让我们一起、赋能、致力于、品质卓越、深受好评、远销海外、匠心打造、不二之选、完美契合、闭环、抓手、天花板、闭眼入、YYDS、神器”。`,
+        `4. 精神内核化为具体行动：严禁机械照抄口号原句，要把用心或专业藏在人物顺手多做的那个动作里。`,
+        `5. 直接输出最终正文，不加字段名前缀、不加标题、不加引号或括号方框（禁止 ()、（）、【】、[]、「」），合并为单行一段话输出。`,
+      ].join("\n");
 
   const userTask = group === "point"
     ? `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n请基于以上真实商品参数与联网检索素材，输出「${field}」${req ? `（特别要求：${req}）` : ""}。\n【严格格式要求】：\n1. 按序号逐行排列 4 条，每条单独占一行，格式为：1. 小标题：简洁卖点内容\n2. 左右结构，只保留序号后的点号和标题后的冒号，严禁使用【】、[]、「」、①②③④、**、•、；等多余符号，清楚简洁明了；\n3. 严格使用${langPack.label}，直接输出这 4 行，不要加任何前缀或开场白。`
@@ -5782,18 +5798,18 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       const profileLines = [];
       const pushFieldLine = async (label, rawVal, targetArr = null, srcStage = "", rawLabel = "", allowEmpty = false, preserveLines = false) => {
         // 单一语言铁律：标签与内容统一净化为所选语言（全中文或全英文），杜绝中英混杂
-        const cleanLabel = toSingleLineText(await purifyToLang(toSingleLineText(label), outLang)).replace(/\s*[:：]+\s*$/, "");
+        const cleanLabel = stripBracketsAndBoxes(toSingleLineText(await purifyToLang(toSingleLineText(label), outLang))).replace(/\s*[:：]+\s*$/, "");
         let cleanVal = "";
         if (preserveLines) {
           const lines = String(rawVal ?? "").split(/\r?\n+/).map(s => s.trim()).filter(Boolean);
           const purified = [];
           for (const ln of lines) {
-            const p = toSingleLineText(await purifyToLang(ln, outLang));
+            const p = stripBracketsAndBoxes(toSingleLineText(await purifyToLang(ln, outLang)));
             if (p) purified.push(p);
           }
           cleanVal = formatSellingPointsLines(purified.join("\n"), outLang);
         } else {
-          cleanVal = toSingleLineText(await purifyToLang(toSingleLineText(rawVal), outLang));
+          cleanVal = stripBracketsAndBoxes(toSingleLineText(await purifyToLang(toSingleLineText(rawVal), outLang)));
         }
         if (!cleanLabel) return;
         if (!cleanVal) {
