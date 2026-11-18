@@ -2702,6 +2702,14 @@ function buildDefaultCommonFields(mode = "b2b", tpl = "1") {
     }
   }
   baseBefore.push({ n: "产品参数", c: true, v: "" });
+  seen.add("产品参数");
+  // 合并其余 1688 可选参数到同一输入框列表（排在核心最常用之后，默认不勾选，按需勾选或填默认值）
+  for (const sec of DEF_SECONDARY) {
+    if (!seen.has(sec.n)) {
+      baseBefore.push({ n: sec.n, c: false, v: "" });
+      seen.add(sec.n);
+    }
+  }
   return baseBefore;
 }
 
@@ -2865,36 +2873,43 @@ function switchFieldTab(tabMode, userClicked = false) {
 
 async function loadNonEcomFields() {
   const o = await chrome.storage.local.get(["nonEcomCoreFields", "nonEcomSecondaryFields", "activeFieldTabMode"]);
+  const mergedDefaults = [
+    ...DEF_NON_ECOM_CORE.map(d => ({ ...d, isCore: true })),
+    ...DEF_NON_ECOM_SECONDARY.map(d => ({ n: d.n, c: Boolean(d.rec), v: "", rec: Boolean(d.rec), ph: "留空自动提取（可填写默认值/改写）" })),
+  ];
   if (Array.isArray(o.nonEcomCoreFields) && o.nonEcomCoreFields.length) {
     const savedMap = new Map(o.nonEcomCoreFields.map(f => [f.n, f]));
-    const builtIn = DEF_NON_ECOM_CORE.map(d => {
+    const secMap = new Map((Array.isArray(o.nonEcomSecondaryFields) ? o.nonEcomSecondaryFields : []).map(f => [f.n, Boolean(f.c)]));
+    const builtIn = mergedDefaults.map(d => {
       const s = savedMap.get(d.n);
+      const secChecked = secMap.has(d.n) ? secMap.get(d.n) : Boolean(d.c);
       return {
         ...d,
-        c: d.req ? true : (s ? Boolean(s.c) : Boolean(d.c)),
+        c: d.req ? true : (s ? Boolean(s.c) : secChecked),
         v: d.readonlyHint ? "" : String(s?.v || d.v || ""),
       };
     });
-    const defNames = new Set(DEF_NON_ECOM_CORE.map(d => d.n));
+    const defNames = new Set(mergedDefaults.map(d => d.n));
     const custom = o.nonEcomCoreFields.filter(f => f && f.n && !defNames.has(f.n));
     NON_ECOM_CORE_FIELDS = [...builtIn, ...custom];
   } else {
-    NON_ECOM_CORE_FIELDS = DEF_NON_ECOM_CORE.map(d => ({ ...d }));
+    NON_ECOM_CORE_FIELDS = mergedDefaults;
   }
+  syncNonEcomSecFromUnified();
+}
 
-  if (Array.isArray(o.nonEcomSecondaryFields) && o.nonEcomSecondaryFields.length) {
-    const secMap = new Map(o.nonEcomSecondaryFields.map(f => [f.n, Boolean(f.c)]));
-    NON_ECOM_SECONDARY_FIELDS = DEF_NON_ECOM_SECONDARY.map(d => ({
-      ...d,
-      c: secMap.has(d.n) ? secMap.get(d.n) : Boolean(d.c),
-    }));
-  } else {
-    NON_ECOM_SECONDARY_FIELDS = DEF_NON_ECOM_SECONDARY.map(d => ({ ...d }));
-  }
+function syncNonEcomSecFromUnified() {
+  const unifiedMap = new Map(NON_ECOM_CORE_FIELDS.map(f => [f.n, Boolean(f.c)]));
+  NON_ECOM_SECONDARY_FIELDS = DEF_NON_ECOM_SECONDARY.map(d => ({
+    ...d,
+    c: unifiedMap.has(d.n) ? unifiedMap.get(d.n) : Boolean(d.c),
+  }));
 }
 
 function saveNonEcomCoreFields() {
-  return chrome.storage.local.set({ nonEcomCoreFields: NON_ECOM_CORE_FIELDS });
+  syncNonEcomSecFromUnified();
+  const compactSec = NON_ECOM_SECONDARY_FIELDS.map(f => ({ n: f.n, c: Boolean(f.c) }));
+  return chrome.storage.local.set({ nonEcomCoreFields: NON_ECOM_CORE_FIELDS, nonEcomSecondaryFields: compactSec });
 }
 
 function saveNonEcomSecondaryFields() {
@@ -3061,6 +3076,13 @@ async function loadActiveFieldProfile(mode = activeBizMode, tpl = activeCommonTp
     COMMON_FIELDS = prof.common
       .filter(f => f && f.n && f.n !== "货号" && f.n !== "包装规格")
       .map(f => ({ n: f.n === "规格" ? "详细规格" : f.n, c: Boolean(f.c), v: String(f.v || "") }));
+    const existingSet = new Set(COMMON_FIELDS.map(f => f.n));
+    for (const sec of DEF_SECONDARY) {
+      if (!existingSet.has(sec.n)) {
+        COMMON_FIELDS.push({ n: sec.n, c: false, v: "" });
+        existingSet.add(sec.n);
+      }
+    }
   } else {
     COMMON_FIELDS = buildDefaultCommonFields(activeBizMode, activeCommonTpl);
   }
@@ -3346,23 +3368,25 @@ async function initFields() {
   }
   if ($("btnNonEcomPresetRec")) {
     $("btnNonEcomPresetRec").onclick = () => {
-      NON_ECOM_SECONDARY_FIELDS.forEach(f => { f.c = Boolean(f.rec); });
-      saveNonEcomSecondaryFields();
-      renderNonEcomSecondaryFields();
+      const coreSet = new Set(DEF_NON_ECOM_CORE.map(d => d.n));
+      NON_ECOM_CORE_FIELDS.forEach(f => { f.c = coreSet.has(f.n) || Boolean(f.req) || Boolean(f.rec); });
+      saveNonEcomCoreFields();
+      renderNonEcomCoreFields();
     };
   }
   if ($("btnNonEcomSelectAll")) {
     $("btnNonEcomSelectAll").onclick = () => {
-      NON_ECOM_SECONDARY_FIELDS.forEach(f => { f.c = true; });
-      saveNonEcomSecondaryFields();
-      renderNonEcomSecondaryFields();
+      NON_ECOM_CORE_FIELDS.forEach(f => { f.c = true; });
+      saveNonEcomCoreFields();
+      renderNonEcomCoreFields();
     };
   }
   if ($("btnNonEcomClearAll")) {
     $("btnNonEcomClearAll").onclick = () => {
-      NON_ECOM_SECONDARY_FIELDS.forEach(f => { f.c = false; });
-      saveNonEcomSecondaryFields();
-      renderNonEcomSecondaryFields();
+      const coreSet = new Set(DEF_NON_ECOM_CORE.map(d => d.n));
+      NON_ECOM_CORE_FIELDS.forEach(f => { f.c = coreSet.has(f.n) || Boolean(f.req); });
+      saveNonEcomCoreFields();
+      renderNonEcomCoreFields();
     };
   }
   const syncTplBtns = () => {
@@ -3464,26 +3488,27 @@ async function initFields() {
   }
   if ($("btnSecSelectAll")) {
     $("btnSecSelectAll").onclick = () => {
-      SECONDARY_FIELDS.forEach(f => { f.c = true; });
+      COMMON_FIELDS.forEach(f => { f.c = true; });
       DYNAMIC_SECONDARY_FIELDS.forEach(f => { f.c = true; });
       if ($("optIncludeUnlistedAttrs")) $("optIncludeUnlistedAttrs").checked = true;
-      chrome.storage.local.set({ optIncludeUnlistedAttrs: true, secPresetMode: "all" });
-      saveSecondaryFields();
-      renderSecondaryFields();
+      chrome.storage.local.set({ optIncludeUnlistedAttrs: true });
+      saveActiveFieldProfile();
+      renderAllFieldBoxes();
       if (pendingCapture?.attrs) renderDynamicSecondaryFields(pendingCapture.attrs);
-      applySecPresetMode("all");
     };
   }
   if ($("btnSecClearAll")) {
     $("btnSecClearAll").onclick = () => {
-      SECONDARY_FIELDS.forEach(f => { f.c = false; });
+      COMMON_FIELDS.forEach(f => {
+        const required = f.n === "产品参数" || f.n === "商品标题" || (activeBizMode === "b2b" && CARTON_FIELDS.includes(f.n));
+        f.c = required;
+      });
       DYNAMIC_SECONDARY_FIELDS.forEach(f => { f.c = false; });
       if ($("optIncludeUnlistedAttrs")) $("optIncludeUnlistedAttrs").checked = false;
-      chrome.storage.local.set({ optIncludeUnlistedAttrs: false, secPresetMode: "none" });
-      saveSecondaryFields();
-      renderSecondaryFields();
+      chrome.storage.local.set({ optIncludeUnlistedAttrs: false });
+      saveActiveFieldProfile();
+      renderAllFieldBoxes();
       if (pendingCapture?.attrs) renderDynamicSecondaryFields(pendingCapture.attrs);
-      applySecPresetMode("none");
     };
   }
   if ($("optIncludeUnlistedAttrs")) {
@@ -5217,7 +5242,7 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
     }
   }
 
-  if (!allowNetwork || (!isCarton && !isReqSpec)) {
+  if (!allowNetwork) {
     return {
       value: "",
       source: "",
@@ -5225,8 +5250,8 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
     };
   }
 
-  // 3) 第3级：再没有就本站其他此产品页面看看
-  $("status").innerText = `正在本站其他此产品页面查找「${field}」…`;
+  // 3) 第3级：本平台搜索（本站其他同款/店铺页面）
+  $("status").innerText = `正在本平台其他页面查找「${field}」…`;
   const stage3Pages = await getStage3SamePlatformPages(data, sourceUrl, cascadeCache);
   for (const p of stage3Pages) {
     const v = extractFn(p.attrs || {}, p.text || "");
@@ -5235,11 +5260,11 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
     }
   }
 
-  // 4) 第4级：再没有就由 AGNES AI 协同全网网页深度搜索核验，力争精准采集到
-  $("status").innerText = `正在网上其他网页查找「${field}」…`;
+  // 4) 第4级：全网搜索（AGNES AI 联网深度搜索核验）
+  $("status").innerText = `正在全网搜索「${field}」…`;
   const stage4Pages = await getStage4InternetPages(data, sourceUrl, cascadeCache);
   if (isCarton) {
-    $("status").innerText = `AGNES AI 正在联网深度搜索「${field}」…`;
+    $("status").innerText = `AGNES AI 正在全网深度搜索「${field}」…`;
     const mergedOcrText = Array.isArray(ocrItems) ? ocrItems.map(x => x.text).join("\n") : "";
     const aiVal = await aiCartonLookup(field, data, sourceUrl, mergedOcrText, cascadeCache);
     if (aiVal) {
@@ -5251,6 +5276,24 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
     if (v) {
       return { value: v, source: "", stage: 4 };
     }
+  }
+  // 4b) 针对非箱规的勾选参数，再结合全网搜索摘要尝试精准提取
+  if (!isCarton && !isReqSpec) {
+    const mergedSnippets = stage4Pages.map(p => p.text || "").join("\n");
+    if (mergedSnippets) {
+      const vExtra = extractFn({}, mergedSnippets);
+      if (vExtra) return { value: vExtra, source: "全网搜索", stage: 4 };
+    }
+    try {
+      const kw = extractProductSearchKeywords(data?.title || "", data?.attrs?.["品牌"] || "", data?.attrs || {}, data?.pageText || "");
+      const qField = `${kw.cleanBrand} ${kw.shortTitle || String(data?.title || "").slice(0, 16)} ${field}`.replace(/\s+/g, " ").trim();
+      const hits = await aiWebSearch(qField, 4, 4000);
+      if (hits.length) {
+        const hitText = hits.map(h => `${h.title}\n${h.snippet}`).join("\n");
+        const vHit = extractFn({}, hitText);
+        if (vHit) return { value: vHit, source: "全网搜索", stage: 4 };
+      }
+    } catch {}
   }
 
   // 5) 如果最终采集不到，则值为空
@@ -5811,20 +5854,17 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
               srcStage = "";
             }
           }
-          if ((isCarton || isReqSpec) && !v) {
-            builtMissingRequired.push(f.n);
-          }
           if (isCarton) {
             // 箱子立方数若未直接提取到，自动按已提取的箱子尺寸换算
             if (f.n === "箱子立方数" && !v) {
               const dimRow = builtCommonOut.find(x => x[0] === formatFieldDisplayName("箱子尺寸"));
               if (dimRow && dimRow[1]) v = _calcCbmFromDim(dimRow[1]);
             }
-            // 常用参数尽量不留空，实在搜不到则留空
+            if (!v) builtMissingRequired.push(f.n);
             const finalVal = v ? translateCommonValue(v, outLang) : "";
             await pushFieldLine(formatFieldDisplayName(f.n), finalVal, builtCommonOut, srcStage, f.n, true);
           } else {
-            // 常用参数尽量不留空，实在搜不到则留空（不再输出“未查到”）
+            if (!v) builtMissingRequired.push(f.n);
             const finalVal = v ? translateCommonValue(v, outLang) : "";
             await pushFieldLine(formatFieldDisplayName(f.n), finalVal, builtCommonOut, srcStage, f.n, true);
           }
@@ -5902,165 +5942,14 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       return bundle;
     };
 
-    // 来源URL.html：在下载大批量图片之前先行落盘，确保下载队列零拥堵（铁律 #7）
-    if (opts.url) {
-      await saveTextFileGuaranteed(
-        buildSourceUrlHtml(url, data.title || title),
-        `${folder}/来源URL.html`,
-        `${code}/来源URL.html`,
-        saveDir,
-        "text/html;charset=utf-8"
-      );
-    }
-
-    // 非电商网页（如视频/博客/公众号/知乎/CSDN/掘金/小红书）或勾选了“页面文案”时：按非商品页勾选字段先行输出结构化《文案.txt》
-    let savedCopyText = "";
-    if (isNonEcom || (doCopy && data.copyText)) {
-      const composeCopy = async (L, P) => {
-        const bodyCopy = await purifyToLang((data.copyText || data.pageText || "").trim(), L);
-        const en = L === "en";
-        const sep = en ? ": " : "：";
-        const lines = [];
-        const nmMeta = data.nonEcomMeta || {};
-
-        if (isNonEcom) {
-          if (isNonEcomCoreChecked("网页/视频标题")) {
-            const rawT = getNonEcomCoreVal("网页/视频标题") || data.title || title;
-            lines.push(`${en ? "Title" : "网页/视频标题"}${sep}${await purifyToLang(rawT, L)}`);
-          }
-          if (isNonEcomCoreChecked("编号/归档号") && slot.hasUserNo) {
-            lines.push(`${en ? "Archive ID" : "编号/归档号"}${sep}${code}`);
-          }
-          if (isNonEcomCoreChecked("作者/来源账号")) {
-            const rawAuthor = getNonEcomCoreVal("作者/来源账号") || data.author || "";
-            if (rawAuthor) lines.push(`${en ? "Author / Channel" : "作者/来源账号"}${sep}${rawAuthor}`);
-          }
-          if (isNonEcomCoreChecked("发布时间")) {
-            const rawPub = getNonEcomCoreVal("发布时间") || data.publishTime || "";
-            if (rawPub) lines.push(`${en ? "Published" : "发布时间"}${sep}${rawPub}`);
-          }
-          if (isNonEcomCoreChecked("话题标签/关键词")) {
-            const rawTags = getNonEcomCoreVal("话题标签/关键词") || nmMeta.tags || "";
-            if (rawTags) lines.push(`${en ? "Tags / Keywords" : "话题标签/关键词"}${sep}${rawTags}`);
-          }
-          if (isNonEcomCoreChecked("网页视频采集")) {
-            const vNote = getNonEcomCoreVal("网页视频采集");
-            const vCount = Array.isArray(data.videos) ? data.videos.length : 0;
-            lines.push(`${en ? "Captured Videos" : "网页视频采集"}${sep}${vCount ? `已识别 ${vCount} 个视频/流媒体文件` : "当前页未检测到独立视频流"}${vNote ? `（${vNote}）` : ""}`);
-          }
-          if (isNonEcomCoreChecked("动图与动画采集")) {
-            const gNote = getNonEcomCoreVal("动图与动画采集");
-            if (gNote) lines.push(`${en ? "Animation Note" : "动图与动画备注"}${sep}${gNote}`);
-          }
-          // 用户自定义新增的非商品页核心字段
-          const builtInNonEcomNames = new Set(DEF_NON_ECOM_CORE.map(d => d.n));
-          for (const cf of NON_ECOM_CORE_FIELDS) {
-            if (!cf.c || builtInNonEcomNames.has(cf.n)) continue;
-            const customVal = (cf.v || data.attrs?.[cf.n] || "").trim();
-            if (customVal) lines.push(`${cf.n}${sep}${customVal}`);
-          }
-
-          // 次要可选字段：1. 视频与多媒体附加参数
-          if (isNonEcomSecChecked("视频时长") && nmMeta.duration) {
-            lines.push(`${en ? "Video Duration" : "视频时长"}${sep}${nmMeta.duration}`);
-          }
-          if (isNonEcomSecChecked("分辨率与画幅比例") && nmMeta.resolution) {
-            lines.push(`${en ? "Resolution & Aspect" : "分辨率与画幅比例"}${sep}${nmMeta.resolution}`);
-          }
-          if (isNonEcomSecChecked("核心摘要/导语") && data.metaDesc) {
-            lines.push(`${en ? "Summary" : "核心摘要/导语"}${sep}${await purifyToLang(data.metaDesc, L)}`);
-          }
-          if (isNonEcomSecChecked("所属频道/分类栏目") && nmMeta.category) {
-            lines.push(`${en ? "Category / Channel" : "所属频道/分类栏目"}${sep}${nmMeta.category}`);
-          }
-          if (isNonEcomSecChecked("原始来源网址")) {
-            lines.push(`${P.lblUrl || (en ? "Source URL" : "原始来源网址")}${sep}${url}`);
-          }
-
-          // 次要可选字段：2. 社媒互动与传播数据
-          if (isNonEcomSecChecked("播放量/阅读量") && nmMeta.viewCount) {
-            lines.push(`${en ? "Views / Reads" : "播放量/阅读量"}${sep}${nmMeta.viewCount}`);
-          }
-          if (isNonEcomSecChecked("点赞数") && nmMeta.likeCount) {
-            lines.push(`${en ? "Likes" : "点赞数"}${sep}${nmMeta.likeCount}`);
-          }
-          if (isNonEcomSecChecked("收藏数") && nmMeta.collectCount) {
-            lines.push(`${en ? "Favorites" : "收藏数"}${sep}${nmMeta.collectCount}`);
-          }
-          if (isNonEcomSecChecked("转发/分享数") && nmMeta.shareCount) {
-            lines.push(`${en ? "Shares" : "转发/分享数"}${sep}${nmMeta.shareCount}`);
-          }
-          if (isNonEcomSecChecked("评论数") && nmMeta.commentCount) {
-            lines.push(`${en ? "Comments" : "评论数"}${sep}${nmMeta.commentCount}`);
-          }
-          if (isNonEcomSecChecked("弹幕数") && nmMeta.danmakuCount) {
-            lines.push(`${en ? "Danmaku" : "弹幕数"}${sep}${nmMeta.danmakuCount}`);
-          }
-          if (isNonEcomSecChecked("作者粉丝数") && nmMeta.followers) {
-            lines.push(`${en ? "Author Followers" : "作者粉丝数"}${sep}${nmMeta.followers}`);
-          }
-          if (isNonEcomSecChecked("作者主页链接") && nmMeta.authorUrl) {
-            lines.push(`${en ? "Author Profile" : "作者主页链接"}${sep}${nmMeta.authorUrl}`);
-          }
-          if (isNonEcomSecChecked("IP属地/发布地点") && nmMeta.ipLocation) {
-            lines.push(`${en ? "Location" : "IP属地/发布地点"}${sep}${nmMeta.ipLocation}`);
-          }
-          if (isNonEcomSecChecked("高赞神评摘录") && nmMeta.topComments) {
-            lines.push(`${en ? "Top Comments" : "高赞神评摘录"}${sep}${nmMeta.topComments}`);
-          }
-
-          // 次要可选字段：3. AGNES AI 智能提炼与二创
-          const snippetBasis = (bodyCopy || data.metaDesc || data.title || "").replace(/\s+/g, " ").trim();
-          if (isNonEcomSecChecked("AI 内容核心总结") && snippetBasis) {
-            const summaryTxt = snippetBasis.slice(0, 260) + (snippetBasis.length > 260 ? "…" : "");
-            lines.push(`${en ? "AI Core Summary" : "AI 内容核心总结"}${sep}围绕「${data.title || title}」展开，核心要点：${summaryTxt}`);
-          }
-          if (isNonEcomSecChecked("AI 视频分镜脚本提炼") && snippetBasis) {
-            lines.push(`${en ? "AI Storyboard Script" : "AI 视频分镜脚本提炼"}${sep}① 黄金前3秒痛点/悬念切入（${(data.title || title).slice(0, 22)}） → ② 核心画面展示与细节特写 → ③ 真实体验/干货拆解 → ④ 结尾互动引导关注与收藏`);
-          }
-          if (isNonEcomSecChecked("AI 爆款文案改写") && snippetBasis) {
-            const tagTail = nmMeta.tags ? ` ${nmMeta.tags}` : "";
-            lines.push(`${en ? "AI Viral Copy Rewrite" : "AI 爆款文案改写"}${sep}🔥 ${data.title || title}｜${snippetBasis.slice(0, 140)}… 觉得有用记得点赞收藏！${tagTail}`);
-          }
-
-          if (isNonEcomCoreChecked("正文文案提取")) {
-            lines.push("", P.lblCopyBody || "【正文文案 / 视频简介】", bodyCopy || (en ? "(No body text extracted)" : "（未提取到正文文字）"));
-          }
-        } else {
-          const copyTitleLbl = P.lblTitle || "标题";
-          lines.push(`${copyTitleLbl}${sep}${await purifyToLang(data.title || "", L)}`);
-          if (data.author) lines.push(`${en ? "Author" : "作者"}${sep}${data.author}`);
-          if (data.publishTime) lines.push(`${en ? "Published" : "发布时间"}${sep}${data.publishTime}`);
-          lines.push(`${P.lblUrl || "来源网址"}${sep}${url}`);
-          if (data.metaDesc) lines.push(`${en ? "Summary" : "摘要"}${sep}${await purifyToLang(data.metaDesc, L)}`);
-          lines.push("", P.lblCopyBody || "【正文文案】", bodyCopy || (en ? "(No body text extracted)" : "（未提取到正文文字）"));
-        }
-        return lines.join("\n");
-      };
-      _xmMixed = false; _xmNoMt = false;
-      savedCopyText = await composeCopy(outLang, langPack);
-    }
-
-    // 【核心防丢字段机制 · 阶段A】：预先在内存中构建第1级保底字段包；若第1级已找齐四项箱规且已选本地目录则先行落盘，否则待四级检索补齐箱规后一次性落盘（并在 finally 兜底防丢）
-    let txtSavedToDisk = false;
-    const stage1HasAllCartonPre = CARTON_FIELDS.every(f => Boolean(extractCartonValue(f, data.attrs || {}, data.pageText || "")));
+    // 阶段A：先在内存中构建第1级字段包（待 Stage B 完整补查后再决定最终文件夹名是否加“未完成采集_”并落盘）
     let finalBundle = await buildFieldsPayload({
       stageOcrTexts: [],
       stageOcrItems: [],
       allowNetworkCascade: false,
       allowRemoteAi: false,
     });
-    if (finalBundle.paramsText && selectedSaveDirectory && stage1HasAllCartonPre) {
-      await saveTextFileGuaranteed(
-        finalBundle.paramsText,
-        `${folder}/商品资料.txt`,
-        `${code}/商品资料.txt`,
-        saveDir
-      );
-      txtSavedToDisk = true;
-    }
 
-    const mediaPath = (category, name) => `${folder}/${opts.subdir ? category + "/" : ""}${name}`;
     let nm = 0, nd = 0, ns = 0, nv = 0, ocrCount = 0, unverifiedImageCount = 0;
     // 非电商网页（如博客）中的插图/截图常小于 600px，仅过滤小于 80px 的小图标，不误删正文配图
     const effectiveMinSize = isNonEcom ? (minSize > 0 ? Math.min(minSize, 80) : 0) : minSize;
@@ -6109,9 +5998,90 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       return accepted;
     };
 
-    // 详情图（电商页参数OCR也要用；非电商页作为正文配图保存，不做参数OCR）
+    // 1) 先在内存中预取详情图、主图、SKU图（同步收集 OCR 候选图），并立即关闭后台标签页释放内存
     const needOcr = !isNonEcom && (doParams || COMMON_FIELDS.some(f => f.c) || doAi);
     const detailAssets = (opts.detail || needOcr) ? await prepareImages(data.detail, isNonEcom ? "配图" : "详情图") : [];
+    const mainAssets = opts.main ? await prepareImages(data.main, "主图") : [];
+    const skuAssets = doSku ? await prepareImages(data.sku || [], "SKU图") : [];
+
+    if (tab) {
+      chrome.tabs.remove(tab.id).catch(() => {});
+      tab = null;
+    }
+
+    // 2) 若为商品页或开启参数/AI：先执行 Stage B（第2级图片OCR -> 第3级本平台搜索 -> 第4级全网搜索 -> AI故事/卖点）
+    if (!(isNonEcom && !doParams && !doAi)) {
+      try {
+        const ocrTexts = [];
+        const ocrItems = [];
+        const stage1HasAllChecked = !(finalBundle.missingRequired && finalBundle.missingRequired.length);
+        if (needOcr && ocrCandidatePool.length && !stage1HasAllChecked) {
+          const sortedPool = [...ocrCandidatePool]
+            .filter(b => b.w >= 200 && b.h >= 100 && (b.w / Math.max(1, b.h)) < 8)
+            .sort((a, b) => (b.isSpecChart ? 1 : 0) - (a.isSpecChart ? 1 : 0));
+          const candidates = sortedPool.slice(0, 6);
+          const ocrDeadline = Date.now() + 14000;
+          for (let i = 0; i < candidates.length; i++) {
+            if (stopRequested || Date.now() > ocrDeadline) break;
+            const cand = candidates[i];
+            $("status").innerText = `正在识别图片参数 (${i + 1}/${candidates.length})…`;
+            const t = await ocrImg(cand);
+            const labelTag = `详情图${String(i + 1).padStart(3, "0")}`;
+            if (t) {
+              ocrItems.push({ label: labelTag, text: t });
+              ocrTexts.push(`【${labelTag} OCR】\n${t}`);
+              ocrCount++;
+              const mergedSoFar = ocrItems.map(x => x.text).join("\n");
+              if (CARTON_FIELDS.every(f => Boolean(extractCartonValue(f, data.attrs || {}, (data.pageText || "") + "\n" + mergedSoFar)))) {
+                break;
+              }
+            }
+            await sleep(20);
+          }
+        }
+
+        const enrichedBundle = await buildFieldsPayload({
+          stageOcrTexts: ocrTexts,
+          stageOcrItems: ocrItems,
+          allowNetworkCascade: true,
+          allowRemoteAi: true,
+        });
+        if (enrichedBundle && enrichedBundle.paramsText) {
+          finalBundle = enrichedBundle;
+        }
+      } catch (enrichErr) {
+        console.warn("Enrichment fallback to Stage-A fields:", enrichErr);
+      }
+    }
+
+    // 3) 勾选的参数实在搜不到则算「未完成采集」，在文件夹命名前面标注「未完成采集_」
+    const missingList = !isNonEcom && Array.isArray(finalBundle.missingRequired) ? finalBundle.missingRequired : [];
+    const finalFolder = missingList.length ? `未完成采集_${folder}` : folder;
+    const finalCodePath = missingList.length ? `未完成采集_${code}` : code;
+    const mediaPath = (category, name) => `${finalFolder}/${opts.subdir ? category + "/" : ""}${name}`;
+
+    if (missingList.length) {
+      $("status").innerText = `⚠️ 以下勾选参数未搜到，文件夹已标注「未完成采集_」：${missingList.join("、")}`;
+    }
+
+    // 4) 统一落盘：来源URL.html + 商品资料.txt + 详情图 + 主图 + SKU图 + 视频
+    if (opts.url) {
+      await saveTextFileGuaranteed(
+        buildSourceUrlHtml(url, data.title || title),
+        `${finalFolder}/来源URL.html`,
+        `${finalCodePath}/来源URL.html`,
+        saveDir,
+        "text/html;charset=utf-8"
+      );
+    }
+    if (finalBundle.paramsText) {
+      await saveTextFileGuaranteed(
+        finalBundle.paramsText,
+        `${finalFolder}/商品资料.txt`,
+        `${finalCodePath}/商品资料.txt`,
+        saveDir
+      );
+    }
     if (opts.detail) {
       for (let i = 0; i < detailAssets.length; i++) {
         const asset = detailAssets[i];
@@ -6120,32 +6090,20 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         if (await dl(source, mediaPath("详情图", mediaFilename(mediaBase, "detail", i, detailAssets.length, ext)), saveDir, asset.image?.blob)) nd++;
       }
     }
-    // 主图
     if (opts.main) {
-      const images = await prepareImages(data.main, "主图");
-      for (const [i, asset] of images.entries()) {
+      for (const [i, asset] of mainAssets.entries()) {
         const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
         const source = asset.image ? URL.createObjectURL(asset.image.blob) : asset.url;
-        if (await dl(source, mediaPath("主图", mediaFilename(mediaBase, "main", i, images.length, ext)), saveDir, asset.image?.blob)) nm++;
+        if (await dl(source, mediaPath("主图", mediaFilename(mediaBase, "main", i, mainAssets.length, ext)), saveDir, asset.image?.blob)) nm++;
       }
     }
-    // SKU 图（仅电商商品页采集）
     if (doSku) {
-      const images = await prepareImages(data.sku || [], "SKU图");
-      for (const [i, asset] of images.entries()) {
+      for (const [i, asset] of skuAssets.entries()) {
         const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
         const source = asset.image ? URL.createObjectURL(asset.image.blob) : asset.url;
-        if (await dl(source, mediaPath("SKU图", mediaFilename(mediaBase, "sku", i, images.length, ext)), saveDir, asset.image?.blob)) ns++;
+        if (await dl(source, mediaPath("SKU图", mediaFilename(mediaBase, "sku", i, skuAssets.length, ext)), saveDir, asset.image?.blob)) ns++;
       }
     }
-
-    // 图片预取完成后立即关闭后台商品标签页，释放 200MB+ 渲染进程显存/内存，防止第10个商品因标签页堆积卡顿
-    if (tab) {
-      chrome.tabs.remove(tab.id).catch(() => {});
-      tab = null;
-    }
-
-    // 视频（包含 .mp4/.webm/.mov 视频及 .gif/.apng/Lottie/内联动画 SVG 等动画素材）
     if (opts.video) {
       for (let i = 0; i < data.videos.length; i++) {
         const vUrl = data.videos[i];
@@ -6163,72 +6121,10 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       }
     }
 
-    // 若为非电商网页且默认未开启商品参数与故事生成，则直接完成
-    if (isNonEcom && !doParams && !doAi) {
-      return { ok: true, isNonEcom: true, nm, nd, ns, nv, ocrCount: 0, ocrErr: "", folder, nextNo: slot.nextNo,
-        title: data.title || title, url, code, paramsText: savedCopyText, aiOut: [], commonOut: [], storyAngle: "",
-        aiFilteredCount, outLangLabel: langPack.label, imgFilterMode,
-        unsupportedMedia: data.unsupportedMedia || [], unverifiedImageCount,
-        imageCapReached: !!data.imageCapReached, videoCapReached: !!data.videoCapReached };
-    }
-
-    // 【核心防丢字段机制 · 阶段B】：在受控超时保护下执行第2级图片OCR、第3/4级跨页补查与AI润色，并覆盖更新《商品资料.txt》
-    try {
-      const ocrTexts = [];
-      const ocrItems = [];
-      const stage1HasAllCarton = CARTON_FIELDS.every(f => Boolean(extractCartonValue(f, data.attrs || {}, data.pageText || "")));
-      if (needOcr && ocrCandidatePool.length && !stage1HasAllCarton) {
-        // 优先挑选规格表/参数表图片，单商品最多识别 6 张，且单商品 OCR 总时长控制在 14 秒以内，查齐箱规立即提前结束
-        const sortedPool = [...ocrCandidatePool]
-          .filter(b => b.w >= 200 && b.h >= 100 && (b.w / Math.max(1, b.h)) < 8)
-          .sort((a, b) => (b.isSpecChart ? 1 : 0) - (a.isSpecChart ? 1 : 0));
-        const candidates = sortedPool.slice(0, 6);
-        const ocrDeadline = Date.now() + 14000;
-        for (let i = 0; i < candidates.length; i++) {
-          if (stopRequested || Date.now() > ocrDeadline) break;
-          const cand = candidates[i];
-          $("status").innerText = `正在识别图片参数 (${i + 1}/${candidates.length})…`;
-          const t = await ocrImg(cand);
-          const labelTag = `详情图${String(i + 1).padStart(3, "0")}`;
-          if (t) {
-            ocrItems.push({ label: labelTag, text: t });
-            ocrTexts.push(`【${labelTag} OCR】\n${t}`);
-            ocrCount++;
-            const mergedSoFar = ocrItems.map(x => x.text).join("\n");
-            if (CARTON_FIELDS.every(f => Boolean(extractCartonValue(f, data.attrs || {}, (data.pageText || "") + "\n" + mergedSoFar)))) {
-              break;
-            }
-          }
-          await sleep(20);
-        }
-      }
-
-      const enrichedBundle = await buildFieldsPayload({
-        stageOcrTexts: ocrTexts,
-        stageOcrItems: ocrItems,
-        allowNetworkCascade: true,
-        allowRemoteAi: true,
-      });
-      if (enrichedBundle && enrichedBundle.paramsText) {
-        finalBundle = enrichedBundle;
-      }
-    } catch (enrichErr) {
-      // 即使第2/3/4级检索或远程AI异常，也保留阶段A已生成的完整字段内容，绝不丢失《商品资料.txt》
-      console.warn("Enrichment fallback to Stage-A fields:", enrichErr);
-    }
-
-    if (finalBundle.paramsText) {
-      await saveTextFileGuaranteed(
-        finalBundle.paramsText,
-        `${folder}/商品资料.txt`,
-        `${code}/商品资料.txt`,
-        saveDir
-      );
-    }
-
-    return { ok: true, isNonEcom, nm, nd, ns, nv, ocrCount, ocrErr: window.__ocrErr || "", folder, nextNo: slot.nextNo,
-      title: data.title || title, url, code, paramsText: finalBundle.paramsText || savedCopyText,
+    return { ok: true, isNonEcom, nm, nd, ns, nv, ocrCount, ocrErr: window.__ocrErr || "", folder: finalFolder, nextNo: slot.nextNo,
+      title: data.title || title, url, code, paramsText: finalBundle.paramsText || "",
       aiOut: finalBundle.aiOut, commonOut: finalBundle.commonOut, storyAngle: finalBundle.usedStoryAngle,
+      missingRequired: missingList,
       aiFilteredCount, outLangLabel: langPack.label, imgFilterMode,
       unsupportedMedia: data.unsupportedMedia || [], unverifiedImageCount,
       imageCapReached: !!data.imageCapReached, videoCapReached: !!data.videoCapReached };
