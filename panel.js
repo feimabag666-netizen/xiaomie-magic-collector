@@ -3263,7 +3263,7 @@ function renderFields(boxId, key, arr, isAi) {
       inp.value = f.v || "";
       inp.defaultValue = f.v || "";
       inp.style.cssText = "flex:1;min-width:0;padding:5px 8px;font-size:12px";
-      inp.placeholder = isAi ? "选填：补充具体要求" : (f.n === "商品标题" ? "留空自动提取网页标题（可填写改写商品标题）" : "留空自动提取");
+      inp.placeholder = isAi ? "选填：补充具体要求" : (f.n === "商品标题" ? "留空自动提取网页标题（可填写改写商品标题）" : (YES_NO_FIELDS.includes(f.n) ? "留空自动搜（值：是或否，搜不到默认填 是）" : "留空自动提取"));
       if (isAi) inp.maxLength = 100;
       inp.onchange = () => {
         f.v = inp.value.slice(0, isAi ? 100 : 200);
@@ -3548,7 +3548,21 @@ const FIELD_ALIAS = {
   "功率": ["功率", "额定功率", "power", "wattage"],
   "电压": ["电压", "额定电压", "voltage"],
   "品牌": ["品牌", "商标", "brand", "brand name", "марка", "бренд", "ブランド", "브랜드", "marca", "marque", "marke"],
+  "加印LOGO": ["加印logo", "加印LOGO", "印logo", "定制logo", "logo定制", "可以印logo", "可加印logo", "print logo", "custom logo", "logo printing"],
+  "是否支持定制": ["是否支持定制", "加工定制", "支持定制", "来图定制", "来样定制", "定制服务", "可定制", "does it support customization", "does it support customization?", "customization", "customizable", "oem", "odm"],
 };
+const YES_NO_FIELDS = ["加印LOGO", "是否支持定制"];
+function normalizeYesNoFieldValue(rawVal) {
+  const s = String(rawVal ?? "").trim();
+  if (!s) return "";
+  if (/^(?:否|不|不可|不可以|不支持|无|没有|no|n|false|not\s*supported|unavailable|non|nein|нет|いいえ|아니오)$/i.test(s) || /(?:不支持|不可以|不可加印|不能定制|not\s*support|no\s*custom)/i.test(s)) {
+    return "否";
+  }
+  if (/^(?:是|可|可以|支持|有|对|yes|y|true|ok|support|supported|available|customizable|can\s*be\s*customized|oui|ja|sí|да|はい|예)$/i.test(s) || /(?:支持|可以|可加印|可定制|customizable|print\s*logo)/i.test(s)) {
+    return "是";
+  }
+  return "";
+}
 
 // 清洗网页属性表：剔除“材质: 预览”等UI噪音词、剔除1688表格倒序重复项（如“否: 是否一次性”、“成人: 适用人群”、“清洁: 功能”）以及 SKU 库存行（如“紫+蓝2支装: 37”）
 function sanitizeProductAttrs(rawAttrs) {
@@ -3600,6 +3614,8 @@ function isValidFieldValue(name, val) {
   return true;
 }
 function matchField(name, attrs, text) {
+  const isYesNo = YES_NO_FIELDS.includes(name);
+  const norm = (val) => isYesNo ? normalizeYesNoFieldValue(val) : val;
   const keys = Object.keys(attrs || {});
   const cand = [name].concat(FIELD_ALIAS[name] || []);
   const GENERIC = ["尺寸", "重量", "数量", "规格", "颜色", "型号", "名称", "类型", "size", "weight", "color", "model", "brand"];
@@ -3609,14 +3625,14 @@ function matchField(name, attrs, text) {
     for (const k of keys) {
       const kLow = k.toLowerCase();
       if (kLow === cLow) {
-        const v = String(attrs[k] || "").trim();
-        if (isValidFieldValue(name, v)) return v;
+        const v = norm(String(attrs[k] || "").trim());
+        if (v && isValidFieldValue(name, v)) return v;
       } else if (!GENERIC.includes(kLow) && !isAsciiCand && (kLow.includes(cLow) || cLow.includes(kLow))) {
-        const v = String(attrs[k] || "").trim();
-        if (isValidFieldValue(name, v)) return v;
+        const v = norm(String(attrs[k] || "").trim());
+        if (v && isValidFieldValue(name, v)) return v;
       } else if (isAsciiCand && cLow.length >= 4 && new RegExp(`(?:^|\\b)${escRe(cLow)}(?:\\b|$)`, "i").test(kLow)) {
-        const v = String(attrs[k] || "").trim();
-        if (isValidFieldValue(name, v)) return v;
+        const v = norm(String(attrs[k] || "").trim());
+        if (v && isValidFieldValue(name, v)) return v;
       }
     }
   }
@@ -3624,12 +3640,15 @@ function matchField(name, attrs, text) {
     const BADVAL = new Set(["型号","名称","品牌","产地","尺寸","规格","重量","数量","参数","说明","详情","价格",
       "毛重","净重","装箱数","箱规","交期","起订量","装箱数量","外箱","箱子","包装","单位","备注","材质","颜色",
       "预览","查看","展开","收起","更多","图片","大图","视频","全部","选择","客服","评价","收藏","举报"]);
+    const lenRange = isYesNo ? "{1,36}" : "{2,36}";
     for (const c of cand) {
       const isAsciiCand = /^[a-z0-9\s._/-]+$/i.test(c);
       const boundaryPrefix = isAsciiCand ? "(?:^|\\b)" : "";
       const sepPattern = "\\s*[:：]\\s*";
-      const m = text.match(new RegExp(boundaryPrefix + escRe(c) + sepPattern + "([0-9a-zA-Z一-龥.．/×xX*＊\\-]{2,36})", "i"));
-      if (m && m[1] && !BADVAL.has(m[1].trim()) && isValidFieldValue(name, m[1].trim())) return m[1].trim();
+      const m = text.match(new RegExp(boundaryPrefix + escRe(c) + sepPattern + "([0-9a-zA-Z一-龥.．/×xX*＊\\-]" + lenRange + ")", "i"));
+      const rawMatched = m && m[1] ? m[1].trim() : "";
+      const v = norm(rawMatched);
+      if (v && !BADVAL.has(v) && isValidFieldValue(name, v)) return v;
     }
   }
   return "";
@@ -5821,6 +5840,10 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
             }
             if (!v) builtMissingRequired.push(f.n);
             const finalVal = v ? translateCommonValue(v, outLang) : "";
+            await pushFieldLine(formatFieldDisplayName(f.n), finalVal, builtCommonOut, srcStage, f.n, true);
+          } else if (YES_NO_FIELDS.includes(f.n)) {
+            v = normalizeYesNoFieldValue(v) || "是";
+            const finalVal = translateCommonValue(v, outLang);
             await pushFieldLine(formatFieldDisplayName(f.n), finalVal, builtCommonOut, srcStage, f.n, true);
           } else {
             if (!v) builtMissingRequired.push(f.n);
