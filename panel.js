@@ -3659,7 +3659,7 @@ function matchField(name, attrs, text) {
       const isAsciiCand = /^[a-z0-9\s._/-]+$/i.test(c);
       const boundaryPrefix = isAsciiCand ? "(?:^|\\b)" : "";
       const sepPattern = "\\s*[:：]\\s*";
-      const m = text.match(new RegExp(boundaryPrefix + escRe(c) + sepPattern + "([0-9a-zA-Z一-龥.．/×xX*＊\\- ]" + lenRange + ")", "i"));
+      const m = text.match(new RegExp(boundaryPrefix + escRe(c) + sepPattern + "([0-9a-zA-Z一-龥.．/×xX*＊\\- 、，,+]" + lenRange + ")", "i"));
       const rawMatched = m && m[1] ? m[1].trim() : "";
       const v = norm(rawMatched);
       if (v && !BADVAL.has(v) && isValidFieldValue(name, v)) return v;
@@ -4877,7 +4877,7 @@ async function aiExtractStageFields(stageKey, targetFields, data, sourceUrl, con
       const title = String(data?.title || "").slice(0, 120);
       const attrs = Object.entries(data?.attrs || {}).slice(0, 40).map(([k, v]) => `${k}: ${v}`).join("\n").slice(0, 1500);
       const ctxSlice = extractRelevantSpecWindow(contextText, 4500);
-      const ocrSlice = String(ocrText || "").slice(0, 3000);
+      const ocrSlice = extractRelevantSpecWindow(ocrText, 4500);
       const messages = [
         {
           role: "system",
@@ -5380,8 +5380,8 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
   }
 
   const mergedOcrText = Array.isArray(ocrItems) ? ocrItems.map(x => x.text).join("\n") : "";
-  const allCheckedTargets = (COMMON_FIELDS || []).filter(f => f && f.c && f.n !== "商品标题" && f.n !== "型号").map(f => f.n);
-  if (!allCheckedTargets.includes(field)) allCheckedTargets.push(field);
+  const allCheckedTargets = (COMMON_FIELDS || []).filter(f => f && f.c && f.n !== "商品标题" && f.n !== "型号" && !CARTON_FIELDS.includes(f.n)).map(f => f.n);
+  if (!isCarton && !allCheckedTargets.includes(field)) allCheckedTargets.push(field);
 
   // 2b) 第一步兜底：插件 AI 综合检索本网页文字 + 本网页图片 OCR 文字
   if (!isCarton) {
@@ -5403,7 +5403,7 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
     }
   }
   if (!isCarton && stage3Pages.length) {
-    const s3Text = stage3Pages.map(p => p.text || "").join("\n");
+    const s3Text = stage3Pages.map(p => [Object.entries(p.attrs || {}).map(([k, v]) => `${k}: ${v}`).join("\n"), p.text || ""].filter(Boolean).join("\n")).join("\n");
     const s3Ocr = stage3Pages.map(p => p.ocrText || "").filter(Boolean).join("\n");
     const aiStep2 = await aiExtractStageFields("step2", allCheckedTargets, data, sourceUrl, s3Text, s3Ocr, false, cascadeCache);
     if (aiStep2 && aiStep2[field]) {
