@@ -4831,7 +4831,7 @@ async function ocrFetchedPageImages(pageDoc, pageUrl, maxImgs = 3) {
   for (const u of urls) {
     if (done >= maxImgs) break;
     try {
-      const r = await fetch(u, { signal: AbortSignal.timeout(4200) });
+      const r = await fetch(u, { credentials: "include", signal: AbortSignal.timeout(4200) });
       if (!r.ok) continue;
       const blob = await r.blob();
       if (!blob || blob.size < 8000 || !/^image\//i.test(blob.type || "image/jpeg")) continue;
@@ -5193,8 +5193,9 @@ async function getStage3SamePlatformPages(data, sourceUrl, cacheObj) {
 
   for (const link of candidateLinks.slice(0, 2)) {
     seenLinks.add(link);
+    let pushed = false;
     try {
-      const r = await fetch(link, { signal: AbortSignal.timeout(fetchTimeoutMs) });
+      const r = await fetch(link, { credentials: "include", signal: AbortSignal.timeout(fetchTimeoutMs) });
       if (r.ok) {
         const page = new DOMParser().parseFromString(await r.text(), "text/html");
         page.querySelectorAll("script,style").forEach(el => el.remove());
@@ -5202,9 +5203,18 @@ async function getStage3SamePlatformPages(data, sourceUrl, cacheObj) {
         if (isSameProductText(text, title, brand, model)) {
           const imgOcr = await ocrFetchedPageImages(page, link, 3);
           cacheObj.stage3Pages.push({ link, attrs: {}, text: imgOcr ? `${text}\n${imgOcr}` : text, ocrText: imgOcr });
+          pushed = true;
         }
       }
     } catch {}
+    if (!pushed && !isBatchMode && is1688OfferUrl(link) && typeof probeAttrs === "function") {
+      try {
+        const probed = await probeAttrs(link);
+        if (probed && (Object.keys(probed.attrs || {}).length || (probed.text || "").length > 100) && isSameProductText(`${Object.entries(probed.attrs || {}).map(([k, v]) => `${k} ${v}`).join(" ")} ${probed.text || ""}`, title, brand, model)) {
+          cacheObj.stage3Pages.push({ link: probed.url || link, attrs: probed.attrs || {}, text: probed.text || "" });
+        }
+      } catch {}
+    }
   }
 
   // 若为单条 1688 商品且直接 fetch 未命中，可调用 1688 站内同款检索（批量采集 10+ 商品时不开额外搜索标签页，防止触发 1688 风控导致第10个商品被拦截）
