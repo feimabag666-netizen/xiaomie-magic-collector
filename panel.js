@@ -2656,17 +2656,11 @@ async function ocrImg(imgAsset) {
   }
 }
 
-/* ================= 常用参数（B2B / B2C 独立 + 3套品类模板） + 可选参数（1688 实用对照 + 双击互转） ================= */
+/* ================= 常用参数（B2B / B2C 独立 · 核心常用在前 · 全部自由勾选） ================= */
 const CARTON_FIELDS = ["每箱多少个", "箱子毛净重", "箱子尺寸", "箱子立方数"];
-const COMMON_TEMPLATE_PRESETS = {
-  "1": { label: "模板1：箱包/日用（尺寸）", fields: ["产品尺寸", "单件重量", "功能"] },
-  "2": { label: "模板2：杯壶/容器（容量）", fields: ["容量", "产品尺寸", "单件重量", "功能"] },
-  "3": { label: "模板3：设备/机械（详细规格）", fields: ["详细规格", "功率", "电压", "产品尺寸"] },
-};
 let activeBizMode = "b2b";
-let activeCommonTpl = "1";
 
-function buildDefaultCommonFields(mode = "b2b", tpl = "1") {
+function buildDefaultCommonFields(mode = "b2b") {
   const isB2C = mode === "b2c";
   const baseBefore = isB2C
     ? [
@@ -2677,6 +2671,11 @@ function buildDefaultCommonFields(mode = "b2b", tpl = "1") {
         { n: "价格", c: true, v: "" },
         { n: "材质", c: true, v: "" },
         { n: "品牌", c: true, v: "" },
+        { n: "产品尺寸", c: true, v: "" },
+        { n: "单件重量", c: true, v: "" },
+        { n: "容量", c: false, v: "" },
+        { n: "功能", c: true, v: "" },
+        { n: "详细规格", c: false, v: "" },
       ]
     : [
         { n: "商品标题", c: true, v: "" },
@@ -2692,17 +2691,13 @@ function buildDefaultCommonFields(mode = "b2b", tpl = "1") {
         { n: "材质", c: true, v: "" },
         { n: "产地", c: true, v: "永康市，浙江省，中国" },
         { n: "品牌", c: true, v: "" },
+        { n: "产品尺寸", c: true, v: "" },
+        { n: "单件重量", c: true, v: "" },
+        { n: "容量", c: false, v: "" },
+        { n: "详细规格", c: false, v: "" },
+        { n: "功能", c: true, v: "" },
       ];
-  const tplList = (COMMON_TEMPLATE_PRESETS[String(tpl)] || COMMON_TEMPLATE_PRESETS["1"]).fields;
   const seen = new Set(baseBefore.map(x => x.n));
-  for (const fn of tplList) {
-    if (!seen.has(fn)) {
-      baseBefore.push({ n: fn, c: true, v: "" });
-      seen.add(fn);
-    }
-  }
-  baseBefore.push({ n: "产品参数", c: true, v: "" });
-  seen.add("产品参数");
   // 合并其余 1688 可选参数到同一输入框列表（排在核心最常用之后，默认不勾选，按需勾选或填默认值）
   for (const sec of DEF_SECONDARY) {
     if (!seen.has(sec.n)) {
@@ -2752,7 +2747,7 @@ const SECONDARY_GROUP_LABELS = {
   basic: "📦 1. 产品可选属性（双击可升为常用参数 · 搜不到不显示）",
   trade: "🚢 2. 价格、外贸定制与物流可选属性（双击可升为常用参数 · 搜不到不显示）",
 };
-const DEF_COMMON = buildDefaultCommonFields("b2b", "1");
+const DEF_COMMON = buildDefaultCommonFields("b2b");
 
 const DEF_AI = [
   { n: "独特卖点", group: "point", c: true, v: "" },
@@ -2807,11 +2802,11 @@ function saveFields(key, arr) {
 const DEF_NON_ECOM_CORE = [
   { n: "网页/视频标题", c: true, v: "", ph: "留空自动提取标题（可填写改写标题）" },
   { n: "编号/归档号", c: true, v: "", ph: "请在文件夹与编号区域填写编号", readonlyHint: true },
-  { n: "网页视频采集", c: true, v: "", req: true, ph: "自动嗅探 MP4/WebM/流媒体视频（可填备注）" },
+  { n: "网页视频采集", c: true, v: "", ph: "自动嗅探 MP4/WebM/流媒体视频（可填备注）" },
   { n: "动图与动画采集", c: true, v: "", ph: "自动采集 GIF / WebP / APNG / SVG 动图" },
   { n: "视频封面/首图", c: true, v: "", ph: "自动提取视频封面海报与首图" },
   { n: "正文高清配图", c: true, v: "", ph: "自动采集文章/帖子正文高清插图" },
-  { n: "正文文案提取", c: true, v: "", req: true, ph: "自动提取正文文案/视频简介" },
+  { n: "正文文案提取", c: true, v: "", ph: "自动提取正文文案/视频简介" },
   { n: "作者/来源账号", c: true, v: "", ph: "留空自动提取（可填写指定作者/频道名）" },
   { n: "发布时间", c: true, v: "", ph: "留空自动提取发布日期" },
   { n: "话题标签/关键词", c: true, v: "", ph: "留空自动提取 #话题标签 / 关键词" },
@@ -2923,13 +2918,8 @@ function renderNonEcomCoreFields() {
     const row = document.createElement("div");
     row.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid #bae6fd;border-radius:8px;background:#f8fcff";
     const cb = document.createElement("input");
-    const required = Boolean(f.req);
     cb.type = "checkbox";
-    cb.checked = required || Boolean(f.c);
-    if (required) {
-      f.c = true;
-      cb.disabled = true;
-    }
+    cb.checked = Boolean(f.c);
     cb.onchange = () => {
       f.c = cb.checked;
       if (f.n === "网页视频采集" && $("optVideo")) $("optVideo").checked = cb.checked;
@@ -2941,13 +2931,6 @@ function renderNonEcomCoreFields() {
     const nm = document.createElement("span");
     nm.innerText = f.n;
     nm.style.cssText = "min-width:105px;font-weight:700;font-size:12.5px;color:#0c4a6e";
-    if (required) {
-      const star = document.createElement("span");
-      star.textContent = " *";
-      star.style.color = "#e11d48";
-      star.title = "核心必采项";
-      nm.appendChild(star);
-    }
     const inp = document.createElement("input");
     if (f.readonlyHint || f.n === "编号/归档号") {
       f.v = "";
@@ -2968,18 +2951,16 @@ function renderNonEcomCoreFields() {
       };
     }
     row.append(cb, nm, inp);
-    if (!required) {
-      const del = document.createElement("button");
-      del.innerText = "✕";
-      del.title = "删除这个采集项";
-      del.style.cssText = "padding:2px 7px;font-size:11px";
-      del.onclick = () => {
-        NON_ECOM_CORE_FIELDS.splice(i, 1);
-        saveNonEcomCoreFields();
-        renderNonEcomCoreFields();
-      };
-      row.appendChild(del);
-    }
+    const del = document.createElement("button");
+    del.innerText = "✕";
+    del.title = "删除这个采集项";
+    del.style.cssText = "padding:2px 7px;font-size:11px";
+    del.onclick = () => {
+      NON_ECOM_CORE_FIELDS.splice(i, 1);
+      saveNonEcomCoreFields();
+      renderNonEcomCoreFields();
+    };
+    row.appendChild(del);
     box.appendChild(row);
   });
 }
@@ -3045,14 +3026,13 @@ function saveSecondaryFields() {
   return chrome.storage.local.set({ secondaryFields: compact });
 }
 
-function getProfileStorageKey(mode = activeBizMode, tpl = activeCommonTpl) {
+function getProfileStorageKey(mode = activeBizMode) {
   const m = mode === "b2c" ? "b2c" : "b2b";
-  const t = ["1", "2", "3"].includes(String(tpl)) ? String(tpl) : "1";
-  return `fieldProfile_${m}_tpl${t}`;
+  return `fieldProfile_${m}`;
 }
 
 async function saveActiveFieldProfile() {
-  const key = getProfileStorageKey(activeBizMode, activeCommonTpl);
+  const key = getProfileStorageKey(activeBizMode);
   const compactCommon = COMMON_FIELDS.map(f => ({ n: f.n, c: Boolean(f.c), v: String(f.v || "") }));
   const compactSec = SECONDARY_FIELDS.map(f => ({ n: f.n, c: Boolean(f.c) }));
   await chrome.storage.local.set({
@@ -3060,20 +3040,31 @@ async function saveActiveFieldProfile() {
     commonFields: compactCommon,
     secondaryFields: compactSec,
     secPresetMode: activeBizMode,
-    commonTplMode: activeCommonTpl,
   });
 }
 
-async function loadActiveFieldProfile(mode = activeBizMode, tpl = activeCommonTpl) {
+async function loadActiveFieldProfile(mode = activeBizMode) {
   activeBizMode = mode === "b2c" ? "b2c" : "b2b";
-  activeCommonTpl = ["1", "2", "3"].includes(String(tpl)) ? String(tpl) : "1";
-  const key = getProfileStorageKey(activeBizMode, activeCommonTpl);
-  const stored = await chrome.storage.local.get(key);
-  const prof = stored?.[key];
+  const key = getProfileStorageKey(activeBizMode);
+  const legacyKey = `${key}_tpl1`;
+  const stored = await chrome.storage.local.get([key, legacyKey]);
+  const prof = stored?.[key] || stored?.[legacyKey];
   if (prof && Array.isArray(prof.common) && prof.common.length) {
-    COMMON_FIELDS = prof.common
-      .filter(f => f && f.n && f.n !== "货号" && f.n !== "包装规格" && f.n !== "产品类别")
+    const filtered = prof.common
+      .filter(f => f && f.n && f.n !== "货号" && f.n !== "包装规格" && f.n !== "产品类别" && f.n !== "产品参数")
       .map(f => ({ n: f.n === "规格" ? "详细规格" : f.n, c: Boolean(f.c), v: String(f.v || "") }));
+    // 保证核心常用字段排在最前面
+    const coreOrder = buildDefaultCommonFields(activeBizMode).filter(f => f.c).map(f => f.n);
+    const coreSet = new Set(coreOrder);
+    const byName = new Map(filtered.map(f => [f.n, f]));
+    const ordered = [];
+    for (const cn of coreOrder) {
+      if (byName.has(cn)) ordered.push(byName.get(cn));
+    }
+    for (const f of filtered) {
+      if (!coreSet.has(f.n)) ordered.push(f);
+    }
+    COMMON_FIELDS = ordered;
     const existingSet = new Set(COMMON_FIELDS.map(f => f.n));
     for (const sec of DEF_SECONDARY) {
       if (!existingSet.has(sec.n)) {
@@ -3082,7 +3073,7 @@ async function loadActiveFieldProfile(mode = activeBizMode, tpl = activeCommonTp
       }
     }
   } else {
-    COMMON_FIELDS = buildDefaultCommonFields(activeBizMode, activeCommonTpl);
+    COMMON_FIELDS = buildDefaultCommonFields(activeBizMode);
   }
   const commonNames = new Set(COMMON_FIELDS.map(f => f.n));
   const secSavedMap = new Map(
@@ -3104,12 +3095,9 @@ async function loadActiveFieldProfile(mode = activeBizMode, tpl = activeCommonTp
 
 async function promoteOptionalToCommon(fieldName) {
   const cleanName = String(fieldName || "").trim();
-  if (!cleanName) return;
+  if (!cleanName || cleanName === "产品参数") return;
   if (!COMMON_FIELDS.some(f => f.n === cleanName)) {
-    const paramIdx = COMMON_FIELDS.findIndex(f => f.n === "产品参数");
-    const newItem = { n: cleanName, c: true, v: "" };
-    if (paramIdx >= 0) COMMON_FIELDS.splice(paramIdx, 0, newItem);
-    else COMMON_FIELDS.push(newItem);
+    COMMON_FIELDS.push({ n: cleanName, c: true, v: "" });
   }
   await saveActiveFieldProfile();
   renderAllFieldBoxes();
@@ -3118,8 +3106,6 @@ async function promoteOptionalToCommon(fieldName) {
 async function demoteCommonToOptional(fieldName) {
   const cleanName = String(fieldName || "").trim();
   if (!cleanName) return;
-  const locked = cleanName === "产品参数" || cleanName === "商品标题" || (activeBizMode === "b2b" && CARTON_FIELDS.includes(cleanName));
-  if (locked) return;
   COMMON_FIELDS = COMMON_FIELDS.filter(f => f.n !== cleanName);
   let sec = SECONDARY_FIELDS.find(f => f.n === cleanName);
   if (!sec) {
@@ -3245,9 +3231,8 @@ function renderFields(boxId, key, arr, isAi) {
   box.innerHTML = "";
   arr.forEach((f, i) => {
     const row = document.createElement("div");
-    const required = !isAi && (f.n === "产品参数" || f.n === "商品标题" || (activeBizMode === "b2b" && CARTON_FIELDS.includes(f.n)));
     row.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid #ede7f5;border-radius:8px;background:#fcfbfe;user-select:none";
-    if (!isAi && !required) {
+    if (!isAi) {
       row.title = "双击移至「可选参数」";
       row.ondblclick = (e) => {
         if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "BUTTON")) return;
@@ -3255,8 +3240,7 @@ function renderFields(boxId, key, arr, isAi) {
       };
     }
     const cb = document.createElement("input");
-    cb.type = "checkbox"; cb.checked = required || !!f.c;
-    if (required) { f.c = true; cb.disabled = true; }
+    cb.type = "checkbox"; cb.checked = !!f.c;
     cb.onchange = () => {
       f.c = cb.checked;
       if (isAi) saveFields(key, AI_FIELDS);
@@ -3264,14 +3248,7 @@ function renderFields(boxId, key, arr, isAi) {
     };
     const nm = document.createElement("span");
     nm.innerText = f.n === "详细规格" ? "详细规格（设备类）" : f.n;
-    nm.style.cssText = "min-width:96px;font-weight:700;font-size:12.5px;color:#4a3563;cursor:" + (!isAi && !required ? "pointer" : "default");
-    if (required) {
-      const star = document.createElement("span");
-      star.textContent = " *";
-      star.style.color = "#b04465";
-      star.title = "必填项";
-      nm.appendChild(star);
-    }
+    nm.style.cssText = "min-width:96px;font-weight:700;font-size:12.5px;color:#4a3563;cursor:" + (!isAi ? "pointer" : "default");
     const inp = document.createElement("input");
     if (!isAi && f.n === "型号") {
       f.v = "";
@@ -3305,7 +3282,7 @@ function renderFields(boxId, key, arr, isAi) {
       renderAllFieldBoxes();
     };
     row.append(cb, nm, inp);
-    if (!required && boxId !== "sellingPointFields" && boxId !== "storyFields") row.appendChild(del);
+    if (boxId !== "sellingPointFields" && boxId !== "storyFields") row.appendChild(del);
     box.appendChild(row);
   });
   try { if (window.XM_I18N && typeof window.XM_I18N.apply === "function") window.XM_I18N.apply(); } catch {}
@@ -3342,10 +3319,9 @@ async function getStoryDirection() {
   return { angles: angle, soul: $("soulLine")?.value?.trim() || s.soulLine || "用心服务，一对一全程跟进，扣细节扣隐患，极致仔细，想客户所想，独家的预防出错机制，经验丰富，大量避坑，守住质量底线" };
 }
 async function initFields() {
-  const modeInit = await chrome.storage.local.get(["secPresetMode", "commonTplMode"]);
+  const modeInit = await chrome.storage.local.get(["secPresetMode"]);
   activeBizMode = modeInit?.secPresetMode === "b2c" ? "b2c" : "b2b";
-  activeCommonTpl = ["1", "2", "3"].includes(String(modeInit?.commonTplMode || "")) ? String(modeInit.commonTplMode) : "1";
-  await loadActiveFieldProfile(activeBizMode, activeCommonTpl);
+  await loadActiveFieldProfile(activeBizMode);
   await loadNonEcomFields();
   AI_FIELDS = await loadFields("aiFields", DEF_AI, true);
   renderAllFieldBoxes();
@@ -3381,36 +3357,17 @@ async function initFields() {
   }
   if ($("btnNonEcomClearAll")) {
     $("btnNonEcomClearAll").onclick = () => {
-      const coreSet = new Set(DEF_NON_ECOM_CORE.map(d => d.n));
-      NON_ECOM_CORE_FIELDS.forEach(f => { f.c = coreSet.has(f.n) || Boolean(f.req); });
+      NON_ECOM_CORE_FIELDS.forEach(f => { f.c = false; });
       saveNonEcomCoreFields();
       renderNonEcomCoreFields();
     };
   }
-  const syncTplBtns = () => {
-    document.querySelectorAll(".common-tpl-btn").forEach(btn => {
-      const isAct = btn.dataset.tpl === String(activeCommonTpl);
-      btn.style.background = isAct ? "#4a3563" : "#fff";
-      btn.style.color = isAct ? "#fff" : "#4a3563";
-      btn.style.borderColor = isAct ? "#4a3563" : "#d8cceb";
-    });
-  };
-  const applyCommonTplMode = async (tpl) => {
-    await loadActiveFieldProfile(activeBizMode, tpl);
-    renderAllFieldBoxes();
-    syncTplBtns();
-    applySecPresetMode(activeBizMode, true);
-  };
-  document.querySelectorAll(".common-tpl-btn").forEach(btn => {
-    btn.onclick = () => applyCommonTplMode(btn.dataset.tpl || "1");
-  });
-  syncTplBtns();
 
   const applySecPresetMode = async (presetMode, uiOnly = false) => {
     const isB2B = presetMode === "b2b";
     const isB2C = presetMode === "b2c";
     if (!uiOnly && (isB2B || isB2C)) {
-      await loadActiveFieldProfile(presetMode, activeCommonTpl);
+      await loadActiveFieldProfile(presetMode);
       DYNAMIC_SECONDARY_FIELDS.forEach(f => { f.c = false; });
       if ($("optIncludeUnlistedAttrs")) $("optIncludeUnlistedAttrs").checked = false;
       await chrome.storage.local.set({ optIncludeUnlistedAttrs: false, secPresetMode: presetMode });
@@ -3432,22 +3389,21 @@ async function initFields() {
     const hintEl = $("secPresetActiveHint");
     if (hintEl) {
       hintEl.dataset.presetMode = presetMode || "default";
-      const tplName = (COMMON_TEMPLATE_PRESETS[activeCommonTpl] || COMMON_TEMPLATE_PRESETS["1"]).label;
       const isEn = (window.XM_I18N && window.XM_I18N.lang === "en") || document.documentElement.lang === "en";
       if (isB2B) {
         hintEl.style.background = "#eef2ff";
         hintEl.style.borderColor = "#c7d2fe";
         hintEl.style.color = "#1e3a8a";
         hintEl.textContent = isEn
-          ? `✅ [🏭 B2B Independent Site Mode · ${tplName}]: Common & Optional params are isolated from B2C. Double-click any field to move between Common and Optional.`
-          : `✅ 当前已启用【🏭 B2B 独立站模式 · ${tplName}】：常用参数（含箱规4项/颜色/包装方式/交期/起订量）与可选参数均独立保存；双击任意参数可互转！`;
+          ? `✅ [🏭 B2B Independent Site Mode]: Core common fields are at the top. All fields are optional; checked fields are searched via Page ➡️ Platform ➡️ Web.`
+          : `✅ 当前已启用【🏭 B2B 独立站模式】：核心常用参数排在最前面，所有参数均可选可不选；勾选参数将按「本网页 ➡️ 本平台 ➡️ 全网」3步规则搜全。`;
       } else if (isB2C) {
         hintEl.style.background = "#fdf2f8";
         hintEl.style.borderColor = "#fbcfe8";
         hintEl.style.color = "#9d174d";
         hintEl.textContent = isEn
-          ? `✅ [🛍️ B2C Site & Store Mode · ${tplName}]: Common & Optional params are isolated from B2B. Double-click any field to move between Common and Optional.`
-          : `✅ 当前已启用【🛍️ B2C 独立站/店铺模式 · ${tplName}】：常用参数（含颜色/包装方式/价格/材质/品牌）与可选参数均独立保存；双击任意参数可互转！`;
+          ? `✅ [🛍️ B2C Site & Store Mode]: Core common fields are at the top. All fields are optional; checked fields are searched via Page ➡️ Platform ➡️ Web.`
+          : `✅ 当前已启用【🛍️ B2C 独立站/店铺模式】：核心常用参数排在最前面，所有参数均可选可不选；勾选参数将按「本网页 ➡️ 本平台 ➡️ 全网」3步规则搜全。`;
       } else if (presetMode === "all") {
         hintEl.style.background = "#f0fdf4";
         hintEl.style.borderColor = "#bbf7d0";
@@ -3498,8 +3454,7 @@ async function initFields() {
   if ($("btnSecClearAll")) {
     $("btnSecClearAll").onclick = () => {
       COMMON_FIELDS.forEach(f => {
-        const required = f.n === "产品参数" || f.n === "商品标题" || (activeBizMode === "b2b" && CARTON_FIELDS.includes(f.n));
-        f.c = required;
+        f.c = false;
       });
       DYNAMIC_SECONDARY_FIELDS.forEach(f => { f.c = false; });
       if ($("optIncludeUnlistedAttrs")) $("optIncludeUnlistedAttrs").checked = false;
@@ -4048,21 +4003,21 @@ function buildMasterSellingPoints(p, req, isSeed, lang = "zh") {
     ].join("\n");
   }
 
-  // 默认简体中文：聚焦商品本身最突出的真实特点总结（不凑规格参数，无括号方框，无人造AI味）
+  // 默认简体中文：提取核心简短词语，直击商品最核心的独特特点，让消费者一眼看去有吸引力，零AI味、无括号方框
   if (isSeed) {
     return [
-      `1. 直击痛点的实用设计：针对日常使用最容易出毛病的地方做了${p.coreFeatures}，拿在手里顺手稳当，用久也不易松垮变形`,
-      `2. 实打实的好材质手感：用足${p.material}，表面平整无毛刺、不粘灰不留异味，贴身或高频使用都放心`,
-      `3. 挑不出毛病的细节做工：边角收口干净利落，耐摔抗磨好冲洗，放在家里或随身带着都显得干净利索`,
-      `4. 闭眼好搭的日常颜值：提供${p.variants}等耐看配色，自用顺眼、拿来送人也体面大方${reqLine}`,
+      `1. 痛点直击：${p.coreFeatures}，上手顺手省心`,
+      `2. 扎实用料：${p.material}，安全无异味更耐造`,
+      `3. 细节到位：收口工整防滑抗摔，日常好打理`,
+      `4. 颜值百搭：${p.variants}多色可选，自用送礼体面${reqLine}`,
     ].join("\n");
   }
 
   return [
-    `1. 一眼能看出的产品优势：主打${p.coreFeatures}，把普通同类最常被吐槽的短板一次改到位，客户拿到样品上手就能摸出差距`,
-    `2. 耐用抗造的用料标准：主体用料扎实，坚持原生${p.material}不掺回料，长期高频使用依然稳固不掉链子`,
-    `3. 省心好卖的成品品相：细节收口和表面处理工整统一，${p.variants}都是经过市场验证的常青款式，退货率低、回头客多`,
-    `4. 场景适配面广好推款：兼顾日常实用性与耐用度，摆在货架或独立站主图上卖点清晰，新手买家也能一眼看懂为什么值得买${reqLine}`,
+    `1. 核心差异：${p.coreFeatures}，直接补齐同类短板`,
+    `2. 原生材质：${p.material}，手感扎实耐用不缩水`,
+    `3. 稳定品控：做工细密工整，售后退货率更低`,
+    `4. 好卖易推：${p.variants}常青热销款，场景百搭吸睛${reqLine}`,
   ].join("\n");
 }
 
@@ -4103,8 +4058,9 @@ function synthesizeGroundedAiField(fieldObj, ctx) {
 }
 
 // 检测是否含有廉价 AI 味套话、限流报错或机械背诵提示词
-function isLowQualityOrAiFluff(text, langCode = "zh") {
-  if (!text || text.length < 55) return true;
+function isLowQualityOrAiFluff(text, langCode = "zh", group = "story") {
+  const minLen = group === "point" ? 20 : 55;
+  if (!text || text.length < minLen) return true;
   if (/rate\s*limit|too\s*many\s*requests|quota|exceeded|cloudflare|bad\s*gateway|service\s*unavailable|internal\s*server\s*error|apologize|cannot\s*fulfill|429|502|503|504/i.test(text)) return true;
   if (/让我分析|分析一下|\*\*商品|步骤|首先|现在我需要|思考过程|作为AI|我是AI/.test(text)) return true;
   if (/赋能|致力于|品质卓越|深受好评|远销海外|不二之选|匠心打造|全方位满足|完美契合|闭环|抓手|在这个快节奏|你是否还在为|今天给大家种草|闭眼入|天花板|YYDS|绝对是你的|不可或缺的|让我们一起/.test(text)) return true;
@@ -4465,13 +4421,13 @@ async function aiGenOnce(provider, field, req, ctx, group) {
 
   const sysPrompt = group === "point"
     ? [
-        `你是一位懂产品、会挑货的资深买手与产品主编。`,
+        `你是一位懂消费者心理的资深选品主编，擅长用极简短语提炼商品最抓眼球的真实卖点。`,
         `必须严格使用【${langPack.promptLang}】输出最终正文！整段只能出现这一种语言，不许夹杂其他语言（品牌名除外）。`,
-        `【独特卖点创作铁律（只写产品本身最突出的特点，绝不凑规格参数，零AI味，无任何括号方框）】：`,
-        `1. 严禁把装箱数、箱规尺寸、立方数、毛净重、MOQ起订量、交期、货号等规格参数当成卖点来凑数！客户看卖点是为了知道“这件东西到底好在哪里、为什么比别家更值得买”。`,
-        `2. 必须紧扣这款「${profile.shortName}」最突出的 4 个真实特点来写：比如它解决了什么实际使用痛点、结构或功能上有什么巧思（${profile.coreFeatures}）、用料和手感好在哪里（${profile.material}）、为什么更耐用好打理或更受终端买家喜欢。`,
-        `3. 彻底去AI味（违者重写）：严禁任何AI套话和营销黑话！绝不许出现“赋能、致力于、品质卓越、深受好评、远销海外、匠心打造、不二之选、完美契合、闭环、抓手、天花板、闭眼入、YYDS、神器、在这个快节奏的时代”；说人话，写得像懂行的老手在面对面给你点破这款货的核心优势，生动抓人、一针见血。`,
-        `4. 排版铁律：按 1. 卖点标题：卖点内容 逐条换行排列 4 条，左右结构，只保留序号点号和标题后的冒号，严禁使用任何括号或方框（禁止 ()、（） 、【】、[]、「」、<>）。`,
+        `【独特卖点创作铁律（核心简短词语，一眼吸睛，绝不凑规格参数，零AI味，无括号方框）】：`,
+        `1. 提炼核心简短词语：每条只写 1 个最核心的独特特点，短小精悍、直观有画面感，让消费者扫一眼就动心；不要写又长又啰嗦的说明书式长句！`,
+        `2. 严禁拿装箱数、箱规尺寸、立方数、毛净重、MOQ起订量、交期、货号等规格参数充当卖点！只提炼「${profile.shortName}」最突出的结构巧思（${profile.coreFeatures}）、材质体验（${profile.material}）、解决的真实痛点与消费吸引力。`,
+        `3. 彻底去AI味（违者重写）：严禁任何AI套话和营销黑话！绝不许出现“赋能、致力于、品质卓越、深受好评、远销海外、匠心打造、不二之选、完美契合、闭环、抓手、天花板、闭眼入、YYDS、神器、在这个快节奏的时代”；说大白话，像真人在给你安利这件东西最绝的地方。`,
+        `4. 排版铁律：严格按 1. 核心词：简短卖点描述 逐条换行排列 4 条，左右结构，每条控制在 12~22 个字左右，只保留序号点号和冒号，严禁使用任何括号或方框（禁止 ()、（）、【】、[]、「」、<>）。`,
       ].join("\n")
     : [
         `你是拥有15年一线生活与外贸实战阅历的真人故事讲述者。`,
@@ -4485,7 +4441,7 @@ async function aiGenOnce(provider, field, req, ctx, group) {
       ].join("\n");
 
   const userTask = group === "point"
-    ? `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n请基于以上真实商品参数与联网检索素材，输出「${field}」${req ? `（特别要求：${req}）` : ""}。\n【严格格式要求】：\n1. 按序号逐行排列 4 条，每条单独占一行，格式为：1. 小标题：简洁卖点内容\n2. 左右结构，只保留序号后的点号和标题后的冒号，严禁使用【】、[]、「」、①②③④、**、•、；等多余符号，清楚简洁明了；\n3. 严格使用${langPack.label}，直接输出这 4 行，不要加任何前缀或开场白。`
+    ? `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n请基于以上真实商品信息，提炼「${field}」${req ? `（特别要求：${req}）` : ""}。\n【严格格式要求】：\n1. 提取 4 个最抓眼球的核心简短词语并逐条换行排列，每条格式为：1. 核心短语：一句吸睛特点\n2. 简短精炼（每条 12~22 字），一眼看去有购买欲，只写产品核心特点，绝不凑规格参数，零AI味；\n3. 左右结构，只保留序号后的点号和冒号，严禁使用【】、[]、「」、()、（）、①②③④、**、•、；等多余符号；\n4. 严格使用${langPack.label}，直接输出这 4 行，不要加任何前缀或开场白。`
     : `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n本次唯一故事角度：【${ctx.angles || "服务细节故事"}】（只围绕这一个角度写透，绝不混杂其他角度！）\n精神内核（必须化为具体人物动作与现场细节，严禁照抄口号）：${ctx.soul || "用心服务"}\n请基于当前商品真实参数与联网搜索素材，写出一段【必须包含具体人物、具体时间、具体地点，非常真实、生动形象吸引人、毫无AI味】的「${field}」${req ? `（特别要求：${req}）` : ""}，180~300字，严格使用${langPack.label}，合并为单行输出（不要换行）。`;
 
   const messages = [
@@ -4514,7 +4470,8 @@ async function aiGen(fieldObj, ctx) {
     if (p.isAdminTrial && Date.now() < llmCooldownUntil) continue;
     try {
       const g = await aiGenOnce(p, field, req, ctx, group);
-      if (g && g.length >= 55 && !isLowQualityOrAiFluff(g, langCode)) {
+      const minLen = group === "point" ? 20 : 55;
+      if (g && g.length >= minLen && !isLowQualityOrAiFluff(g, langCode, group)) {
         if (!p.configured) llmConsecutiveFailures = 0;
         return group === "point" ? formatSellingPointsLines(g, langCode) : toSingleLineText(g);
       }
