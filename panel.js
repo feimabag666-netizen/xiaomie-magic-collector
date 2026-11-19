@@ -3934,7 +3934,8 @@ function formatSellingPointsLines(rawVal, langCode = "zh") {
 
   const rawLines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   const out = [];
-  rawLines.forEach((line, idx) => {
+  rawLines.forEach((line) => {
+    if (out.length >= 2) return;
     let body = line.replace(/^\d{1,2}\s*[.、:：)\]]\s*/, "");
     body = cleanPunct(body);
     if (!body) return;
@@ -3946,78 +3947,56 @@ function formatSellingPointsLines(rawVal, langCode = "zh") {
   return out.join("\n");
 }
 
-// 四维高转化卖点生成器（左右结构：序号 + 标题：内容，逐行排列，无多余符号，清楚简洁明了）
+// 核心差异化卖点生成器（只留 1-2 点，语言精炼，一眼记住，无普通废话与 AI 味）
 function buildMasterSellingPoints(p, req, isSeed, lang = "zh") {
-  const reqLine = req ? (lang === "zh" ? `，落实${req}标准` : `, custom focus: ${req}`) : "";
+  const reqLine = req ? (lang === "zh" ? `，${req}` : `, ${req}`) : "";
 
   if (lang === "en") {
-    if (isSeed) {
-      return [
-        `1. Structural Highlight: ${p.shortName} features ${translateCommonValue(p.coreFeatures, "en")} with ${translateCommonValue(p.material, "en")}`,
-        `2. Specs and Options: Built around ${translateCommonValue(p.specBits, "en")} in popular variants ${p.variants}${p.model ? `, Model ${p.model}` : ""}`,
-        `3. Market Reputation: Backed by real buyer feedback (${translateCommonValue(p.marketProof, "en")}) for daily use${reqLine}`,
-        `4. Clean Packaging: Packed in ${translateCommonValue(p.packWay, "en")} for home or gifting`,
-      ].join("\n");
-    }
     return [
-      `1. Core Structure and Material: ${p.shortName}${p.model ? ` (Model ${p.model})` : ""} uses ${translateCommonValue(p.material, "en")} with ${translateCommonValue(p.coreFeatures, "en")}`,
-      `2. High-Conversion SKU Matrix: Offers popular options (${p.variants}) backed by ${translateCommonValue(p.marketProof, "en")}`,
-      `3. Export Carton Data: ${translateCommonValue(p.cartonSummary, "en")}, ${p.containerEstimate} for fast freight calculation`,
-      `4. Factory Direct Supply: From ${translateCommonValue(p.origin, "en")}, ${translateCommonValue(p.moq, "en")}, lead time ${translateCommonValue(p.leadTime, "en")}${reqLine}`,
+      `1. Standout Design: ${translateCommonValue(p.coreFeatures, "en")} solves what ordinary models miss`,
+      `2. Material Edge: ${translateCommonValue(p.material, "en")} feels noticeably better in hand${reqLine}`,
     ].join("\n");
   }
 
   if (lang === "ru") {
     return [
-      `1. Конструкция и материалы: ${p.shortName}, ${translateCommonValue(p.material, "ru")}, ${p.coreFeatures}`,
-      `2. Ассортимент SKU: ${p.variants}${p.model ? `, арт. ${p.model}` : ""}, ${p.marketProof}`,
-      `3. Упаковка и логистика: ${translateCommonValue(p.cartonSummary, "ru")}, ${p.containerEstimate}`,
-      `4. Условия поставки: MOQ ${translateCommonValue(p.moq, "ru")}, срок ${translateCommonValue(p.leadTime, "ru")}${reqLine}`,
+      `1. Главное отличие: ${p.coreFeatures} — решает то, с чем не справляются обычные аналоги`,
+      `2. Материал: ${translateCommonValue(p.material, "ru")} с заметной разницей на ощупь${reqLine}`,
     ].join("\n");
   }
 
   if (lang === "ja") {
     return [
-      `1. 独自構造と素材：${p.shortName}は${translateCommonValue(p.material, "ja")}を採用し、${p.coreFeatures}を実現`,
-      `2. 売れ筋SKU展開：${p.variants}${p.model ? `、型番${p.model}` : ""}、実績${p.marketProof}`,
-      `3. 外箱と積載規格：${translateCommonValue(p.cartonSummary, "ja")}、${p.containerEstimate}`,
-      `4. 小ロットと短納期：MOQ ${translateCommonValue(p.moq, "ja")}、納期 ${translateCommonValue(p.leadTime, "ja")}${reqLine}`,
+      `1. 際立つ違い：${p.coreFeatures}で従来品の弱点を解消`,
+      `2. 素材の差：${translateCommonValue(p.material, "ja")}で手に取った瞬間に違いがわかる${reqLine}`,
     ].join("\n");
   }
 
   if (lang === "ko") {
     return [
-      `1. 핵심 구조와 소재：${p.shortName}는 ${translateCommonValue(p.material, "ko")} 소재와 ${p.coreFeatures} 설계 적용`,
-      `2. 인기 옵션 구성：${p.variants}${p.model ? `, 모델명 ${p.model}` : ""}, ${p.marketProof}`,
-      `3. 수출 박스 규격：${translateCommonValue(p.cartonSummary, "ko")}, ${p.containerEstimate}`,
-      `4. 유연한 납기와 검수：MOQ ${translateCommonValue(p.moq, "ko")}, 납기 ${translateCommonValue(p.leadTime, "ko")}${reqLine}`,
+      `1. 확실한 차별점：${p.coreFeatures} 적용으로 일반 제품과 다른 사용감`,
+      `2. 소재 경쟁력：${translateCommonValue(p.material, "ko")} 마감으로 첫인상부터 차이${reqLine}`,
     ].join("\n");
   }
 
   if (lang !== "zh") {
     return [
-      `1. Features and Material: ${p.shortName}, ${p.coreFeatures}, ${p.material}`,
-      `2. Variants and Proof: ${p.variants}${p.model ? `, ${p.model}` : ""}, ${p.marketProof}`,
-      `3. Carton and Loading: ${p.cartonSummary}, ${p.containerEstimate}`,
-      `4. MOQ and Lead Time: ${p.moq}, ${p.leadTime}${reqLine}`,
+      `1. Standout Edge: ${p.coreFeatures}`,
+      `2. Key Material: ${p.material}${reqLine}`,
     ].join("\n");
   }
 
-  // 默认简体中文：提取核心简短词语，直击商品最核心的独特特点，让消费者一眼看去有吸引力，零AI味、无括号方框
+  // 默认简体中文：只要 1-2 点最核心差异，精炼好记、去掉普通特点、零 AI 味
   if (isSeed) {
     return [
-      `1. 痛点直击：${p.coreFeatures}，上手顺手省心`,
-      `2. 扎实用料：${p.material}，安全无异味更耐造`,
-      `3. 细节到位：收口工整防滑抗摔，日常好打理`,
-      `4. 颜值百搭：${p.variants}多色可选，自用送礼体面${reqLine}`,
+      `1. 一眼不同：${p.coreFeatures}，普通款解决不了的痛点直接搞定`,
+      `2. 用料真狠：${p.material}，上手一摸就跟廉价货拉开档次${reqLine}`,
     ].join("\n");
   }
 
   return [
-    `1. 核心差异：${p.coreFeatures}，直接补齐同类短板`,
-    `2. 原生材质：${p.material}，手感扎实耐用不缩水`,
-    `3. 稳定品控：做工细密工整，售后退货率更低`,
-    `4. 好卖易推：${p.variants}常青热销款，场景百搭吸睛${reqLine}`,
+    `1. 核心差异：${p.coreFeatures}，直接打穿同类产品短板`,
+    `2. 材质壁垒：${p.material}，客户拿样一上手就能摸出差距${reqLine}`,
   ].join("\n");
 }
 
@@ -4059,7 +4038,7 @@ function synthesizeGroundedAiField(fieldObj, ctx) {
 
 // 检测是否含有廉价 AI 味套话、限流报错或机械背诵提示词
 function isLowQualityOrAiFluff(text, langCode = "zh", group = "story") {
-  const minLen = group === "point" ? 20 : 55;
+  const minLen = group === "point" ? 12 : 55;
   if (!text || text.length < minLen) return true;
   if (/rate\s*limit|too\s*many\s*requests|quota|exceeded|cloudflare|bad\s*gateway|service\s*unavailable|internal\s*server\s*error|apologize|cannot\s*fulfill|429|502|503|504/i.test(text)) return true;
   if (/让我分析|分析一下|\*\*商品|步骤|首先|现在我需要|思考过程|作为AI|我是AI/.test(text)) return true;
@@ -4421,13 +4400,14 @@ async function aiGenOnce(provider, field, req, ctx, group) {
 
   const sysPrompt = group === "point"
     ? [
-        `你是一位懂消费者心理的资深选品主编，擅长用极简短语提炼商品最抓眼球的真实卖点。`,
+        `你是一位眼神毒辣的资深选品主编，只提炼商品最让人过目不忘的核心差异。`,
         `必须严格使用【${langPack.promptLang}】输出最终正文！整段只能出现这一种语言，不许夹杂其他语言（品牌名除外）。`,
-        `【独特卖点创作铁律（核心简短词语，一眼吸睛，绝不凑规格参数，零AI味，无括号方框）】：`,
-        `1. 提炼核心简短词语：每条只写 1 个最核心的独特特点，短小精悍、直观有画面感，让消费者扫一眼就动心；不要写又长又啰嗦的说明书式长句！`,
-        `2. 严禁拿装箱数、箱规尺寸、立方数、毛净重、MOQ起订量、交期、货号等规格参数充当卖点！只提炼「${profile.shortName}」最突出的结构巧思（${profile.coreFeatures}）、材质体验（${profile.material}）、解决的真实痛点与消费吸引力。`,
-        `3. 彻底去AI味（违者重写）：严禁任何AI套话和营销黑话！绝不许出现“赋能、致力于、品质卓越、深受好评、远销海外、匠心打造、不二之选、完美契合、闭环、抓手、天花板、闭眼入、YYDS、神器、在这个快节奏的时代”；说大白话，像真人在给你安利这件东西最绝的地方。`,
-        `4. 排版铁律：严格按 1. 核心词：简短卖点描述 逐条换行排列 4 条，左右结构，每条控制在 12~22 个字左右，只保留序号点号和冒号，严禁使用任何括号或方框（禁止 ()、（）、【】、[]、「」、<>）。`,
+        `【独特卖点创作铁律（只写 1~2 点核心差异，极简精炼，一眼记住，绝不写普通特点，零AI味）】：`,
+        `1. 只要 1~2 点：宁缺毋滥，只写 1 点或 2 点最狠的核心卖点，绝不凑 3 点或 4 点！`,
+        `2. 只写有吸引力的差异性：必须直指「${profile.shortName}」和普通同类拉开差距的独门亮点（如 ${profile.coreFeatures}、${profile.material} 的独特体验）；严禁写“多色可选、做工精细、结实耐用、送礼体面、颜值百搭、性价比高”等普通大路货特点，也严禁拿装箱数、箱规尺寸、MOQ、交期、货号等参数充数！`,
+        `3. 语言精炼、一眼记住：每条控制在 10~18 个字，短促有力、口语化、有画面感，消费者扫一眼就能记住！`,
+        `4. 彻底去AI味（违者重写）：严禁任何AI套话和营销黑话！绝不许出现“赋能、致力于、品质卓越、深受好评、远销海外、匠心打造、不二之选、完美契合、闭环、抓手、天花板、闭眼入、YYDS、神器、在这个快节奏的时代”。`,
+        `5. 排版铁律：按 1. 核心词：精炼卖点 逐条换行排列（最多 2 条），左右结构，只保留序号点号和冒号，严禁使用任何括号或方框（禁止 ()、（）、【】、[]、「」、<>）。`,
       ].join("\n")
     : [
         `你是拥有15年一线生活与外贸实战阅历的真人故事讲述者。`,
@@ -4441,7 +4421,7 @@ async function aiGenOnce(provider, field, req, ctx, group) {
       ].join("\n");
 
   const userTask = group === "point"
-    ? `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n请基于以上真实商品信息，提炼「${field}」${req ? `（特别要求：${req}）` : ""}。\n【严格格式要求】：\n1. 提取 4 个最抓眼球的核心简短词语并逐条换行排列，每条格式为：1. 核心短语：一句吸睛特点\n2. 简短精炼（每条 12~22 字），一眼看去有购买欲，只写产品核心特点，绝不凑规格参数，零AI味；\n3. 左右结构，只保留序号后的点号和冒号，严禁使用【】、[]、「」、()、（）、①②③④、**、•、；等多余符号；\n4. 严格使用${langPack.label}，直接输出这 4 行，不要加任何前缀或开场白。`
+    ? `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n请基于以上真实商品信息，提炼「${field}」${req ? `（特别要求：${req}）` : ""}。\n【严格格式要求】：\n1. 只提炼 1~2 点最核心、最有吸引力的差异化卖点，绝不写普通特点，绝不写第 3 点；\n2. 每条格式为：1. 核心词：精炼卖点（每条 10~18 字，一眼就记住，零AI味，不写规格参数）；\n3. 左右结构，只保留序号后的点号和冒号，严禁使用【】、[]、「」、()、（）、①②③④、**、•、；等多余符号；\n4. 严格使用${langPack.label}，直接输出这 1~2 行，不要加任何前缀或开场白。`
     : `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n本次唯一故事角度：【${ctx.angles || "服务细节故事"}】（只围绕这一个角度写透，绝不混杂其他角度！）\n精神内核（必须化为具体人物动作与现场细节，严禁照抄口号）：${ctx.soul || "用心服务"}\n请基于当前商品真实参数与联网搜索素材，写出一段【必须包含具体人物、具体时间、具体地点，非常真实、生动形象吸引人、毫无AI味】的「${field}」${req ? `（特别要求：${req}）` : ""}，180~300字，严格使用${langPack.label}，合并为单行输出（不要换行）。`;
 
   const messages = [
@@ -4470,7 +4450,7 @@ async function aiGen(fieldObj, ctx) {
     if (p.isAdminTrial && Date.now() < llmCooldownUntil) continue;
     try {
       const g = await aiGenOnce(p, field, req, ctx, group);
-      const minLen = group === "point" ? 20 : 55;
+      const minLen = group === "point" ? 12 : 55;
       if (g && g.length >= minLen && !isLowQualityOrAiFluff(g, langCode, group)) {
         if (!p.configured) llmConsecutiveFailures = 0;
         return group === "point" ? formatSellingPointsLines(g, langCode) : toSingleLineText(g);
