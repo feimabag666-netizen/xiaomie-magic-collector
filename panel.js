@@ -2729,8 +2729,6 @@ const DEF_SECONDARY = [
   { n: "是否支持定制", group: "trade", b2b: true, b2c: false, rec: true, c: true, aliases: ["是否支持定制", "加工定制", "支持定制", "does it support customization?", "customization"] },
   { n: "主要销售地区", group: "trade", b2b: true, b2c: false, rec: true, c: true, aliases: ["主要销售地区", "销售地区", "main sales regions"] },
   { n: "产品上市时间", group: "trade", b2b: false, b2c: true, rec: false, c: false, aliases: ["产品上市时间", "上市时间", "上市年份季节", "product launch time"] },
-  { n: "专利类型", group: "trade", b2b: true, b2c: false, rec: true, c: true, aliases: ["专利类型", "是否有专利", "专利", "专利号", "is there a patent?", "patent"] },
-  { n: "版权", group: "trade", b2b: true, b2c: false, rec: true, c: true, aliases: ["版权", "著作权", "copyright"] },
   { n: "送礼用途", group: "trade", b2b: false, b2c: true, rec: false, c: false, aliases: ["送礼用途", "适用送礼场合", "适用送礼关系", "gift giving purpose", "suitable for gift-giving occasions", "applicable to gift-giving relationships"] },
   { n: "是否跨境出口专供货源", group: "trade", b2b: true, b2c: false, rec: true, c: true, aliases: ["是否跨境出口专供货源", "跨境专供", "跨境出口专供"] },
   { n: "是否量贩装", group: "trade", b2b: false, b2c: true, rec: false, c: false, aliases: ["是否量贩装", "量贩装"] },
@@ -3051,7 +3049,7 @@ async function loadActiveFieldProfile(mode = activeBizMode) {
   const prof = stored?.[key] || stored?.[legacyKey];
   if (prof && Array.isArray(prof.common) && prof.common.length) {
     const filtered = prof.common
-      .filter(f => f && f.n && f.n !== "货号" && f.n !== "包装规格" && f.n !== "产品类别" && f.n !== "产品参数")
+      .filter(f => f && f.n && f.n !== "货号" && f.n !== "包装规格" && f.n !== "产品类别" && f.n !== "产品参数" && f.n !== "专利类型" && f.n !== "版权")
       .map(f => ({ n: f.n === "规格" ? "详细规格" : f.n, c: Boolean(f.c), v: String(f.v || "") }));
     // 保证核心常用字段排在最前面
     const coreOrder = buildDefaultCommonFields(activeBizMode).filter(f => f.c).map(f => f.n);
@@ -3545,12 +3543,28 @@ const FIELD_ALIAS = {
   "材质": ["材质", "材料", "面料", "主材质", "内胆材质", "外壳材质", "外壳材料", "材质成分", "刷毛材质", "刷柄材质", "material", "fabric", "material type", "материал", "素材", "材質", "재질", "소재", "matériau", "matière", "werkstoff"],
   "产地": ["产地", "货源地", "生产地", "所在地", "发货地", "origin", "country of origin", "place of origin", "страна производства", "原産国", "生産国", "원산지", "origen", "origem", "origine", "herkunftsland"],
   "详细规格": ["详细规格", "规格", "款式", "型号规格", "规格型号", "技术参数", "variants", "options", "specifications"],
+  "产品尺寸": ["产品尺寸", "尺寸", "单品尺寸", "外形尺寸", "规格尺寸", "产品规格", "长宽高", "口径", "直径", "size", "dimensions", "product dimensions", "item dimensions", "product size", "measurements"],
+  "单件重量": ["单件重量", "重量", "产品重量", "单品重量", "克重", "单重", "净重", "weight", "unit weight", "item weight", "net weight"],
+  "容量": ["容量", "容积", "水箱容量", "capacity", "volume"],
+  "颜色": ["颜色", "颜色分类", "花色", "色号", "配色", "可选颜色", "color", "colour"],
+  "包装方式": ["包装方式", "包装", "包装类型", "内包装", "package", "packaging"],
+  "功能": ["功能", "产品功能", "特点", "核心功能", "用途", "function", "feature", "special feature"],
+  "价格": ["价格", "单价", "批发价", "参考价", "零售价", "售价", "price"],
+  "单位": ["单位", "计价单位", "计量单位", "unit"],
+  "风格": ["风格", "款式风格", "设计风格", "style"],
+  "适用人群": ["适用人群", "人群", "适用对象", "target audience"],
+  "主要销售地区": ["主要销售地区", "销售地区", "main sales regions"],
   "功率": ["功率", "额定功率", "power", "wattage"],
   "电压": ["电压", "额定电压", "voltage"],
   "品牌": ["品牌", "商标", "brand", "brand name", "марка", "бренд", "ブランド", "브랜드", "marca", "marque", "marke"],
   "加印LOGO": ["加印logo", "加印LOGO", "印logo", "定制logo", "logo定制", "可以印logo", "可加印logo", "print logo", "custom logo", "logo printing"],
   "是否支持定制": ["是否支持定制", "加工定制", "支持定制", "来图定制", "来样定制", "定制服务", "可定制", "does it support customization", "does it support customization?", "customization", "customizable", "oem", "odm"],
 };
+for (const sec of DEF_SECONDARY) {
+  if (sec && sec.n && Array.isArray(sec.aliases) && sec.aliases.length) {
+    FIELD_ALIAS[sec.n] = [...new Set([...(FIELD_ALIAS[sec.n] || [sec.n]), ...sec.aliases])];
+  }
+}
 const YES_NO_FIELDS = ["加印LOGO", "是否支持定制"];
 function normalizeYesNoFieldValue(rawVal) {
   const s = String(rawVal ?? "").trim();
@@ -3645,7 +3659,7 @@ function matchField(name, attrs, text) {
       const isAsciiCand = /^[a-z0-9\s._/-]+$/i.test(c);
       const boundaryPrefix = isAsciiCand ? "(?:^|\\b)" : "";
       const sepPattern = "\\s*[:：]\\s*";
-      const m = text.match(new RegExp(boundaryPrefix + escRe(c) + sepPattern + "([0-9a-zA-Z一-龥.．/×xX*＊\\-]" + lenRange + ")", "i"));
+      const m = text.match(new RegExp(boundaryPrefix + escRe(c) + sepPattern + "([0-9a-zA-Z一-龥.．/×xX*＊\\- ]" + lenRange + ")", "i"));
       const rawMatched = m && m[1] ? m[1].trim() : "";
       const v = norm(rawMatched);
       if (v && !BADVAL.has(v) && isValidFieldValue(name, v)) return v;
@@ -4831,6 +4845,16 @@ async function ocrFetchedPageImages(pageDoc, pageUrl, maxImgs = 3) {
   return texts.join("\n");
 }
 
+function extractRelevantSpecWindow(text, maxLen = 4500) {
+  const s = String(text || "").trim();
+  if (s.length <= maxLen) return s;
+  const lines = s.split(/\n+/).map(l => l.trim()).filter(Boolean);
+  const specLines = lines.filter(l => /(?:\d+(?:\.\d+)?\s*(?:cm|mm|m|g|kg|ml|l|oz|lb|w|v|pcs|ctn|cbm|个|件|只|天|元|美元|\$|￥)|尺寸|规格|重量|净重|毛重|容量|材质|颜色|包装|交期|起订|品牌|产地|功能|功率|电压|箱规|装箱|size|weight|dimension|capacity|material|color|package|moq|lead)/i.test(l));
+  const picked = specLines.join("\n").slice(0, maxLen);
+  if (picked.length >= Math.min(800, maxLen * 0.4)) return picked;
+  return s.slice(0, maxLen);
+}
+
 // 插件 AI 按阶段批量提取缺失勾选字段（Step1本网页+图片OCR / Step2本平台+图片OCR / Step3全网+联网搜索）
 async function aiExtractStageFields(stageKey, targetFields, data, sourceUrl, contextText, ocrText, allowWebSearch, cache) {
   const fields = [...new Set((targetFields || []).filter(Boolean))];
@@ -4841,19 +4865,20 @@ async function aiExtractStageFields(stageKey, targetFields, data, sourceUrl, con
       const providers = await getAiProviders();
       if (!providers.length) return {};
       const title = String(data?.title || "").slice(0, 120);
-      const attrs = Object.entries(data?.attrs || {}).slice(0, 40).map(([k, v]) => `${k}: ${v}`).join("\n").slice(0, 1200);
-      const ctxSlice = String(contextText || "").slice(0, 3200);
-      const ocrSlice = String(ocrText || "").slice(0, 2200);
+      const attrs = Object.entries(data?.attrs || {}).slice(0, 40).map(([k, v]) => `${k}: ${v}`).join("\n").slice(0, 1500);
+      const ctxSlice = extractRelevantSpecWindow(contextText, 4500);
+      const ocrSlice = String(ocrText || "").slice(0, 3000);
       const messages = [
         {
           role: "system",
           content: [
             "你是精准的电商商品参数提取助手。请严格依据提供的网页文本、图片OCR文字及检索结果，提取指定字段的真实信息。",
+            allowWebSearch ? "当前处于全网搜索阶段：若下方资料中仍缺字段，请务必调用 SEARCH 工具检索该商品的真实参数后再填写！" : "",
             "铁律：",
             "1. 绝不编造或猜测不存在的数值；确实找不到的字段请返回空字符串 \"\"。",
             "2. 对「加印LOGO」「是否支持定制」只返回 \"是\" 或 \"否\"。",
             "3. 严格输出纯 JSON 对象，键名为字段名，值为提取结果，不加任何解释或 Markdown 代码块。",
-          ].join("\n"),
+          ].filter(Boolean).join("\n"),
         },
         {
           role: "user",
@@ -6086,8 +6111,8 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         const w = item.image?.w || item.domDims?.w || 0;
         const h = item.image?.h || item.domDims?.h || 0;
         const decision = classifyImageForFilterMode(item.url, label, w, h, item.meta, imgFilterMode, isNonEcom);
-        if (decision.keepOcr && item.image && label !== "主图") {
-          ocrCandidatePool.push({ ...item.image, isSpecChart: decision.category === "spec_chart" });
+        if (decision.keepOcr && item.image) {
+          ocrCandidatePool.push({ ...item.image, isSpecChart: decision.category === "spec_chart" || label !== "主图" });
         }
         if (!decision.keepSave) {
           aiFilteredCount++;
