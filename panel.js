@@ -4794,6 +4794,106 @@ async function aiCartonLookup(field, data, sourceUrl, ocrText, cache) {
   return (res && res[field]) || "";
 }
 
+// 对抓取到的同平台/全网页面中的商品详情/参数图进行 OCR 文字提取
+async function ocrFetchedPageImages(pageDoc, pageUrl, maxImgs = 3) {
+  if (!pageDoc || typeof ocrImg !== "function") return "";
+  const seen = new Set();
+  const urls = [];
+  for (const img of [...pageDoc.querySelectorAll("img")]) {
+    const raw = img.getAttribute("data-src") || img.getAttribute("data-lazyload-src") || img.getAttribute("data-ks-lazyload") || img.getAttribute("src") || "";
+    if (!raw || raw.startsWith("data:")) continue;
+    if (/(?:spacer|blank\.gif|1x1|pixel|avatar|favicon|qrcode|qr_code|wechat_qr|alipay|wxpay|logo|icon|badge)/i.test(raw)) continue;
+    try {
+      const abs = new URL(raw, pageUrl).href;
+      if (/^https?:\/\//i.test(abs) && !seen.has(abs)) {
+        seen.add(abs);
+        urls.push(abs);
+      }
+    } catch {}
+    if (urls.length >= maxImgs * 2) break;
+  }
+  const texts = [];
+  let done = 0;
+  for (const u of urls) {
+    if (done >= maxImgs) break;
+    try {
+      const r = await fetch(u, { signal: AbortSignal.timeout(4200) });
+      if (!r.ok) continue;
+      const blob = await r.blob();
+      if (!blob || blob.size < 8000 || !/^image\//i.test(blob.type || "image/jpeg")) continue;
+      const t = await ocrImg({ blob, w: 0, h: 0 });
+      if (t && t.trim()) {
+        texts.push(t.trim());
+        done++;
+      }
+    } catch {}
+  }
+  return texts.join("\n");
+}
+
+// 插件 AI 按阶段批量提取缺失勾选字段（Step1本网页+图片OCR / Step2本平台+图片OCR / Step3全网+联网搜索）
+async function aiExtractStageFields(stageKey, targetFields, data, sourceUrl, contextText, ocrText, allowWebSearch, cache) {
+  const fields = [...new Set((targetFields || []).filter(Boolean))];
+  if (!fields.length) return {};
+  const cacheKey = `aiStage_${stageKey}`;
+  if (!cache[cacheKey]) {
+    cache[cacheKey] = (async () => {
+      const providers = await getAiProviders();
+      if (!providers.length) return {};
+      const title = String(data?.title || "").slice(0, 120);
+      const attrs = Object.entries(data?.attrs || {}).slice(0, 40).map(([k, v]) => `${k}: ${v}`).join("\n").slice(0, 1200);
+      const ctxSlice = String(contextText || "").slice(0, 3200);
+      const ocrSlice = String(ocrText || "").slice(0, 2200);
+      const messages = [
+        {
+          role: "system",
+          content: [
+            "你是精准的电商商品参数提取助手。请严格依据提供的网页文本、图片OCR文字及检索结果，提取指定字段的真实信息。",
+            "铁律：",
+            "1. 绝不编造或猜测不存在的数值；确实找不到的字段请返回空字符串 \"\"。",
+            "2. 对「加印LOGO」「是否支持定制」只返回 \"是\" 或 \"否\"。",
+            "3. 严格输出纯 JSON 对象，键名为字段名，值为提取结果，不加任何解释或 Markdown 代码块。",
+          ].join("\n"),
+        },
+        {
+          role: "user",
+          content: `商品标题：${title}\n来源URL：${sourceUrl}\n已提取属性：\n${attrs || "无"}\n\n网页与检索文本：\n${ctxSlice || "无"}\n\n图片OCR识别文字：\n${ocrSlice || "无"}\n\n请提取以下字段的真实值（JSON格式返回）：${fields.join("、")}`,
+        },
+      ];
+      for (const p of providers) {
+        if (p.isAdminTrial && Date.now() < llmCooldownUntil) continue;
+        try {
+          const r = await aiAgentRun(p, messages, {
+            maxSteps: allowWebSearch ? 3 : 1,
+            webSearch: allowWebSearch,
+            maxTokens: 700,
+          });
+          const m = String(r?.text || "").match(/\{[\s\S]*\}/);
+          if (!m) continue;
+          const parsed = JSON.parse(m[0]);
+          const cleaned = {};
+          for (const f of fields) {
+            let v = String(parsed[f] ?? "").trim();
+            if (!v || /^(?:未查到|未提供|未知|不详|暂无|待定|无|n\/a|none|null)$/i.test(v)) continue;
+            if (YES_NO_FIELDS.includes(f)) {
+              v = normalizeYesNoFieldValue(v);
+              if (!v) continue;
+            } else if (CARTON_FIELDS.includes(f)) {
+              if (!validCartonValue(f, v)) continue;
+            } else if (!isValidFieldValue(f, v)) {
+              continue;
+            }
+            cleaned[f] = v;
+          }
+          return cleaned;
+        } catch {}
+      }
+      return {};
+    })();
+  }
+  return cache[cacheKey];
+}
+
 // 仅接受带具体数值的产品参数
 function extractProductSpecs(attrs, text) {
   const specKeyRe = /^(?:(?:产品|商品|额定|单品|外形|展开|折叠|机身|净|内胆|电池|输入|输出|工作|最大|适用)|(?:product|item|net|overall|rated|working|max|input|output)[\s_]*)?(?:尺寸|规格|容量|重量|净重|克重|功率|电压|电流|直径|口径|内径|外径|长度|宽度|高度|厚度|深|长宽高|尺码|承重|转速|流量|续航|频率|规格参数|产品参数|dimensions?(?:[\s_]*l[\s_]*x[\s_]*w[\s_]*x[\s_]*h)?|size|capacity|volume|weight|power|wattage|voltage|current|specifications?|specs?|diameter|length|width|height|thickness|depth|размер|габариты|вес|объем|мощность|サイズ|寸法|重量|容量|크기|중량|용량|dimensiones|peso|capacidad|dimensões|poids|abmessungen|gewicht|kapazität)$/i;
@@ -5020,7 +5120,7 @@ async function getStage3SamePlatformPages(data, sourceUrl, cacheObj) {
 
   // 通过 site:本平台域名 搜索同平台其他页面（Bing + 360搜索双引擎）
   if (host) {
-    const q = `site:${host} ${kw.cleanBrand} ${kw.shortTitle || title.slice(0, 14)} ${kw.cleanModel} 箱规 装箱数 外箱尺寸`.replace(/\s+/g, " ").trim();
+    const q = `site:${host} ${kw.cleanBrand} ${kw.shortTitle || title.slice(0, 14)} ${kw.cleanModel} 规格 尺寸 材质 包装 箱规 装箱数`.replace(/\s+/g, " ").trim();
     try {
       const r = await fetch("https://cn.bing.com/search?q=" + encodeURIComponent(q), { signal: AbortSignal.timeout(fetchTimeoutMs) });
       if (r.ok) {
@@ -5075,7 +5175,8 @@ async function getStage3SamePlatformPages(data, sourceUrl, cacheObj) {
         page.querySelectorAll("script,style").forEach(el => el.remove());
         const text = (page.body?.textContent || "").replace(/\s+/g, " ");
         if (isSameProductText(text, title, brand, model)) {
-          cacheObj.stage3Pages.push({ link, attrs: {}, text });
+          const imgOcr = await ocrFetchedPageImages(page, link, 3);
+          cacheObj.stage3Pages.push({ link, attrs: {}, text: imgOcr ? `${text}\n${imgOcr}` : text, ocrText: imgOcr });
         }
       }
     } catch {}
@@ -5132,13 +5233,13 @@ async function getStage4InternetPages(data, sourceUrl, cacheObj) {
 
   const queries = isBatchMode
     ? [
-        `${kw.cleanBrand} ${kw.shortTitle || title.slice(0, 16)} 箱规 外箱尺寸 毛重 净重 装箱数`.replace(/\s+/g, " ").trim(),
+        `${kw.cleanBrand} ${kw.shortTitle || title.slice(0, 16)} 规格 参数 尺寸 材质 包装 箱规 装箱数`.replace(/\s+/g, " ").trim(),
         `${kw.coreNoun} 装箱数 外箱尺寸 毛重 净重 个/箱`.replace(/\s+/g, " ").trim(),
       ]
     : [
+        `${kw.cleanBrand} ${kw.shortTitle || title.slice(0, 16)} ${kw.cleanModel} 规格 参数 尺寸 重量 材质 包装`.replace(/\s+/g, " ").trim(),
         `${kw.cleanBrand} ${kw.shortTitle || title.slice(0, 16)} ${kw.cleanModel} 箱规 外箱尺寸 毛重 净重 装箱数`.replace(/\s+/g, " ").trim(),
         `${kw.coreNoun} 装箱数 外箱尺寸 毛重 净重 个/箱`.replace(/\s+/g, " ").trim(),
-        `${kw.coreNoun} 外箱尺寸 L W H cm kg 一箱多少个`.replace(/\s+/g, " ").trim(),
       ];
 
   for (const query of queries) {
@@ -5159,7 +5260,8 @@ async function getStage4InternetPages(data, sourceUrl, cacheObj) {
           page.querySelectorAll("script,style").forEach(el => el.remove());
           const text = (page.body?.textContent || "").replace(/\s+/g, " ");
           if (isSameProductText(text, title, brand, model)) {
-            cacheObj.stage4Pages.push({ link, attrs: {}, text });
+            const imgOcr = await ocrFetchedPageImages(page, link, 2);
+            cacheObj.stage4Pages.push({ link, attrs: {}, text: imgOcr ? `${text}\n${imgOcr}` : text, ocrText: imgOcr });
           }
         } catch {}
       }
@@ -5228,8 +5330,22 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
     };
   }
 
-  // 3) 第3级：本平台搜索（本站其他同款/店铺页面）
-  $("status").innerText = `正在本平台其他页面查找「${field}」…`;
+  const mergedOcrText = Array.isArray(ocrItems) ? ocrItems.map(x => x.text).join("\n") : "";
+  const allCheckedTargets = (COMMON_FIELDS || []).filter(f => f && f.c && f.n !== "商品标题" && f.n !== "型号").map(f => f.n);
+  if (!allCheckedTargets.includes(field)) allCheckedTargets.push(field);
+
+  // 2b) 第一步兜底：插件 AI 综合检索本网页文字 + 本网页图片 OCR 文字
+  if (!isCarton) {
+    $("status").innerText = `插件 AI 正在搜索本网页文字与图片提取「${field}」…`;
+    const pagePlusCopy = `${data.pageText || ""}\n${data.copyText || ""}`;
+    const aiStep1 = await aiExtractStageFields("step1", allCheckedTargets, data, sourceUrl, pagePlusCopy, mergedOcrText, false, cascadeCache);
+    if (aiStep1 && aiStep1[field]) {
+      return { value: aiStep1[field], source: "本网页AI+图片", stage: 2 };
+    }
+  }
+
+  // 3) 第二步：搜索本平台所有该商品页面的文字和图片 OCR + 插件 AI 提取
+  $("status").innerText = `插件 AI 正在搜索本平台同商品页面文字与图片查找「${field}」…`;
   const stage3Pages = await getStage3SamePlatformPages(data, sourceUrl, cascadeCache);
   for (const p of stage3Pages) {
     const v = extractFn(p.attrs || {}, p.text || "");
@@ -5237,13 +5353,20 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
       return { value: v, source: "", stage: 3 };
     }
   }
+  if (!isCarton && stage3Pages.length) {
+    const s3Text = stage3Pages.map(p => p.text || "").join("\n");
+    const s3Ocr = stage3Pages.map(p => p.ocrText || "").filter(Boolean).join("\n");
+    const aiStep2 = await aiExtractStageFields("step2", allCheckedTargets, data, sourceUrl, s3Text, s3Ocr, false, cascadeCache);
+    if (aiStep2 && aiStep2[field]) {
+      return { value: aiStep2[field], source: "本平台AI+图片", stage: 3 };
+    }
+  }
 
-  // 4) 第4级：全网搜索（AGNES AI 联网深度搜索核验）
-  $("status").innerText = `正在全网搜索「${field}」…`;
+  // 4) 第三步：搜索全网所有该商品页面的文字和图片 OCR + 插件 AI 全网深度搜索
+  $("status").innerText = `插件 AI 正在全网搜索「${field}」…`;
   const stage4Pages = await getStage4InternetPages(data, sourceUrl, cascadeCache);
   if (isCarton) {
     $("status").innerText = `AGNES AI 正在全网深度搜索「${field}」…`;
-    const mergedOcrText = Array.isArray(ocrItems) ? ocrItems.map(x => x.text).join("\n") : "";
     const aiVal = await aiCartonLookup(field, data, sourceUrl, mergedOcrText, cascadeCache);
     if (aiVal) {
       return { value: aiVal, source: "AGNES深度搜索", stage: 4 };
@@ -5255,12 +5378,16 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
       return { value: v, source: "", stage: 4 };
     }
   }
-  // 4b) 针对非箱规的勾选参数，再结合全网搜索摘要尝试精准提取
   if (!isCarton && !isReqSpec) {
     const mergedSnippets = stage4Pages.map(p => p.text || "").join("\n");
     if (mergedSnippets) {
       const vExtra = extractFn({}, mergedSnippets);
       if (vExtra) return { value: vExtra, source: "全网搜索", stage: 4 };
+    }
+    const s4Ocr = stage4Pages.map(p => p.ocrText || "").filter(Boolean).join("\n");
+    const aiStep3 = await aiExtractStageFields("step3", allCheckedTargets, data, sourceUrl, mergedSnippets, `${mergedOcrText}\n${s4Ocr}`.trim(), true, cascadeCache);
+    if (aiStep3 && aiStep3[field]) {
+      return { value: aiStep3[field], source: "全网AI+图片", stage: 4 };
     }
     try {
       const kw = extractProductSearchKeywords(data?.title || "", data?.attrs?.["品牌"] || "", data?.attrs || {}, data?.pageText || "");
@@ -6001,20 +6128,21 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
           const sortedPool = [...ocrCandidatePool]
             .filter(b => b.w >= 200 && b.h >= 100 && (b.w / Math.max(1, b.h)) < 8)
             .sort((a, b) => (b.isSpecChart ? 1 : 0) - (a.isSpecChart ? 1 : 0));
-          const candidates = sortedPool.slice(0, 6);
-          const ocrDeadline = Date.now() + 14000;
+          const candidates = sortedPool.slice(0, 10);
+          const ocrDeadline = Date.now() + 18000;
+          const stillMissing = Array.isArray(finalBundle.missingRequired) ? finalBundle.missingRequired : [];
           for (let i = 0; i < candidates.length; i++) {
             if (stopRequested || Date.now() > ocrDeadline) break;
             const cand = candidates[i];
-            $("status").innerText = `正在识别图片参数 (${i + 1}/${candidates.length})…`;
+            $("status").innerText = `正在识别本网页图片文字 (${i + 1}/${candidates.length})…`;
             const t = await ocrImg(cand);
             const labelTag = `详情图${String(i + 1).padStart(3, "0")}`;
             if (t) {
               ocrItems.push({ label: labelTag, text: t });
               ocrTexts.push(`【${labelTag} OCR】\n${t}`);
               ocrCount++;
-              const mergedSoFar = ocrItems.map(x => x.text).join("\n");
-              if (CARTON_FIELDS.every(f => Boolean(extractCartonValue(f, data.attrs || {}, (data.pageText || "") + "\n" + mergedSoFar)))) {
+              const mergedSoFar = (data.pageText || "") + "\n" + ocrItems.map(x => x.text).join("\n");
+              if (stillMissing.length && stillMissing.every(mf => Boolean(CARTON_FIELDS.includes(mf) ? extractCartonValue(mf, data.attrs || {}, mergedSoFar) : matchField(mf, data.attrs || {}, mergedSoFar)))) {
                 break;
               }
             }
