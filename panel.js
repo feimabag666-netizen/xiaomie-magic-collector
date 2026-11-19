@@ -3679,11 +3679,15 @@ async function probeAttrs(url) {
     if (!t || !t.url || t.url.includes("punish") || t.url.includes("login")) return null;
     if (is1688OfferUrl(t.url)) {
       const d = await chrome.tabs.sendMessage(tab.id, { type: "EXTRACT" }).catch(() => null);
-      if (d && (d.attrs || d.pageText)) return { attrs: d.attrs || {}, text: d.pageText || "", url: t.url };
+      if (d && (d.attrs || d.pageText)) {
+        const imgs = [...(Array.isArray(d.detail) ? d.detail : []), ...(Array.isArray(d.main) ? d.main : [])].filter(Boolean).slice(0, 6);
+        return { attrs: d.attrs || {}, text: d.pageText || "", url: t.url, images: imgs };
+      }
     }
     const uni = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: extractUniversalPageInTab }).catch(() => null);
     const res = uni?.[0]?.result;
-    return res ? { attrs: res.attrs || {}, text: res.pageText || "", url: t.url } : null;
+    const uImgs = res ? [...(Array.isArray(res.detail) ? res.detail : []), ...(Array.isArray(res.main) ? res.main : [])].filter(Boolean).slice(0, 6) : [];
+    return res ? { attrs: res.attrs || {}, text: res.pageText || "", url: t.url, images: uImgs } : null;
   } finally {
     chrome.tabs.remove(tab.id).catch(() => {});
   }
@@ -4808,6 +4812,28 @@ async function aiCartonLookup(field, data, sourceUrl, ocrText, cache) {
   return (res && res[field]) || "";
 }
 
+async function ocrImageUrlList(urls, maxImgs = 3) {
+  if (!Array.isArray(urls) || !urls.length || typeof ocrImg !== "function") return "";
+  const texts = [];
+  let done = 0;
+  for (const u of urls) {
+    if (done >= maxImgs) break;
+    if (!u || /(?:spacer|blank\.gif|1x1|pixel|avatar|favicon|qrcode|qr_code|wechat_qr|alipay|wxpay|logo|icon|badge)/i.test(u)) continue;
+    try {
+      const r = await fetch(u, { credentials: "include", signal: AbortSignal.timeout(4200) });
+      if (!r.ok) continue;
+      const blob = await r.blob();
+      if (!blob || blob.size < 8000 || !/^image\//i.test(blob.type || "image/jpeg")) continue;
+      const t = await ocrImg({ blob, w: 0, h: 0 });
+      if (t && t.trim()) {
+        texts.push(t.trim());
+        done++;
+      }
+    } catch {}
+  }
+  return texts.join("\n");
+}
+
 // 对抓取到的同平台/全网页面中的商品详情/参数图进行 OCR 文字提取
 async function ocrFetchedPageImages(pageDoc, pageUrl, maxImgs = 3) {
   if (!pageDoc || typeof ocrImg !== "function") return "";
@@ -4826,23 +4852,7 @@ async function ocrFetchedPageImages(pageDoc, pageUrl, maxImgs = 3) {
     } catch {}
     if (urls.length >= maxImgs * 2) break;
   }
-  const texts = [];
-  let done = 0;
-  for (const u of urls) {
-    if (done >= maxImgs) break;
-    try {
-      const r = await fetch(u, { credentials: "include", signal: AbortSignal.timeout(4200) });
-      if (!r.ok) continue;
-      const blob = await r.blob();
-      if (!blob || blob.size < 8000 || !/^image\//i.test(blob.type || "image/jpeg")) continue;
-      const t = await ocrImg({ blob, w: 0, h: 0 });
-      if (t && t.trim()) {
-        texts.push(t.trim());
-        done++;
-      }
-    } catch {}
-  }
-  return texts.join("\n");
+  return ocrImageUrlList(urls, maxImgs);
 }
 
 function extractRelevantSpecWindow(text, maxLen = 4500) {
@@ -5211,7 +5221,9 @@ async function getStage3SamePlatformPages(data, sourceUrl, cacheObj) {
       try {
         const probed = await probeAttrs(link);
         if (probed && (Object.keys(probed.attrs || {}).length || (probed.text || "").length > 100) && isSameProductText(`${Object.entries(probed.attrs || {}).map(([k, v]) => `${k} ${v}`).join(" ")} ${probed.text || ""}`, title, brand, model)) {
-          cacheObj.stage3Pages.push({ link: probed.url || link, attrs: probed.attrs || {}, text: probed.text || "" });
+          const imgOcr = await ocrImageUrlList(probed.images || [], 3);
+          const mergedText = imgOcr ? `${probed.text || ""}\n${imgOcr}` : (probed.text || "");
+          cacheObj.stage3Pages.push({ link: probed.url || link, attrs: probed.attrs || {}, text: mergedText, ocrText: imgOcr });
         }
       } catch {}
     }
@@ -5243,7 +5255,9 @@ async function getStage3SamePlatformPages(data, sourceUrl, cacheObj) {
           seenLinks.add(l);
           const probed = await probeAttrs(l);
           if (!probed) break;
-          cacheObj.stage3Pages.push({ link: l, attrs: probed.attrs || {}, text: probed.text || "" });
+          const imgOcr = await ocrImageUrlList(probed.images || [], 3);
+          const mergedText = imgOcr ? `${probed.text || ""}\n${imgOcr}` : (probed.text || "");
+          cacheObj.stage3Pages.push({ link: l, attrs: probed.attrs || {}, text: mergedText, ocrText: imgOcr });
           if (cacheObj.stage3Pages.length >= 2) break;
         }
       }
