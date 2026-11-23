@@ -424,19 +424,40 @@
       }
     }
 
-    const pageText = (document.body?.innerText || "").replace(/\n{3,}/g, "\n\n").slice(0, 20000);
+    let descContainerText = "";
+    try {
+      const descSelectors = [
+        "#desc-lazyload-container", ".od-pc-detail-description", ".detail-desc-decorate-richtext",
+        "#de_description_detail", "[class*='desc-content']", "[class*='detail-content']", "#detailContentContainer"
+      ];
+      const chunks = [];
+      for (const sel of descSelectors) {
+        const el = document.querySelector(sel);
+        const t = (el?.innerText || "").trim();
+        if (t && t.length >= 4 && !chunks.includes(t)) chunks.push(t);
+      }
+      descContainerText = chunks.join("\n").slice(0, 12000);
+    } catch {}
+    const bodyText = (document.body?.innerText || "").replace(/\n{3,}/g, "\n\n").slice(0, 20000);
+    const pageText = descContainerText && !bodyText.includes(descContainerText.slice(0, 40))
+      ? `${bodyText}\n【商品详情介绍】\n${descContainerText}`
+      : bodyText;
 
-    // 5) 兜底：若后台第N个标签页因懒渲染未挂载属性表格，自动从标题与可见文本提取核心材质/容量/尺寸参数，确保字段绝不为空
+    // 5) 兜底：若后台第N个标签页因懒渲染未挂载属性表格，自动从标题与可见文本/详情介绍提取核心材质/容量/尺寸/重量/包装方式，确保字段绝不为空
     if (title) {
       putAttr("产品名称", title);
-      const matMatch = (title + " " + pageText.slice(0, 3000)).match(/(316L?不锈钢|304不锈钢|201不锈钢|食品级(?:硅胶|PP|PC|Tritan)|液态硅胶|高硼硅玻璃|铝合金|钛合金|纯钛|ABS|PP塑料|PC塑料|牛津布|帆布|真皮|PU皮|纯棉|涤纶|尼龙|陶瓷|实木|竹木|黄铜|碳纤维)/i);
+      const searchScope = title + " " + pageText.slice(0, 6000) + " " + descContainerText;
+      const matMatch = searchScope.match(/(316L?不锈钢|304不锈钢|201不锈钢|食品级(?:硅胶|PP|PC|Tritan)|液态硅胶|高硼硅玻璃|铝合金|钛合金|纯钛|ABS|PP塑料|PC塑料|牛津布|帆布|真皮|PU皮|纯棉|涤纶|尼龙|陶瓷|实木|竹木|黄铜|碳纤维)/i);
       if (matMatch && !attrs["材质"]) putAttr("材质", matMatch[1]);
       const capMatch = title.match(/\b(\d+(?:\.\d+)?\s*(?:ml|l|oz|毫升|升|加仑))\b/i);
       if (capMatch && !attrs["容量"]) putAttr("容量", capMatch[1]);
-      const dimMatch = (title + " " + pageText.slice(0, 4000)).match(/\b(\d+(?:\.\d+)?\s*[×xX*]\s*\d+(?:\.\d+)?(?:\s*[×xX*]\s*\d+(?:\.\d+)?)?\s*(?:cm|mm|厘米|毫米))\b/i);
+      const dimMatch = searchScope.match(/\b(\d+(?:\.\d+)?\s*[×xX*]\s*\d+(?:\.\d+)?(?:\s*[×xX*]\s*\d+(?:\.\d+)?)?\s*(?:cm|mm|厘米|毫米))\b/i);
       if (dimMatch && !attrs["产品尺寸"]) putAttr("产品尺寸", dimMatch[1]);
-      const wtMatch = pageText.slice(0, 4000).match(/(?:重量|净重|克重|单重)\s*[:：]?\s*(\d+(?:\.\d+)?\s*(?:g|kg|克|千克|公斤))\b/i);
+      const wtMatch = searchScope.match(/(?:重量|净重|克重|单重)\s*[:：]?\s*(\d+(?:\.\d+)?\s*(?:g|kg|克|千克|公斤))\b/i);
       if (wtMatch && !attrs["单件重量"]) putAttr("单件重量", wtMatch[1]);
+      const packMatch = searchScope.match(/(?:包装方式|内包装|单品包装|包装)\s*[:：]\s*([^\n\r;；,，。]{2,24})/i)
+        || searchScope.match(/((?:单个|独立|透明|加厚|定制)?(?:OPP袋|PE袋|CPE袋|自封袋|磨砂袋|气泡袋|防尘袋|无纺布袋|绒布袋|编织袋|彩盒|白盒|牛皮纸盒|瓦楞盒|天地盖盒|礼盒|纸盒|吸塑卡|吸塑盒|吊卡|纸箱|袋装|盒装|散装)(?:独立)?(?:包装|装)?)/i);
+      if (packMatch && packMatch[1] && !attrs["包装方式"]) putAttr("包装方式", packMatch[1].trim());
     }
     return { url: location.href, title, pageLang: document.documentElement?.lang || "", isEcommerce: true, main, detail, sku, videos, attrs, pageText };
   }

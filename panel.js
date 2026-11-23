@@ -3815,6 +3815,11 @@ function matchField(name, attrs, text) {
       const v = norm(rawMatched);
       if (v && !BADVAL.has(v) && isValidFieldValue(name, v)) return v;
     }
+    // 针对「包装方式」支持详情介绍中的自然语言描述（如 单个OPP袋包装、独立PE袋、彩盒装、牛皮纸盒、吸塑卡装、防尘袋包装 等）
+    if (name === "包装方式") {
+      const pm = text.match(/(?:单个|独立|透明|加厚|定制|内)?(?:OPP袋|PE袋|CPE袋|自封袋|磨砂袋|气泡袋|防尘袋|无纺布袋|绒布袋|编织袋|彩盒|白盒|牛皮纸盒|瓦楞盒|天地盖盒|礼盒|纸盒|吸塑卡|吸塑盒|吊卡|纸箱|袋装|盒装|散装)(?:独立)?(?:包装|装)?/i);
+      if (pm && pm[0] && pm[0].trim().length >= 2) return pm[0].trim();
+    }
   }
   return "";
 }
@@ -6226,22 +6231,35 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       data.sku = [];
     }
 
-    // 无论是当前页快照还是后台打开标签页，若 1688 详情图尚未在 DOM 渲染但存在 detailUrl 接口，统一自动拉取还原
-    if (!data.detail.length && data.detailUrl) {
+    // 无论是当前页快照还是后台打开标签页，只要存在 1688 detailUrl 详情接口，统一拉取并还原「详情图 + 详情介绍全部正文」
+    if (data.detailUrl) {
       try {
         let du = data.detailUrl;
         if (du.startsWith("//")) du = "https:" + du;
-        const t = await (await fetch(du, { signal: AbortSignal.timeout(10000) })).text();
+        const t = await (await fetch(du, { credentials: "include", signal: AbortSignal.timeout(8000) })).text();
         const j = JSON.parse(t.replace(/^\s*var\s+offer_details\s*=\s*/, "").replace(/;\s*$/, ""));
-        ((j.content || "").match(/(?:src|data-lazyload-src)="([^"]+)"/g) || [])
-          .forEach(x => {
-            let u = x.replace(/^(?:src|data-lazyload-src)="/, "").slice(0, -1);
-            if (u.startsWith("//")) u = "https:" + u;
-            u = u.replace(/_.webp$/i, "").replace(/(\.(?:jpg|jpeg|png|webp))_\d+x\d+[^/]*$/i, "$1");
-            if (/^https?:/i.test(u) && !/(?:blank\.gif|lazyload|spacer|1x1)/i.test(u) && !data.detail.includes(u)) {
-              data.detail.push(u);
-            }
-          });
+        const htmlContent = String(j.content || "");
+        if (htmlContent) {
+          // 1) 提取详情介绍里的全部纯文字并并入 pageText（确保包装方式、尺寸、重量等详情介绍里的文字绝不遗漏）
+          const descDoc = new DOMParser().parseFromString(htmlContent, "text/html");
+          descDoc.querySelectorAll("script,style").forEach(el => el.remove());
+          const descText = (descDoc.body?.textContent || "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+          if (descText) {
+            data.pageText = `${data.pageText || ""}\n【商品详情介绍】\n${descText}`.trim();
+          }
+          // 2) 若 DOM 尚未渲染详情图，自动补齐详情图 URL
+          if (!data.detail.length) {
+            (htmlContent.match(/(?:src|data-lazyload-src)="([^"]+)"/g) || [])
+              .forEach(x => {
+                let u = x.replace(/^(?:src|data-lazyload-src)="/, "").slice(0, -1);
+                if (u.startsWith("//")) u = "https:" + u;
+                u = u.replace(/_.webp$/i, "").replace(/(\.(?:jpg|jpeg|png|webp))_\d+x\d+[^/]*$/i, "$1");
+                if (/^https?:/i.test(u) && !/(?:blank\.gif|lazyload|spacer|1x1)/i.test(u) && !data.detail.includes(u)) {
+                  data.detail.push(u);
+                }
+              });
+          }
+        }
       } catch (e) {}
     }
 
