@@ -2854,8 +2854,8 @@ const DEF_SECONDARY = [
 ];
 
 const SECONDARY_GROUP_LABELS = {
-  basic: "📦 1. 产品可选属性（双击可升为常用参数 · 搜不到不显示）",
-  trade: "🚢 2. 价格、外贸定制与物流可选属性（双击可升为常用参数 · 搜不到不显示）",
+  basic: "📦 1. 产品可选属性（按需勾选）",
+  trade: "🚢 2. 价格、外贸定制与物流可选属性（按需勾选）",
 };
 const DEF_COMMON = buildDefaultCommonFields("b2b");
 
@@ -3246,11 +3246,6 @@ function renderSecondaryFields() {
     for (const f of items) {
       const lbl = document.createElement("label");
       lbl.style.cssText = `display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid ${f.c ? "#cbbbe0" : "#e9e3f2"};border-radius:7px;background:${f.c ? "#f6f1fd" : "#fff"};font-size:12px;font-weight:${f.c ? "700" : "500"};color:${f.c ? "#4a3563" : "#64748b"};cursor:pointer;margin:0;user-select:none`;
-      lbl.title = "双击直接升为「常用参数」";
-      lbl.ondblclick = (e) => {
-        e.preventDefault();
-        promoteOptionalToCommon(f.n);
-      };
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.checked = Boolean(f.c);
@@ -3342,13 +3337,6 @@ function renderFields(boxId, key, arr, isAi) {
   arr.forEach((f, i) => {
     const row = document.createElement("div");
     row.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid #ede7f5;border-radius:8px;background:#fcfbfe;user-select:none";
-    if (!isAi) {
-      row.title = "双击移至「可选参数」";
-      row.ondblclick = (e) => {
-        if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "BUTTON")) return;
-        demoteCommonToOptional(f.n);
-      };
-    }
     const cb = document.createElement("input");
     cb.type = "checkbox"; cb.checked = !!f.c;
     cb.onchange = () => {
@@ -3358,7 +3346,7 @@ function renderFields(boxId, key, arr, isAi) {
     };
     const nm = document.createElement("span");
     nm.innerText = f.n === "详细规格" ? "详细规格（设备类）" : f.n;
-    nm.style.cssText = "min-width:96px;font-weight:700;font-size:12.5px;color:#4a3563;cursor:" + (!isAi ? "pointer" : "default");
+    nm.style.cssText = "min-width:96px;font-weight:700;font-size:12.5px;color:#4a3563;cursor:default";
     const inp = document.createElement("input");
     if (!isAi && f.n === "型号") {
       f.v = "";
@@ -3533,8 +3521,8 @@ async function initFields() {
         hintEl.style.borderColor = "#e4d8f8";
         hintEl.style.color = "#4a3563";
         hintEl.textContent = isEn
-          ? "💡 B2B & B2C params are separated. Double-click any field to swap between Common and Optional."
-          : "💡 B2B 与 B2C 参数已独立分开；常用参数搜不到则留空，可选参数搜不到则不显示。双击参数可互转！";
+          ? "💡 B2B & B2C params are separated. Common fields are placed at the top and checked by default; toggle any checkbox freely."
+          : "💡 常用参数排在最前面并默认勾选，其余参数可按需自由勾选。";
       }
       try { if (window.XM_I18N && typeof window.XM_I18N.apply === "function") window.XM_I18N.apply(); } catch {}
     }
