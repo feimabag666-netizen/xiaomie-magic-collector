@@ -797,8 +797,9 @@ if ($("clearDone")) {
 if ($("stop")) {
   $("stop").onclick = () => {
     stopRequested = true;
+    if (typeof clearCollectQueue === "function") clearCollectQueue();
     if (cancelSleepResolve) cancelSleepResolve();
-    $("status").innerText = "正在停止采集（当前商品处理完毕后即停）…";
+    $("status").innerText = "正在停止采集并清空等待队列（当前商品处理完毕后即停）…";
   };
 }
 
@@ -3700,7 +3701,7 @@ async function probeAttrs(url) {
   const tab = await chrome.tabs.create({ url, active: false });
   try {
     await waitTabLoaded(tab.id);
-    await sleep(2200);
+    await sleep(1100);
     const t = await chrome.tabs.get(tab.id).catch(() => null);
     if (!t || !t.url || t.url.includes("punish") || t.url.includes("login")) return null;
     if (is1688OfferUrl(t.url)) {
@@ -4289,7 +4290,9 @@ function aiFailureText(lang, why) {
 
 async function aiChatRaw(provider, messages, maxTokens = 700, timeoutMs = 0) {
   const ac = new AbortController();
-  const to = setTimeout(() => ac.abort(), timeoutMs || provider.timeoutMs || 45000);
+  const remBudget = window.__currentProductDeadline ? Math.max(3500, window.__currentProductDeadline - Date.now()) : 14000;
+  const effTimeout = Math.min(timeoutMs || Math.min(provider.timeoutMs || 14000, 14000), remBudget);
+  const to = setTimeout(() => ac.abort(), effTimeout);
   try {
     const headers = { "Content-Type": "application/json" };
     if (provider.key) headers.Authorization = "Bearer " + provider.key;
@@ -4846,7 +4849,7 @@ async function ocrImageUrlList(urls, maxImgs = 3) {
     if (done >= maxImgs) break;
     if (!u || /(?:spacer|blank\.gif|1x1|pixel|avatar|favicon|qrcode|qr_code|wechat_qr|alipay|wxpay|logo|icon|badge)/i.test(u)) continue;
     try {
-      const r = await fetch(u, { credentials: "include", signal: AbortSignal.timeout(4200) });
+      const r = await fetch(u, { credentials: "include", signal: AbortSignal.timeout(2500) });
       if (!r.ok) continue;
       const blob = await r.blob();
       if (!blob || blob.size < 8000 || !/^image\//i.test(blob.type || "image/jpeg")) continue;
@@ -5320,7 +5323,8 @@ async function getStage3SamePlatformPages(data, sourceUrl, cacheObj) {
   if (!title && !model) return cacheObj.stage3Pages;
 
   const isBatchMode = (window.__batchTotalCount || 1) > 1;
-  const fetchTimeoutMs = isBatchMode ? 4200 : 7500;
+  const fetchTimeoutMs = 3000;
+  if (window.__currentProductDeadline && (window.__currentProductDeadline - Date.now()) < 4500) return cacheObj.stage3Pages;
   const seenLinks = new Set([sourceUrl]);
   const candidateLinks = [...(data.samePlatformLinks || [])].filter(u => u && !seenLinks.has(u)).slice(0, 2);
 
@@ -5449,7 +5453,8 @@ async function getStage4InternetPages(data, sourceUrl, cacheObj) {
   const kw = extractProductSearchKeywords(title, brand, data.attrs || {}, data.pageText || "");
   const seenLinks = new Set([sourceUrl, ...(cacheObj.stage3Pages || []).map(p => p.link)]);
   const isBatchMode = (window.__batchTotalCount || 1) > 1;
-  const fetchTimeoutMs = isBatchMode ? 4200 : 7500;
+  const fetchTimeoutMs = 3000;
+  if (window.__currentProductDeadline && (window.__currentProductDeadline - Date.now()) < 4500) return cacheObj.stage4Pages;
 
   const queries = isBatchMode
     ? [
@@ -6276,13 +6281,16 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
             outputLang: outLang,
             ...preStoryDir,
           };
-          for (const f of onAi) {
+          $("status").innerText = `AGNES AI 正在并发生成「${onAi.map(x => x.n).join("、")}」（${langPack.label}）…`;
+          const aiResults = await Promise.all(onAi.map(async (f) => {
             const isPointGroup = (f.group || (f.n === "独特卖点" ? "point" : "story")) === "point";
-            $("status").innerText = `AGNES AI 正在联网生成「${f.n}」（${langPack.label}）…`;
             const g = allowRemoteAi ? await aiGen(f, ctx) : synthesizeGroundedAiField(f, ctx);
             const rawAiVal = g || synthesizeGroundedAiField(f, ctx);
-            const cleanAiVal = isPointGroup ? formatSellingPointsLines(rawAiVal, outLang) : toSingleLineText(rawAiVal);
-            await pushFieldLine(formatFieldDisplayName(f.n), cleanAiVal, builtAiOut, builtStoryAngle, f.n, false, isPointGroup);
+            const cleanAiVal = isPointGroup ? formatSellingPointsLines(rawAiVal, outLang) : cleanStoryOutput(rawAiVal);
+            return { f, isPointGroup, cleanAiVal };
+          }));
+          for (const item of aiResults) {
+            await pushFieldLine(formatFieldDisplayName(item.f.n), item.cleanAiVal, builtAiOut, builtStoryAngle, item.f.n, false, item.isPointGroup);
           }
         }
       }
@@ -6364,29 +6372,33 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       return accepted;
     };
 
-    // 1) 先在内存中预取详情图、主图、SKU图（同步收集 OCR 候选图），并立即关闭后台标签页释放内存
+    // 1) 严格控制单品采集总时长在 30 秒内：并发预取详情图、主图、SKU图（同步收集 OCR 候选图），并立即关闭后台标签页释放内存
+    const productDeadline = Date.now() + 28000;
+    window.__currentProductDeadline = productDeadline;
     const needOcr = !isNonEcom && (doParams || COMMON_FIELDS.some(f => f.c) || doAi);
-    const detailAssets = (opts.detail || needOcr) ? await prepareImages(data.detail, isNonEcom ? "配图" : "详情图") : [];
-    const mainAssets = opts.main ? await prepareImages(data.main, "主图") : [];
-    const skuAssets = doSku ? await prepareImages(data.sku || [], "SKU图") : [];
+    const [detailAssets, mainAssets, skuAssets] = await Promise.all([
+      (opts.detail || needOcr) ? prepareImages(data.detail, isNonEcom ? "配图" : "详情图") : Promise.resolve([]),
+      opts.main ? prepareImages(data.main, "主图") : Promise.resolve([]),
+      doSku ? prepareImages(data.sku || [], "SKU图") : Promise.resolve([]),
+    ]);
 
     if (tab) {
       chrome.tabs.remove(tab.id).catch(() => {});
       tab = null;
     }
 
-    // 2) 若为商品页或开启参数/AI：先执行 Stage B（第2级图片OCR -> 第3级本平台搜索 -> 第4级全网搜索 -> AI故事/卖点）
+    // 2) 若为商品页或开启参数/AI：在剩余 30s 预算内执行 Stage B（图片OCR -> 本平台 -> 全网 -> AI并发生成）
     if (!(isNonEcom && !doParams && !doAi)) {
       try {
         const ocrTexts = [];
         const ocrItems = [];
         const stage1HasAllChecked = !(finalBundle.missingRequired && finalBundle.missingRequired.length);
-        if (needOcr && ocrCandidatePool.length && !stage1HasAllChecked) {
+        if (needOcr && ocrCandidatePool.length && !stage1HasAllChecked && Date.now() < productDeadline - 8000) {
           const sortedPool = [...ocrCandidatePool]
             .filter(b => b.w >= 200 && b.h >= 100 && (b.w / Math.max(1, b.h)) < 8)
             .sort((a, b) => (b.isSpecChart ? 1 : 0) - (a.isSpecChart ? 1 : 0));
-          const candidates = sortedPool.slice(0, 10);
-          const ocrDeadline = Date.now() + 18000;
+          const candidates = sortedPool.slice(0, 6);
+          const ocrDeadline = Math.min(productDeadline - 11000, Date.now() + 7500);
           const stillMissing = Array.isArray(finalBundle.missingRequired) ? finalBundle.missingRequired : [];
           for (let i = 0; i < candidates.length; i++) {
             if (stopRequested || Date.now() > ocrDeadline) break;
@@ -6403,16 +6415,20 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
                 break;
               }
             }
-            await sleep(20);
+            await sleep(15);
           }
         }
 
-        const enrichedBundle = await buildFieldsPayload({
-          stageOcrTexts: ocrTexts,
-          stageOcrItems: ocrItems,
-          allowNetworkCascade: true,
-          allowRemoteAi: true,
-        });
+        const remStageB = Math.max(4000, productDeadline - Date.now());
+        const enrichedBundle = await Promise.race([
+          buildFieldsPayload({
+            stageOcrTexts: ocrTexts,
+            stageOcrItems: ocrItems,
+            allowNetworkCascade: true,
+            allowRemoteAi: true,
+          }),
+          sleep(remStageB).then(() => null),
+        ]);
         if (enrichedBundle && enrichedBundle.paramsText) {
           finalBundle = enrichedBundle;
         }
@@ -6496,6 +6512,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       unsupportedMedia: data.unsupportedMedia || [], unverifiedImageCount,
       imageCapReached: !!data.imageCapReached, videoCapReached: !!data.videoCapReached };
   } finally {
+    window.__currentProductDeadline = 0;
     if (tab) chrome.tabs.remove(tab.id).catch(() => {});
   }
 }
@@ -6503,21 +6520,178 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
 // 采集后页面不再渲染冗长的参数详情预览卡片（已按要求精简移除）
 function renderResultPreviewCard() {}
 
-$("go").onclick = async () => {
+// ================= 采集任务队列调度器（支持运行中继续追加新网页到等待队列，当前任务完成后依次执行） =================
+const collectTaskQueue = [];
+let isCollectQueueRunning = false;
+let collectQueueCompleted = 0;
+let collectQueueTotalEnqueued = 0;
+let goBtnOriginalLabel = "";
+
+function updateQueueBtnState() {
+  const btn = $("go");
+  if (!btn) return;
+  if (!goBtnOriginalLabel) goBtnOriginalLabel = btn.innerText || "开始采集";
+  if (isCollectQueueRunning) {
+    btn.disabled = false;
+    btn.innerText = collectTaskQueue.length > 0
+      ? `➕ 加入等待队列（排队 ${collectTaskQueue.length}）`
+      : "➕ 加入等待队列";
+  } else {
+    btn.disabled = false;
+    btn.innerText = goBtnOriginalLabel;
+  }
+}
+
+function clearCollectQueue() {
+  collectTaskQueue.length = 0;
+  updateQueueBtnState();
+}
+
+async function drainCollectTaskQueue() {
+  if (isCollectQueueRunning) return;
+  isCollectQueueRunning = true;
   stopRequested = false;
+  collectQueueCompleted = 0;
+  updateQueueBtnState();
+  if ($("stop")) $("stop").style.display = "";
+
+  const done = await getStore("doneUrls", []);
+  let okN = 0, skipN = 0, failN = 0;
+  let lastNo = "";
+  let lastPrefix = "";
+  let lastSuffix = "";
+
+  try {
+    let processedIdx = 0;
+    while (collectTaskQueue.length > 0 && !stopRequested) {
+      const task = collectTaskQueue.shift();
+      updateQueueBtnState();
+      const totalNow = Math.max(collectQueueTotalEnqueued, processedIdx + 1 + collectTaskQueue.length);
+      window.__batchTotalCount = totalNow;
+      window.__batchCurrentIndex = processedIdx + 1;
+
+      // 每连续采集 6 个商品主动做一次 OCR Worker 预防性重启，彻底避免 WASM 内存水位过高
+      if (processedIdx > 0 && processedIdx % 6 === 0) {
+        await resetOcrWorker().catch(() => {});
+      }
+
+      const { url: u, capture: pageCapture } = task;
+      const { saveDir, prefix, suffix, startNo, step, minSize, maxMinute, maxHour, maxDay, opts, persist } = readSettings();
+      await chrome.storage.local.set(persist);
+      let no = startNo;
+      lastNo = no;
+      lastPrefix = prefix;
+      lastSuffix = suffix;
+
+      // 按三档收费模式校验剩余可采集产品额度（免费试用 20 个 / ¥500 采集 100 个 / ¥999 终身不限量）
+      const curAuth = await getAuthState();
+      const maxQuota = curAuth.plan === "lifetime" ? Infinity : (curAuth.plan === "pack100" ? (curAuth.quotaLimit || 100) : 20);
+      if ((curAuth.usedCount || 0) >= maxQuota) {
+        if (curAuth.plan === "trial" && !curAuth.loggedIn) {
+          $("status").innerText = "免费试用期 20 个产品额度已用完，请先登录官方账号（支持 Google 官方授权 或 全球官方邮箱登录）！";
+          if (typeof openAuthModal === "function") openAuthModal("google", true);
+        } else {
+          $("status").innerText = curAuth.plan === "trial"
+            ? "免费试用期 20 个产品额度已用完，请升级付费方案（¥500 采集 100 个产品 / ¥999 终身不限量授权）后继续采集"
+            : "当前百品采集包（100 个产品）额度已用完，请续购百品包或升级 ¥999 终身不限量授权";
+          try { if ($("pricingModal") && typeof $("pricingModal").showModal === "function") $("pricingModal").showModal(); } catch {}
+        }
+        collectTaskQueue.length = 0;
+        break;
+      }
+
+      const pendingHint = collectTaskQueue.length > 0 ? `，队列等待 ${collectTaskQueue.length} 条` : "";
+      $("status").innerText = `(${processedIdx + 1}/${totalNow}${pendingHint}) ${pageCapture ? "采集当前浏览页" : "采集网页"}…`;
+      $("bar").firstElementChild.style.width = `${(processedIdx / Math.max(1, totalNow)) * 100}%`;
+
+      if ($("skipDone").checked && done.includes(u)) {
+        addRow(u, "已采集过，跳过（如需重采请取消勾选“已经下载的产品不再下载”或点清除已采记录）", "skip", "-", "-", "-", "-", "");
+        skipN++;
+        processedIdx++;
+        continue;
+      }
+      const gate = await rateGate(maxMinute, maxHour, maxDay, !!pageCapture);
+      if (!gate.ok) {
+        $("status").innerText = gate.message;
+        collectTaskQueue.length = 0;
+        break;
+      }
+      try {
+        const r = await collectOne(u, { prefix, rawNo: no, suffix, step }, saveDir, opts, minSize, pageCapture);
+        if (no) {
+          no = r.nextNo || incrementProductNumber(no, step);
+          $("startNo").value = no;
+          lastNo = no;
+        }
+        addRow(u, "✅ 完成", "ok", r.nm, r.nd, r.ns, r.nv, r.folder);
+        if (!done.includes(u)) done.push(u);
+        okN++;
+        const latestAuth = await getAuthState();
+        const nextUsed = (latestAuth.usedCount || 0) + 1;
+        const updatedAuth = await saveAuthState({ usedCount: nextUsed });
+        if (typeof appendBillingLedgerEntry === "function") {
+          await appendBillingLedgerEntry({
+            type: "deduct",
+            title: r?.folder || u,
+            delta: updatedAuth.plan === "lifetime" ? "0 (SVIP不限量)" : "-1 额度",
+            balance: updatedAuth.plan === "lifetime" ? "∞" : String(Math.max(0, (updatedAuth.quotaLimit || 20) - nextUsed)),
+          });
+        }
+        if (typeof syncAuthAndApiUI === "function") await syncAuthAndApiUI();
+        await chrome.storage.local.set({ startNo: no, nextNo: no, userSetStartNo: Boolean(no), doneUrls: done });
+        if (updatedAuth.plan === "trial" && nextUsed >= 20 && !updatedAuth.loggedIn) {
+          $("status").innerText = "免费试用期 20 个产品额度已全部用完，请先登录官方账号（支持 Google 官方授权 或 全球官方邮箱登录）！";
+          if (typeof openAuthModal === "function") openAuthModal("google", true);
+          collectTaskQueue.length = 0;
+          break;
+        }
+      } catch (e) {
+        if (no) {
+          no = incrementProductNumber(no, step);
+          $("startNo").value = no;
+          lastNo = no;
+          await chrome.storage.local.set({ startNo: no, nextNo: no, userSetStartNo: true }).catch(() => {});
+        }
+        addRow(u, "失败: " + e.message, "fail", 0, 0, 0, 0, "");
+        failN++;
+      }
+      processedIdx++;
+      collectQueueCompleted = processedIdx;
+
+      if (collectTaskQueue.length > 0 && !stopRequested) {
+        const waitSec = collectTaskQueue.length <= 4 ? 2 : Math.round(3 + Math.random() * 2);
+        for (let rem = waitSec; rem > 0 && !stopRequested; rem--) {
+          $("status").innerText = `已完成 ${processedIdx} 条，队列还有 ${collectTaskQueue.length} 条等待中，${rem} 秒后自动执行下一条…`;
+          await interruptibleSleep(1000);
+        }
+      }
+    }
+  } finally {
+    isCollectQueueRunning = false;
+    collectQueueTotalEnqueued = 0;
+    window.__batchTotalCount = 1;
+    window.__batchCurrentIndex = 0;
+    $("bar").firstElementChild.style.width = "100%";
+    const stopTag = stopRequested ? "（已手动停止）" : "";
+    const nextNoHint = lastNo ? `（下次编号 ${lastPrefix}${lastNo}${lastSuffix}）` : "";
+    $("status").innerText = `结束${stopTag}：成功 ${okN}，跳过 ${skipN}，失败 ${failN}${nextNoHint}`;
+    updateQueueBtnState();
+    if ($("stop")) $("stop").style.display = "none";
+  }
+}
+
+$("go").onclick = async () => {
   if (settingsReadyPromise) await settingsReadyPromise.catch(() => {});
   const capture = pendingCapture;
   // 必须在用户点击事件同步栈首步发起权限请求，保留浏览器 user gesture
-  let assetAccess = true;
-  try { assetAccess = await requestAssetPermissions(capture); }
-  catch { assetAccess = false; }
+  try { await requestAssetPermissions(capture); } catch {}
 
   const { urls, bad } = parseUrlInput($("urls").value);
   for (const l of bad) addRow(l, "无法识别：请输入完整的 http(s) 网页网址、1688链接，或从扩展图标采集当前浏览页", "fail", "-", "-", "-", "-", "");
 
-  // 构建采集队列：严格按照文本框中的全部有效链接顺序排队，绝不漏掉第2条及后续链接
+  // 构建待入队任务列表：支持单网页或批量链接，运行中点击直接加入等待队列
   const jobs = [];
-  const seenJobUrls = new Set();
+  const seenJobUrls = new Set(collectTaskQueue.map(t => t.url));
   const normCapUrl = capture?.url ? (normalizeUrl(capture.url) || capture.url) : "";
   if (urls.length > 0) {
     for (const u of urls) {
@@ -6526,108 +6700,35 @@ $("go").onclick = async () => {
       const isCapMatch = capture && (u === capture.url || u === normCapUrl);
       jobs.push({ url: isCapMatch ? capture.url : u, capture: isCapMatch ? capture : null });
     }
-  } else if (capture && capture.url) {
+  } else if (capture && capture.url && !seenJobUrls.has(capture.url)) {
     jobs.push({ url: capture.url, capture });
   }
-  if (!jobs.length) { $("status").innerText = "没有可采集的当前页或有效网页链接"; return; }
+  if (!jobs.length) {
+    $("status").innerText = isCollectQueueRunning
+      ? `该链接已在等待队列中（当前队列等待 ${collectTaskQueue.length} 条）`
+      : "没有可采集的当前页或有效网页链接";
+    return;
+  }
 
-  // 若用户在链接框粘贴了批量商品链接，自动恢复电商全量模式，防止之前浏览非电商页时留下的临时覆盖导致参数与AI故事被关闭
+  // 若用户在链接框粘贴了批量商品链接，自动恢复电商全量模式
   if (nonEcomOverrideActive && (jobs.length > 1 || jobs.some(j => !j.capture || is1688OfferUrl(j.url)))) {
     applyCaptureModeUI(true);
   }
-  window.__batchTotalCount = jobs.length;
 
-  const { saveDir, prefix, suffix, startNo, step, minSize, maxMinute, maxHour, maxDay, opts, persist } = readSettings();
-  await chrome.storage.local.set(persist);
-  let no = startNo;
-  const done = await getStore("doneUrls", []);
-  $("go").disabled = true;
-  if ($("stop")) $("stop").style.display = "";
-  let okN = 0, skipN = 0, failN = 0;
-  for (let i = 0; i < jobs.length; i++) {
-    if (stopRequested) break;
-    window.__batchCurrentIndex = i + 1;
-    // 每连续采集 6 个商品主动做一次 OCR Worker 预防性重启，彻底避免第 9~10 个商品时 WASM 内存水位过高
-    if (i > 0 && i % 6 === 0) {
-      await resetOcrWorker().catch(() => {});
-    }
-    const { url: u, capture: pageCapture } = jobs[i];
-    // 按三档收费模式校验剩余可采集产品额度（免费试用 20 个 / ¥500 采集 100 个 / ¥999 终身不限量）
-    const curAuth = await getAuthState();
-    const maxQuota = curAuth.plan === "lifetime" ? Infinity : (curAuth.plan === "pack100" ? (curAuth.quotaLimit || 100) : 20);
-    if ((curAuth.usedCount || 0) >= maxQuota) {
-      if (curAuth.plan === "trial" && !curAuth.loggedIn) {
-        $("status").innerText = "免费试用期 20 个产品额度已用完，请先登录官方账号（支持 Google 官方授权 或 全球官方邮箱登录）！";
-        if (typeof openAuthModal === "function") openAuthModal("google", true);
-      } else {
-        $("status").innerText = curAuth.plan === "trial"
-          ? "免费试用期 20 个产品额度已用完，请升级付费方案（¥500 采集 100 个产品 / ¥999 终身不限量授权）后继续采集"
-          : "当前百品采集包（100 个产品）额度已用完，请续购百品包或升级 ¥999 终身不限量授权";
-        try { if ($("pricingModal") && typeof $("pricingModal").showModal === "function") $("pricingModal").showModal(); } catch {}
-      }
-      break;
-    }
-    $("status").innerText = `(${i+1}/${jobs.length}) ${pageCapture ? "采集当前浏览页" : "采集网页"}…`;
-    $("bar").firstElementChild.style.width = `${(i/jobs.length)*100}%`;
-    if ($("skipDone").checked && done.includes(u)) { addRow(u, "已采集过，跳过（如需重采请取消勾选“已经下载的产品不再下载”或点清除已采记录）", "skip", "-", "-", "-", "-", ""); skipN++; continue; }
-    const gate = await rateGate(maxMinute, maxHour, maxDay, !!pageCapture);
-    if (!gate.ok) {
-      $("status").innerText = gate.message;
-      break;
-    }
-    try {
-      const r = await collectOne(u, { prefix, rawNo: no, suffix, step }, saveDir, opts, minSize, pageCapture);
-      if (no) {
-        no = r.nextNo || incrementProductNumber(no, step);
-        $("startNo").value = no;
-      }
-      addRow(u, "✅ 完成", "ok", r.nm, r.nd, r.ns, r.nv, r.folder);
-      if (!done.includes(u)) done.push(u);
-      okN++;
-      const latestAuth = await getAuthState();
-      const nextUsed = (latestAuth.usedCount || 0) + 1;
-      const updatedAuth = await saveAuthState({ usedCount: nextUsed });
-      if (typeof appendBillingLedgerEntry === "function") {
-        await appendBillingLedgerEntry({
-          type: "deduct",
-          title: r?.folder || u,
-          delta: updatedAuth.plan === "lifetime" ? "0 (SVIP不限量)" : "-1 额度",
-          balance: updatedAuth.plan === "lifetime" ? "∞" : String(Math.max(0, (updatedAuth.quotaLimit || 20) - nextUsed)),
-        });
-      }
-      if (typeof syncAuthAndApiUI === "function") await syncAuthAndApiUI();
-      await chrome.storage.local.set({ startNo: no, nextNo: no, userSetStartNo: Boolean(no), doneUrls: done });
-      if (updatedAuth.plan === "trial" && nextUsed >= 20 && !updatedAuth.loggedIn) {
-        $("status").innerText = "免费试用期 20 个产品额度已全部用完，请先登录官方账号（支持 Google 官方授权 或 全球官方邮箱登录）！";
-        if (typeof openAuthModal === "function") openAuthModal("google", true);
-        break;
-      }
-    } catch (e) {
-      // 若填写了编号，即使当前商品中途报错，也将编号向后推进一格，确保下一个商品绝不重用当前可能已半创建的文件夹
-      if (no) {
-        no = incrementProductNumber(no, step);
-        $("startNo").value = no;
-        await chrome.storage.local.set({ startNo: no, nextNo: no, userSetStartNo: true }).catch(() => {});
-      }
-      addRow(u, "失败: " + e.message, "fail", 0, 0, 0, 0, "");
-      failN++;
-    }
-    if (i < jobs.length - 1 && !stopRequested) {
-      const waitSec = jobs.length <= 5 ? 3 : Math.round(5 + Math.random() * 4);
-      for (let rem = waitSec; rem > 0 && !stopRequested; rem--) {
-        $("status").innerText = `已完成 ${i + 1}/${jobs.length}，间隔等待 ${rem} 秒后继续采集下一条（可随时点击“停止采集”）…`;
-        await interruptibleSleep(1000);
-      }
+  for (const j of jobs) {
+    collectTaskQueue.push(j);
+    if (isCollectQueueRunning) {
+      addRow(j.url, `⏳ 已加入等待队列（排队第 ${collectTaskQueue.length} 位）`, "skip", "-", "-", "-", "-", "");
     }
   }
-  window.__batchTotalCount = 1;
-  window.__batchCurrentIndex = 0;
-  $("bar").firstElementChild.style.width = "100%";
-  const stopTag = stopRequested ? "（已手动停止）" : "";
-  const nextNoHint = no ? `（下次编号 ${prefix}${no}${suffix}）` : "";
-  $("status").innerText = `结束${stopTag}：成功 ${okN}，跳过 ${skipN}，失败 ${failN}${nextNoHint}`;
-  $("go").disabled = false;
-  if ($("stop")) $("stop").style.display = "none";
+  collectQueueTotalEnqueued += jobs.length;
+  updateQueueBtnState();
+
+  if (isCollectQueueRunning) {
+    $("status").innerText = `⏳ 已新增 ${jobs.length} 条任务到等待队列（当前共 ${collectTaskQueue.length} 条等待），当前任务完成后将自动依次采集…`;
+    return;
+  }
+  drainCollectTaskQueue();
 };
 
 /* ================= 面板底部「API 与 AI 设置」：保存 Key / 测试 AI 与联网搜索 / 检查 OCR ================= */
