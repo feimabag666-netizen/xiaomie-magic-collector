@@ -3332,6 +3332,7 @@ function renderDynamicSecondaryFields(attrsObj = {}) {
   }
 }
 
+let optSpecSubModelEnabled = false;
 function renderFields(boxId, key, arr, isAi) {
   const box = $(boxId);
   if (!box) return;
@@ -3382,6 +3383,23 @@ function renderFields(boxId, key, arr, isAi) {
       renderAllFieldBoxes();
     };
     row.append(cb, nm, inp);
+    if (!isAi && f.n === "型号") {
+      const subLbl = document.createElement("label");
+      subLbl.style.cssText = "display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:#5c4379;font-weight:600;white-space:nowrap;cursor:pointer;margin:0;padding:2px 6px;border-radius:6px;background:#f4effc;border:1px solid #dfd3f3";
+      subLbl.title = "默认不勾选；勾选后，当商品有 2 个及以上规格时，自动按规格生成 型号-1、型号-2…";
+      const subCb = document.createElement("input");
+      subCb.type = "checkbox";
+      subCb.id = "optSpecSubModel";
+      subCb.checked = Boolean(optSpecSubModelEnabled);
+      subCb.onchange = () => {
+        optSpecSubModelEnabled = Boolean(subCb.checked);
+        chrome.storage.local.set({ optSpecSubModel: optSpecSubModelEnabled });
+      };
+      const subTxt = document.createElement("span");
+      subTxt.innerText = "规格子型号";
+      subLbl.append(subCb, subTxt);
+      row.appendChild(subLbl);
+    }
     if (boxId !== "sellingPointFields" && boxId !== "storyFields") row.appendChild(del);
     box.appendChild(row);
   });
@@ -3419,8 +3437,9 @@ async function getStoryDirection() {
   return { angles: angle, soul: $("soulLine")?.value?.trim() || s.soulLine || "用心服务，一对一全程跟进，扣细节扣隐患，极致仔细，想客户所想，独家的预防出错机制，经验丰富，大量避坑，守住质量底线" };
 }
 async function initFields() {
-  const modeInit = await chrome.storage.local.get(["secPresetMode"]);
+  const modeInit = await chrome.storage.local.get(["secPresetMode", "optSpecSubModel"]);
   activeBizMode = modeInit?.secPresetMode === "b2c" ? "b2c" : "b2b";
+  optSpecSubModelEnabled = Boolean(modeInit?.optSpecSubModel);
   await loadActiveFieldProfile(activeBizMode);
   await loadNonEcomFields();
   AI_FIELDS = await loadFields("aiFields", DEF_AI, true);
@@ -5391,7 +5410,7 @@ function detectDistinctMultiSpecs(data, attrs = {}) {
   return [];
 }
 
-async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMode, markupPct, baseCode, outLang }, cache = {}) {
+async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMode, markupPct, baseCode, useSubModel = false, outLang }, cache = {}) {
   const detected = detectDistinctMultiSpecs(data, data?.attrs || {});
   const capVal = String(data?.attrs?.["容量"] || data?.attrs?.["详细规格"] || "");
   const hasMultiCapHint = /\d+\s*(?:ml|l|cm|寸|号)\s*[-~—/／、,，]\s*\d+\s*(?:ml|l|cm|寸|号)/i.test(capVal) || detected.length >= 2;
@@ -5401,7 +5420,7 @@ async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMod
     cache.aiMultiSpecs = (async () => {
       const baseFallback = detected.map((d, idx) => ({
         spec: d.spec,
-        model: d.model || (baseCode ? `${baseCode}-${idx + 1}` : ""),
+        model: useSubModel ? (baseCode ? `${baseCode}-${idx + 1}` : (d.model || "")) : (d.model || ""),
         price: d.price ? (priceMode === "markup_pct" ? applyPriceMarkupPct(d.price, markupPct) : d.price) : "",
       }));
       try {
@@ -5438,7 +5457,9 @@ async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMod
                 if (pr && priceMode === "markup_pct") pr = applyPriceMarkupPct(pr, markupPct);
                 return {
                   spec: stripBracketsAndBoxes(String(it.spec || "").trim()),
-                  model: stripBracketsAndBoxes(String(it.model || "").trim()) || (baseCode ? `${baseCode}-${idx + 1}` : ""),
+                  model: useSubModel
+                    ? (baseCode ? `${baseCode}-${idx + 1}` : stripBracketsAndBoxes(String(it.model || "").trim()))
+                    : stripBracketsAndBoxes(String(it.model || "").trim()),
                   size: stripBracketsAndBoxes(String(it.size || "").trim()),
                   weight: it.weight ? normalizeUnitWeight(it.weight, data?.attrs || {}) : "",
                   cartonQty: stripBracketsAndBoxes(String(it.cartonQty || "").trim()),
@@ -6595,8 +6616,9 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         const checkedNameSet = new Set(checkedCommonAll.map(x => x.n));
 
         // 0) 若检测到多规格商品（如多个容量/尺寸对应不同型号、价格、箱规），按 规格1 / 规格2 / 规格3 分组列清差异参数，下面再列通用参数
+        const useSubModel = Boolean($("optSpecSubModel")?.checked ?? optSpecSubModelEnabled);
         const multiSpecs = (doParams && allowRemoteAi)
-          ? await aiExtractMultiSpecVariants(data, ocrAll, { minQty, priceMode, markupPct, baseCode: slot.hasUserNo ? code : "", outLang }, cascadeCache)
+          ? await aiExtractMultiSpecVariants(data, ocrAll, { minQty, priceMode, markupPct, baseCode: slot.hasUserNo ? code : "", useSubModel, outLang }, cascadeCache)
           : [];
         const hasMultiSpecLayout = multiSpecs.length >= 2;
         const specFieldsCovered = new Set();
