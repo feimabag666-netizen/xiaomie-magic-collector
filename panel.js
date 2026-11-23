@@ -3716,6 +3716,31 @@ function normalizeYesNoFieldValue(rawVal) {
   return "";
 }
 
+// 规范单件重量：确保一定带上明确单位（g / kg 等），纯数字按页面键名或数值量级自动补全单位
+function normalizeUnitWeight(rawVal, attrs = {}) {
+  const s = String(rawVal ?? "").trim();
+  if (!s) return "";
+  if (/(?:kg|g|mg|lb|lbs|oz|克|千克|公斤|斤|两)\b/i.test(s) || /(?:克|千克|公斤|斤|两)/.test(s)) {
+    return s;
+  }
+  const numMatch = s.match(/(\d+(?:\.\d+)?)/);
+  if (!numMatch) return s;
+  // 先看网页属性表里对应的键名是否标明了单位（如 重量(kg) / 单位重量(g)）
+  let hintedUnit = "";
+  for (const k of Object.keys(attrs || {})) {
+    if (/(?:重量|单重|净重|克重|weight)/i.test(k)) {
+      if (/(?:kg|千克|公斤)/i.test(k)) { hintedUnit = "kg"; break; }
+      if (/(?:g|克)/i.test(k) && !/kg/i.test(k)) { hintedUnit = "g"; break; }
+    }
+  }
+  if (!hintedUnit) {
+    const num = parseFloat(numMatch[1]);
+    // 1688/B2B 常见规律：小于 10 的小数（如 0.35 / 1.2）通常为 kg，>= 10 通常为 g（如 280 / 450）
+    hintedUnit = (num > 0 && num < 10 && (s.includes(".") || num <= 5)) ? "kg" : "g";
+  }
+  return `${s}${hintedUnit}`;
+}
+
 // 清洗网页属性表：剔除“材质: 预览”等UI噪音词、剔除1688表格倒序重复项（如“否: 是否一次性”、“成人: 适用人群”、“清洁: 功能”）以及 SKU 库存行（如“紫+蓝2支装: 37”）
 function sanitizeProductAttrs(rawAttrs) {
   if (!rawAttrs || typeof rawAttrs !== "object") return {};
@@ -5032,7 +5057,7 @@ async function aiExtractStageFields(stageKey, targetFields, data, sourceUrl, con
             allowWebSearch ? "当前处于全网搜索阶段：若下方资料中仍缺字段，请务必调用 SEARCH 工具检索该商品的真实参数后再填写！" : "",
             "铁律：",
             "1. 绝不编造或猜测不存在的数值；确实找不到的字段请返回空字符串 \"\"。",
-            "2. 对「加印LOGO」「是否支持定制」只返回 \"是\" 或 \"否\"。",
+            "2. 对「加印LOGO」「是否支持定制」只返回 \"是\" 或 \"否\"；对「单件重量」必须带上明确单位（如 g 或 kg），绝不返回无单位纯数字。",
             "3. 严格输出纯 JSON 对象，键名为字段名，值为提取结果，不加任何解释或 Markdown 代码块。",
           ].filter(Boolean).join("\n"),
         },
@@ -6350,6 +6375,11 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
                 }
               }
             }
+            if (!v) builtMissingRequired.push(f.n);
+            const finalVal = v ? translateCommonValue(v, outLang) : "";
+            await pushFieldLine(formatFieldDisplayName(f.n), finalVal, builtCommonOut, srcStage, f.n, true);
+          } else if (f.n === "单件重量") {
+            if (v) v = normalizeUnitWeight(v, data.attrs || {});
             if (!v) builtMissingRequired.push(f.n);
             const finalVal = v ? translateCommonValue(v, outLang) : "";
             await pushFieldLine(formatFieldDisplayName(f.n), finalVal, builtCommonOut, srcStage, f.n, true);
