@@ -4108,10 +4108,13 @@ function toSingleLineText(val) {
 
 function stripBracketsAndBoxes(s) {
   return String(s ?? "")
+    // 先把数字之间的乘号 * / ＊ 统一规范为标准乘号 ×，绝不误删尺寸里的乘号导致数字挤在一起
+    .replace(/(?<=\d)\s*[*＊]\s*(?=\d)/g, "×")
     .replace(/[【】\[\]「」『』《》<>]/g, "")
     .replace(/[（(]\s*/g, " ")
     .replace(/\s*[）)]/g, "")
-    .replace(/[*•▪◆▶★☆✓✔]/g, "")
+    .replace(/\*\*/g, "")
+    .replace(/[•▪◆▶★☆✓✔]/g, "")
     .replace(/\s{2,}/g, " ")
     .trim();
 }
@@ -4127,7 +4130,8 @@ function formatSellingPointsLines(rawVal, langCode = "zh") {
   const colon = langCode === "zh" || langCode === "ja" || langCode === "ko" ? "：" : ": ";
   const cleanPunct = (s) =>
     stripBracketsAndBoxes(s)
-      .replace(/[*•▪◆▶★☆✓✔]/g, "")
+      .replace(/\*\*/g, "")
+      .replace(/[•▪◆▶★☆✓✔]/g, "")
       .replace(/[;；]+\s*$/g, "")
       .replace(/\s{2,}/g, " ")
       .trim();
