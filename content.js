@@ -281,11 +281,98 @@
       putAttr("规格", skuNames.slice(0, 30).join(" / "));
     }
 
-    // 价格提取（供商品资料记录参考）
-    const priceEl = document.querySelector(".price-text, .od-pc-offer-price-contain, [class*='price-num'], [class*='price-info']");
-    if (priceEl && priceEl.innerText) {
-      const pTxt = priceEl.innerText.replace(/\s+/g, " ").trim().slice(0, 80);
-      if (/\d/.test(pTxt)) putAttr("价格", pTxt);
+    // 价格与阶梯起批量提取（自动修复 1688 拆分小数点 ¥ 4 . 20 -> ¥4.20，并解析 XXX数量多少钱 与 多规格 SKU 价格）
+    const cleanPriceText = (raw) => String(raw || "")
+      .replace(/(\d)\s*\.\s*(\d)/g, "$1.$2")
+      .replace(/([¥￥$€£])\s+(\d)/g, "$1$2")
+      .replace(/\s+/g, " ")
+      .trim();
+    const priceTiers = [];
+    const seenTierKey = new Set();
+    const pushTier = (minQty, maxQty, qtyLabel, priceNum, currency = "¥") => {
+      const p = parseFloat(priceNum);
+      if (!Number.isFinite(p) || p <= 0) return;
+      const mq = Math.max(1, parseInt(minQty, 10) || 1);
+      const xq = maxQty && parseInt(maxQty, 10) >= mq ? parseInt(maxQty, 10) : 0;
+      const lbl = qtyLabel || (xq ? `${mq}-${xq}件` : `${mq}件起`);
+      const k = `${mq}_${xq}_${p.toFixed(2)}`;
+      if (seenTierKey.has(k)) return;
+      seenTierKey.add(k);
+      priceTiers.push({ minQty: mq, maxQty: xq, qtyLabel: lbl, price: p, currency });
+    };
+
+    // A) 优先从 1688 页面 DOM 阶梯价区块提取（如 2-99个 ¥6.50 / 100-499个 ¥5.20 / ≥500个 ¥4.20）
+    try {
+      const tierContainers = document.querySelectorAll(".price-column, .step-price-item, [class*='step-price'] [class*='item'], [class*='price-box'] [class*='item'], .od-pc-offer-price-contain [class*='price-item']");
+      tierContainers.forEach(el => {
+        const txt = cleanPriceText(el.innerText || "");
+        const pm = txt.match(/([¥￥$€£])?\s*(\d+(?:\.\d{1,2})?)/);
+        const qRange = txt.match(/(\d+)\s*[-~—至]\s*(\d+)\s*(?:个|件|只|套|支|盒|箱|双|PCS|pcs)?/);
+        const qMin = txt.match(/(?:≥|>=|满|起批|起订)?\s*(\d+)\s*(?:个|件|只|套|支|盒|箱|双|PCS|pcs)?\s*(?:起|以上|及以上|\+)/);
+        if (pm) {
+          const cur = pm[1] || "¥";
+          const priceVal = pm[2];
+          if (qRange) {
+            pushTier(qRange[1], qRange[2], `${qRange[1]}-${qRange[2]}件`, priceVal, cur);
+          } else if (qMin) {
+            pushTier(qMin[1], 0, `${qMin[1]}件以上`, priceVal, cur);
+          }
+        }
+      });
+    } catch {}
+
+    // B) 从页面脚本 JSON 中提取 priceRange / skuInfoMap（含多规格价格与阶梯价）
+    const variantsData = [];
+    try {
+      const htmlRaw = document.documentElement?.innerHTML || "";
+      if (!priceTiers.length) {
+        const prMatch = htmlRaw.match(/"priceRange"\s*:\s*(\[\s*\[[\s\S]{4,400}?\]\s*\])/);
+        if (prMatch) {
+          const arr = JSON.parse(prMatch[1]);
+          if (Array.isArray(arr)) {
+            arr.forEach((pair, idx) => {
+              if (Array.isArray(pair) && pair.length >= 2) {
+                const mq = parseInt(pair[0], 10) || 1;
+                const nextMq = (arr[idx + 1] && parseInt(arr[idx + 1][0], 10)) ? parseInt(arr[idx + 1][0], 10) - 1 : 0;
+                pushTier(mq, nextMq, nextMq >= mq ? `${mq}-${nextMq}件` : `${mq}件以上`, pair[1], "¥");
+              }
+            });
+          }
+        }
+      }
+      const skuMapMatch = htmlRaw.match(/"skuInfoMap"\s*:\s*(\{[\s\S]{10,18000}?\})\s*,\s*"[a-zA-Z]/);
+      if (skuMapMatch) {
+        try {
+          const sm = JSON.parse(skuMapMatch[1]);
+          const seenSpec = new Set();
+          for (const [k, info] of Object.entries(sm || {})) {
+            if (!info || typeof info !== "object") continue;
+            const specName = cleanPriceText(k.replace(/&gt;/g, " / ").replace(/>/g, " / "));
+            if (!specName || seenSpec.has(specName)) continue;
+            seenSpec.add(specName);
+            const pVal = parseFloat(info.discountPrice || info.price || "");
+            variantsData.push({
+              spec: specName,
+              model: String(info.skuCode || info.cargoNumber || "").trim(),
+              price: Number.isFinite(pVal) && pVal > 0 ? pVal : 0,
+              currency: "¥",
+            });
+            if (variantsData.length >= 20) break;
+          }
+        } catch {}
+      }
+    } catch {}
+
+    // C) 兜底单价提取（确保修复拆分小数点，绝不输出 ¥ 5.20 . 26）
+    if (priceTiers.length) {
+      priceTiers.sort((a, b) => a.minQty - b.minQty);
+      putAttr("价格", priceTiers.map(t => `${t.qtyLabel} ${t.currency}${t.price.toFixed(2).replace(/\.00$/, "")}`).join("，"));
+    } else {
+      const priceEl = document.querySelector(".price-text, .od-pc-offer-price-contain, [class*='price-num'], [class*='price-info']");
+      if (priceEl && priceEl.innerText) {
+        const pTxt = cleanPriceText(priceEl.innerText).slice(0, 80);
+        if (/\d/.test(pTxt)) putAttr("价格", pTxt);
+      }
     }
 
     // 1) 经典属性项与表格行（含跨境属性/包装信息表格）
@@ -459,7 +546,7 @@
         || searchScope.match(/((?:单个|独立|透明|加厚|定制)?(?:OPP袋|PE袋|CPE袋|自封袋|磨砂袋|气泡袋|防尘袋|无纺布袋|绒布袋|编织袋|彩盒|白盒|牛皮纸盒|瓦楞盒|天地盖盒|礼盒|纸盒|吸塑卡|吸塑盒|吊卡|纸箱|袋装|盒装|散装)(?:独立)?(?:包装|装)?)/i);
       if (packMatch && packMatch[1] && !attrs["包装方式"]) putAttr("包装方式", packMatch[1].trim());
     }
-    return { url: location.href, title, pageLang: document.documentElement?.lang || "", isEcommerce: true, main, detail, sku, videos, attrs, pageText };
+    return { url: location.href, title, pageLang: document.documentElement?.lang || "", isEcommerce: true, main, detail, sku, videos, attrs, pageText, priceTiers, variantsData };
   }
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

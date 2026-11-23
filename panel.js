@@ -2046,6 +2046,8 @@ async function captureFromTabId(tabId) {
           : { ...(fresh.attrs || {}), ...(specialized.attrs || {}) },
         imageDims: fresh.imageDims || {},
         detailUrl: specialized.detailUrl || fresh.detailUrl || "",
+        priceTiers: specialized.priceTiers || fresh.priceTiers || [],
+        variantsData: specialized.variantsData || fresh.variantsData || [],
       };
     }
   }
@@ -3570,9 +3572,10 @@ async function initFields() {
       if (pendingCapture?.attrs) renderDynamicSecondaryFields(pendingCapture.attrs);
     };
   }
-  const priceCfg = await chrome.storage.local.get(["priceStrategyMode", "priceMarkupPct"]);
+  const priceCfg = await chrome.storage.local.get(["priceStrategyMode", "priceMarkupPct", "priceMinQty"]);
   const priceSel = $("priceStrategyMode");
   const pricePctInp = $("priceMarkupPct");
+  const priceMinQtyInp = $("priceMinQty");
   const priceWrap = $("priceMarkupWrap");
   const syncPriceStrategyUI = () => {
     const pm = priceSel?.value || "ai_market";
@@ -3593,6 +3596,16 @@ async function initFields() {
       const v = Math.max(-90, Math.min(1000, Number(pricePctInp.value) || 0));
       pricePctInp.value = String(v);
       chrome.storage.local.set({ priceMarkupPct: v });
+    };
+  }
+  if (priceMinQtyInp) {
+    if (priceCfg.priceMinQty !== undefined && priceCfg.priceMinQty !== null && priceCfg.priceMinQty !== "") {
+      priceMinQtyInp.value = String(priceCfg.priceMinQty);
+    }
+    priceMinQtyInp.onchange = () => {
+      const v = Math.max(0, Math.min(1000000, parseInt(priceMinQtyInp.value, 10) || 0));
+      priceMinQtyInp.value = String(v);
+      chrome.storage.local.set({ priceMinQty: v });
     };
   }
   syncPriceStrategyUI();
@@ -5253,21 +5266,196 @@ async function aiSummarizeProductTitle(rawTitle, attrs = {}, outLang = "zh", cac
   return cache.aiTitle;
 }
 
-// 对价格字符串中的每个数值按百分比上浮/调整（支持单价与价格区间，保留币种符号）
+// 彻底清洗价格字符串（合并 1688 拆分小数点 ¥ 4 . 20 -> ¥4.20，避免数字碎裂错乱）
+function normalizeRawPriceText(raw) {
+  return stripBracketsAndBoxes(String(raw || ""))
+    .replace(/(\d)\s*\.\s*(\d)/g, "$1.$2")
+    .replace(/([¥￥$€£])\s+(\d)/g, "$1$2")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function _formatAdjNum(adj) {
+  return adj >= 100 ? String(Math.round(adj * 10) / 10) : adj.toFixed(2).replace(/\.00$/, "");
+}
+
+// 对价格字符串中的价格数值按百分比上浮/调整（绝不误乘起订数量，绝不拆分小数点）
 function applyPriceMarkupPct(rawPriceStr, pct = 0) {
-  const s = String(rawPriceStr || "").trim();
+  const s = normalizeRawPriceText(rawPriceStr);
   if (!s) return "";
   const rate = 1 + (Number(pct) || 0) / 100;
   if (!Number.isFinite(rate) || rate <= 0) return s;
-  let matched = false;
-  const out = s.replace(/\d+(?:\.\d+)?/g, (numStr) => {
+  // 若文本包含明确币种前缀的价格（如 500件以上 ¥4.20），只对币种后的价格数值加价，绝不改动数量
+  if (/[¥￥$€£]\s*\d+(?:\.\d+)?/.test(s)) {
+    return s.replace(/([¥￥$€£])(\d+(?:\.\d+)?)/g, (_, cur, numStr) => {
+      const n = parseFloat(numStr);
+      return Number.isFinite(n) ? `${cur}${_formatAdjNum(n * rate)}` : `${cur}${numStr}`;
+    });
+  }
+  // 否则仅对非数量词后缀的数字加价
+  return s.replace(/(\d+(?:\.\d+)?)(?!\s*(?:个|件|只|套|支|盒|箱|双|起|以上|pcs|ml|l|cm|mm|g|kg)\b)/gi, (numStr) => {
     const n = parseFloat(numStr);
-    if (!Number.isFinite(n)) return numStr;
-    matched = true;
-    const adj = n * rate;
-    return adj >= 100 ? String(Math.round(adj * 10) / 10) : adj.toFixed(2).replace(/\.00$/, "");
+    return Number.isFinite(n) ? _formatAdjNum(n * rate) : numStr;
   });
-  return matched ? stripBracketsAndBoxes(out) : s;
+}
+
+// 格式化阶梯价格：写清「XXX数量 多少钱」，按用户设定的不采集数量下限过滤，并按加价比例调整
+function formatPriceTiersForOutput(tiers, rawPriceStr, { minQty = 0, priceMode = "raw", markupPct = 0, outLang = "zh" } = {}) {
+  const minQ = Math.max(0, parseInt(minQty, 10) || 0);
+  const rate = priceMode === "markup_pct" ? (1 + (Number(markupPct) || 0) / 100) : 1;
+  let list = Array.isArray(tiers) ? tiers.map(t => ({ ...t })) : [];
+
+  // 若未从 DOM 结构化拿到阶梯数组，尝试从文本中解析「数量 + 价格」阶梯
+  if (!list.length && rawPriceStr) {
+    const clean = normalizeRawPriceText(rawPriceStr);
+    const tierRe = /(?:(\d+)\s*[-~—至]\s*(\d+)\s*(?:个|件|只|套|支|盒|箱|双|pcs)?|(?:≥|>=|满)?\s*(\d+)\s*(?:个|件|只|套|支|盒|箱|双|pcs)?\s*(?:起|以上|及以上|\+))\s*([¥￥$€£])?(\d+(?:\.\d{1,2})?)/gi;
+    let m;
+    while ((m = tierRe.exec(clean)) !== null) {
+      const mq = parseInt(m[1] || m[3], 10) || 1;
+      const xq = m[2] ? parseInt(m[2], 10) : 0;
+      const cur = m[4] || (outLang === "zh" ? "¥" : "$");
+      const pv = parseFloat(m[5]);
+      if (Number.isFinite(pv) && pv > 0) {
+        list.push({
+          minQty: mq,
+          maxQty: xq,
+          qtyLabel: xq ? `${mq}-${xq}件` : `${mq}件以上`,
+          price: pv,
+          currency: cur,
+        });
+      }
+    }
+  }
+
+  if (list.length) {
+    list.sort((a, b) => a.minQty - b.minQty);
+    let filtered = minQ > 0
+      ? list.filter(t => (t.maxQty > 0 ? t.maxQty >= minQ : true) && (t.minQty >= minQ || t.maxQty === 0))
+      : list;
+    if (minQ > 0) {
+      filtered = filtered.map(t => {
+        if (t.minQty < minQ && t.maxQty === 0) {
+          return { ...t, minQty: minQ, qtyLabel: `${minQ}件以上` };
+        }
+        if (t.minQty < minQ && t.maxQty >= minQ) {
+          return { ...t, minQty: minQ, qtyLabel: `${minQ}-${t.maxQty}件` };
+        }
+        return t;
+      });
+    }
+    if (!filtered.length && list.length) {
+      const top = list[list.length - 1];
+      filtered = [{ ...top, qtyLabel: minQ > 0 ? `${minQ}件以上` : top.qtyLabel }];
+    }
+    return filtered
+      .map(t => `${t.qtyLabel} ${t.currency || "¥"}${_formatAdjNum(t.price * (Number.isFinite(rate) && rate > 0 ? rate : 1))}`)
+      .join(outLang === "en" ? ", " : "，");
+  }
+
+  const cleanRaw = normalizeRawPriceText(rawPriceStr);
+  if (!cleanRaw) return "";
+  return priceMode === "markup_pct" ? applyPriceMarkupPct(cleanRaw, markupPct) : cleanRaw;
+}
+
+// 识别并提取多规格商品（按 规格1 / 规格2 / 规格3 分别整理 型号、规格、箱规、价格 等差异参数）
+const SPEC_VARYING_FIELDS = new Set(["型号", "详细规格", "容量", "产品尺寸", "单件重量", "每箱多少个", "箱子毛净重", "箱子尺寸", "箱子立方数", "价格"]);
+
+function detectDistinctMultiSpecs(data, attrs = {}) {
+  const rawVariants = Array.isArray(data?.variantsData) ? data.variantsData : [];
+  // 过滤纯颜色 SKU，仅保留含容量/尺寸/型号/款型差异的规格
+  const specMetricRe = /(?:\d+(?:\.\d+)?\s*(?:ml|l|oz|cm|mm|m|g|kg|w|v|寸|英寸|号|升|毫升|件套|支装|个装|层|格|款)|大号|中号|小号|特大号|加厚|标准款|升级款|迷你|mini|pro|max)/i;
+  const specMap = new Map();
+  for (const v of rawVariants) {
+    const parts = String(v.spec || "").split(/\s*[/／|>]\s*/).map(s => s.trim()).filter(Boolean);
+    const metricPart = parts.find(p => specMetricRe.test(p)) || (parts.length > 1 ? parts[parts.length - 1] : "");
+    if (!metricPart || !specMetricRe.test(metricPart)) continue;
+    if (!specMap.has(metricPart)) {
+      specMap.set(metricPart, {
+        spec: metricPart,
+        model: v.model || "",
+        prices: v.price > 0 ? [v.price] : [],
+        currency: v.currency || "¥",
+      });
+    } else if (v.price > 0) {
+      specMap.get(metricPart).prices.push(v.price);
+    }
+  }
+  if (specMap.size >= 2) {
+    return [...specMap.values()].slice(0, 8).map(item => {
+      const minP = item.prices.length ? Math.min(...item.prices) : 0;
+      const maxP = item.prices.length ? Math.max(...item.prices) : 0;
+      const priceStr = minP > 0 ? (minP === maxP ? `${item.currency}${_formatAdjNum(minP)}` : `${item.currency}${_formatAdjNum(minP)}-${item.currency}${_formatAdjNum(maxP)}`) : "";
+      return { spec: item.spec, model: item.model, price: priceStr };
+    });
+  }
+  return [];
+}
+
+async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMode, markupPct, baseCode, outLang }, cache = {}) {
+  const detected = detectDistinctMultiSpecs(data, data?.attrs || {});
+  const capVal = String(data?.attrs?.["容量"] || data?.attrs?.["详细规格"] || "");
+  const hasMultiCapHint = /\d+\s*(?:ml|l|cm|寸|号)\s*[-~—/／、,，]\s*\d+\s*(?:ml|l|cm|寸|号)/i.test(capVal) || detected.length >= 2;
+  if (!hasMultiCapHint) return [];
+
+  if (!cache.aiMultiSpecs) {
+    cache.aiMultiSpecs = (async () => {
+      const baseFallback = detected.map((d, idx) => ({
+        spec: d.spec,
+        model: d.model || (baseCode ? `${baseCode}-${idx + 1}` : ""),
+        price: d.price ? (priceMode === "markup_pct" ? applyPriceMarkupPct(d.price, markupPct) : d.price) : "",
+      }));
+      try {
+        const providers = await getAiProviders();
+        if (!providers.length) return baseFallback;
+        const ctxText = extractRelevantSpecWindow(`${data?.pageText || ""}\n${stageOcrText || ""}`, 4500);
+        const variantsHint = detected.map(d => `${d.spec}${d.model ? ` 型号:${d.model}` : ""}${d.price ? ` 价格:${d.price}` : ""}`).join("\n");
+        const tiersHint = (data?.priceTiers || []).map(t => `${t.qtyLabel} ${t.currency}${t.price}`).join("，");
+        const messages = [
+          {
+            role: "system",
+            content: [
+              "你是电商多规格参数结构化整理助手。该商品存在多个不同规格（如不同容量/尺寸/款型），请严格依据提供的网页文本、SKU列表和OCR文字，按每个独立规格分别整理其对应的差异参数。",
+              "严格输出纯 JSON 数组，每个元素格式：",
+              `{"spec":"规格名称如350ml","model":"该规格型号(无则留空)","size":"产品尺寸","weight":"单件重量(带单位)","cartonQty":"每箱多少个","cartonWeight":"箱子毛净重","cartonSize":"箱子尺寸","cartonCbm":"箱子立方数","price":"该规格价格(如有阶梯写清XXX件多少钱，过滤低于${minQty}件的价格)"}`,
+              "铁律：只列真正存在参数/价格/箱规差异的规格（纯颜色不要拆成多个规格）；找不到某个子项留空字符串，绝不编造；若实际只有 1 个规格返回空数组 []。",
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: `商品标题：${String(data?.title || "").slice(0, 120)}\n识别到的规格列表：\n${variantsHint || capVal}\n网页阶梯价：${tiersHint || "无"}\n详情与OCR文本：\n${ctxText}\n请输出纯JSON数组：`,
+          },
+        ];
+        for (const p of providers) {
+          if (p.isAdminTrial && Date.now() < llmCooldownUntil) continue;
+          try {
+            const r = await aiAgentRun(p, messages, { maxSteps: 1, webSearch: false, maxTokens: 900 });
+            const m = String(r?.text || "").match(/\[[\s\S]*\]/);
+            if (!m) continue;
+            const arr = JSON.parse(m[0]);
+            if (Array.isArray(arr) && arr.length >= 2) {
+              return arr.slice(0, 8).map((it, idx) => {
+                let pr = normalizeRawPriceText(it.price || "");
+                if (pr && priceMode === "markup_pct") pr = applyPriceMarkupPct(pr, markupPct);
+                return {
+                  spec: stripBracketsAndBoxes(String(it.spec || "").trim()),
+                  model: stripBracketsAndBoxes(String(it.model || "").trim()) || (baseCode ? `${baseCode}-${idx + 1}` : ""),
+                  size: stripBracketsAndBoxes(String(it.size || "").trim()),
+                  weight: it.weight ? normalizeUnitWeight(it.weight, data?.attrs || {}) : "",
+                  cartonQty: stripBracketsAndBoxes(String(it.cartonQty || "").trim()),
+                  cartonWeight: stripBracketsAndBoxes(String(it.cartonWeight || "").trim()),
+                  cartonSize: stripBracketsAndBoxes(String(it.cartonSize || "").trim()),
+                  cartonCbm: stripBracketsAndBoxes(String(it.cartonCbm || "").trim()),
+                  price: pr,
+                };
+              }).filter(x => x.spec);
+            }
+          } catch {}
+        }
+      } catch {}
+      return baseFallback;
+    })();
+  }
+  return cache.aiMultiSpecs;
 }
 
 // 插件 AI 依据市场价格指数自动给出预估报价（支持 B2B 批发 / B2C 零售）
@@ -6134,6 +6322,8 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
             imageMeta: uni.imageMeta || {},
             samePlatformLinks: uni.samePlatformLinks || [],
             detailUrl: specialized.detailUrl || uni.detailUrl || "",
+            priceTiers: specialized.priceTiers || uni.priceTiers || [],
+            variantsData: specialized.variantsData || uni.variantsData || [],
           };
         } else {
           data = specialized || uni || null;
@@ -6399,10 +6589,56 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       if (checkedCommonAll.length || onAi.length || (doParams && Object.keys(data.attrs || {}).length)) {
         const ocrAll = stageOcrTexts.join("\n");
         const attrsText = Object.keys(data.attrs || {}).filter(k => !isUncheckedKey(k)).map(k => `${k}: ${data.attrs[k]}`).join("\n");
+        const priceMode = $("priceStrategyMode")?.value || "ai_market";
+        const markupPct = Number($("priceMarkupPct")?.value ?? 30);
+        const minQty = Math.max(0, parseInt($("priceMinQty")?.value, 10) || 0);
+        const checkedNameSet = new Set(checkedCommonAll.map(x => x.n));
 
-        // 1) 按面板配置的常见字段顺序逐行输出「字段名：字段内容」（含型号、四项箱规、交期、起订量、材质、产地、品牌、产品参数及自定义字段）
+        // 0) 若检测到多规格商品（如多个容量/尺寸对应不同型号、价格、箱规），按 规格1 / 规格2 / 规格3 分组列清差异参数，下面再列通用参数
+        const multiSpecs = (doParams && allowRemoteAi)
+          ? await aiExtractMultiSpecVariants(data, ocrAll, { minQty, priceMode, markupPct, baseCode: slot.hasUserNo ? code : "", outLang }, cascadeCache)
+          : [];
+        const hasMultiSpecLayout = multiSpecs.length >= 2;
+        if (hasMultiSpecLayout) {
+          for (let si = 0; si < multiSpecs.length; si++) {
+            const sp = multiSpecs[si];
+            allLines.push("");
+            await pushFieldLine(outLang === "en" ? `Spec ${si + 1}` : `规格${si + 1}`, sp.spec, builtCommonOut, "", `规格${si + 1}`);
+            if (checkedNameSet.has("型号") && sp.model) {
+              await pushFieldLine(formatFieldDisplayName("型号"), sp.model, builtCommonOut, "", "型号");
+            }
+            if (checkedNameSet.has("产品尺寸") && sp.size) {
+              await pushFieldLine(formatFieldDisplayName("产品尺寸"), translateCommonValue(sp.size, outLang), builtCommonOut, "", "产品尺寸");
+            }
+            if (checkedNameSet.has("单件重量") && sp.weight) {
+              await pushFieldLine(formatFieldDisplayName("单件重量"), translateCommonValue(sp.weight, outLang), builtCommonOut, "", "单件重量");
+            }
+            if (checkedNameSet.has("每箱多少个") && sp.cartonQty) {
+              await pushFieldLine(formatFieldDisplayName("每箱多少个"), translateCommonValue(sp.cartonQty, outLang), builtCommonOut, "", "每箱多少个");
+            }
+            if (checkedNameSet.has("箱子毛净重") && sp.cartonWeight) {
+              await pushFieldLine(formatFieldDisplayName("箱子毛净重"), translateCommonValue(sp.cartonWeight, outLang), builtCommonOut, "", "箱子毛净重");
+            }
+            if (checkedNameSet.has("箱子尺寸") && sp.cartonSize) {
+              await pushFieldLine(formatFieldDisplayName("箱子尺寸"), translateCommonValue(sp.cartonSize, outLang), builtCommonOut, "", "箱子尺寸");
+            }
+            const cbmVal = sp.cartonCbm || (sp.cartonSize ? _calcCbmFromDim(sp.cartonSize) : "");
+            if (checkedNameSet.has("箱子立方数") && cbmVal) {
+              await pushFieldLine(formatFieldDisplayName("箱子立方数"), translateCommonValue(cbmVal, outLang), builtCommonOut, "", "箱子立方数");
+            }
+            if (checkedNameSet.has("价格") && sp.price) {
+              const spPriceOut = formatPriceTiersForOutput([], sp.price, { minQty, priceMode: priceMode === "markup_pct" ? "raw" : priceMode, markupPct: 0, outLang });
+              await pushFieldLine(formatFieldDisplayName("价格"), translateCommonValue(spPriceOut, outLang), builtCommonOut, "", "价格");
+            }
+          }
+          allLines.push("");
+          allLines.push(outLang === "en" ? "Common Parameters" : "通用参数");
+        }
+
+        // 1) 按面板配置的常见字段顺序逐行输出「字段名：字段内容」（多规格布局下跳过已在规格块输出的差异字段，只输出下方通用参数）
         for (const f of checkedCommonAll) {
           if (f.n === "商品标题") continue;
+          if (hasMultiSpecLayout && SPEC_VARYING_FIELDS.has(f.n)) continue;
           if (f.n === "型号") {
             const modelVal = slot.hasUserNo ? code : "";
             await pushFieldLine(formatFieldDisplayName(f.n), modelVal, builtCommonOut, "", f.n, true);
@@ -6446,11 +6682,16 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
             await pushFieldLine(formatFieldDisplayName(f.n), finalVal, builtCommonOut, srcStage, f.n, true);
           } else if (f.n === "价格") {
             if (!rawPreset) {
-              const priceMode = $("priceStrategyMode")?.value || "ai_market";
-              const markupPct = Number($("priceMarkupPct")?.value ?? 30);
+              // 先统一清洗拆分小数点、按「不采低于 N 件」过滤阶梯价并格式化为「XXX件 ¥XX.XX」
+              const cleanTiered = formatPriceTiersForOutput(data.priceTiers, v, {
+                minQty,
+                priceMode: priceMode === "markup_pct" ? "markup_pct" : "raw",
+                markupPct,
+                outLang,
+              });
               if (priceMode === "markup_pct") {
-                if (v) {
-                  v = applyPriceMarkupPct(v, markupPct);
+                if (cleanTiered) {
+                  v = cleanTiered;
                   srcStage = `上浮${markupPct}%`;
                 } else if (allowRemoteAi) {
                   const estBase = await aiEstimateMarketPrice("", data, url, outLang, activeBizMode === "b2c", cascadeCache);
@@ -6462,15 +6703,19 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
               } else if (priceMode === "ai_market") {
                 if (allowRemoteAi) {
                   $("status").innerText = "插件 AI 正在依据市场价格指数预估报价…";
-                  const est = await aiEstimateMarketPrice(v, data, url, outLang, activeBizMode === "b2c", cascadeCache);
+                  const est = await aiEstimateMarketPrice(cleanTiered || normalizeRawPriceText(v), data, url, outLang, activeBizMode === "b2c", cascadeCache);
                   if (est) {
-                    v = est;
+                    v = normalizeRawPriceText(est);
                     srcStage = "AI市场预估报价";
+                  } else if (cleanTiered) {
+                    v = cleanTiered;
                   }
-                } else if (v) {
-                  v = applyPriceMarkupPct(v, activeBizMode === "b2c" ? 50 : 25);
+                } else if (cleanTiered) {
+                  v = applyPriceMarkupPct(cleanTiered, activeBizMode === "b2c" ? 50 : 25);
                   srcStage = "市场参考估价";
                 }
+              } else {
+                v = cleanTiered || normalizeRawPriceText(v);
               }
             }
             if (!v) builtMissingRequired.push(f.n);
