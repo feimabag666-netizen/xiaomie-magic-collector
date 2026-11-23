@@ -1000,6 +1000,19 @@
         <button type="button" id="btnSecPresetB2B" style="padding:4px 11px;font-size:11.5px;background:#3730a3;color:#fff;border-color:#3730a3;font-weight:700">🏭 B2B 独立站模式（外贸/批发）</button>
         <button type="button" id="btnSecPresetB2C" style="padding:4px 11px;font-size:11.5px;background:#fdf2f8;color:#be185d;border-color:#fbcfe8;font-weight:700">🛍️ B2C 独立站/店铺模式（零售/种草）</button>
       </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <strong style="font-size:12px;color:#4a3563">💰 价格策略：</strong>
+        <select id="priceStrategyMode" style="padding:3px 7px;font-size:11.5px;border-radius:6px;border:1px solid #d8cceb;background:#fff;color:#4a3563;font-weight:600">
+          <option value="ai_market">🤖 AI按市场指数预估报价</option>
+          <option value="markup_pct">📈 原价按比例加价 %</option>
+          <option value="raw">🏷️ 保留网页原价</option>
+        </select>
+        <span id="priceMarkupWrap" style="display:none;align-items:center;gap:4px;font-size:11.5px;color:#4a3563;font-weight:600">
+          <span>加价</span>
+          <input type="number" id="priceMarkupPct" value="30" min="-90" max="1000" step="1" style="width:56px;padding:3px 5px;font-size:11.5px;border:1px solid #d8cceb;border-radius:5px;text-align:center">
+          <span>%</span>
+        </span>
+      </div>
     </div>
     <div id="secPresetActiveHint" style="font-size:11.5px;color:#4a3563;background:#f5f0ff;border:1px solid #e4d8f8;border-radius:7px;padding:5px 10px;margin-bottom:8px;line-height:1.5">💡 核心最常用参数排在最前面，所有参数均可选可不选（无强制必采项）。已勾选参数将按「本网页 ➡️ 本平台 ➡️ 全网」尽力搜全；实在搜不到的将标注为<strong>「未完成采集_」</strong>文件夹。</div>
 
