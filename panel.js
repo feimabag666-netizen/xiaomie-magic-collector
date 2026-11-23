@@ -6599,34 +6599,45 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
           ? await aiExtractMultiSpecVariants(data, ocrAll, { minQty, priceMode, markupPct, baseCode: slot.hasUserNo ? code : "", outLang }, cascadeCache)
           : [];
         const hasMultiSpecLayout = multiSpecs.length >= 2;
+        const specFieldsCovered = new Set();
         if (hasMultiSpecLayout) {
+          specFieldsCovered.add("详细规格");
+          specFieldsCovered.add("容量");
           for (let si = 0; si < multiSpecs.length; si++) {
             const sp = multiSpecs[si];
             allLines.push("");
             await pushFieldLine(outLang === "en" ? `Spec ${si + 1}` : `规格${si + 1}`, sp.spec, builtCommonOut, "", `规格${si + 1}`);
             if (checkedNameSet.has("型号") && sp.model) {
+              specFieldsCovered.add("型号");
               await pushFieldLine(formatFieldDisplayName("型号"), sp.model, builtCommonOut, "", "型号");
             }
             if (checkedNameSet.has("产品尺寸") && sp.size) {
+              specFieldsCovered.add("产品尺寸");
               await pushFieldLine(formatFieldDisplayName("产品尺寸"), translateCommonValue(sp.size, outLang), builtCommonOut, "", "产品尺寸");
             }
             if (checkedNameSet.has("单件重量") && sp.weight) {
+              specFieldsCovered.add("单件重量");
               await pushFieldLine(formatFieldDisplayName("单件重量"), translateCommonValue(sp.weight, outLang), builtCommonOut, "", "单件重量");
             }
             if (checkedNameSet.has("每箱多少个") && sp.cartonQty) {
+              specFieldsCovered.add("每箱多少个");
               await pushFieldLine(formatFieldDisplayName("每箱多少个"), translateCommonValue(sp.cartonQty, outLang), builtCommonOut, "", "每箱多少个");
             }
             if (checkedNameSet.has("箱子毛净重") && sp.cartonWeight) {
+              specFieldsCovered.add("箱子毛净重");
               await pushFieldLine(formatFieldDisplayName("箱子毛净重"), translateCommonValue(sp.cartonWeight, outLang), builtCommonOut, "", "箱子毛净重");
             }
             if (checkedNameSet.has("箱子尺寸") && sp.cartonSize) {
+              specFieldsCovered.add("箱子尺寸");
               await pushFieldLine(formatFieldDisplayName("箱子尺寸"), translateCommonValue(sp.cartonSize, outLang), builtCommonOut, "", "箱子尺寸");
             }
             const cbmVal = sp.cartonCbm || (sp.cartonSize ? _calcCbmFromDim(sp.cartonSize) : "");
             if (checkedNameSet.has("箱子立方数") && cbmVal) {
+              specFieldsCovered.add("箱子立方数");
               await pushFieldLine(formatFieldDisplayName("箱子立方数"), translateCommonValue(cbmVal, outLang), builtCommonOut, "", "箱子立方数");
             }
             if (checkedNameSet.has("价格") && sp.price) {
+              specFieldsCovered.add("价格");
               const spPriceOut = formatPriceTiersForOutput([], sp.price, { minQty, priceMode: priceMode === "markup_pct" ? "raw" : priceMode, markupPct: 0, outLang });
               await pushFieldLine(formatFieldDisplayName("价格"), translateCommonValue(spPriceOut, outLang), builtCommonOut, "", "价格");
             }
@@ -6635,10 +6646,10 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
           allLines.push(outLang === "en" ? "Common Parameters" : "通用参数");
         }
 
-        // 1) 按面板配置的常见字段顺序逐行输出「字段名：字段内容」（多规格布局下跳过已在规格块输出的差异字段，只输出下方通用参数）
+        // 1) 按面板配置的常见字段顺序逐行输出「字段名：字段内容」（仅跳过已在规格块实际输出过的字段，箱规/尺寸/单重若规格块未含则照常走三步搜索输出，绝不漏采）
         for (const f of checkedCommonAll) {
           if (f.n === "商品标题") continue;
-          if (hasMultiSpecLayout && SPEC_VARYING_FIELDS.has(f.n)) continue;
+          if (hasMultiSpecLayout && specFieldsCovered.has(f.n)) continue;
           if (f.n === "型号") {
             const modelVal = slot.hasUserNo ? code : "";
             await pushFieldLine(formatFieldDisplayName(f.n), modelVal, builtCommonOut, "", f.n, true);
