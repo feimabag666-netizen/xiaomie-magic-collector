@@ -4182,9 +4182,10 @@ function formatSellingPointsLines(rawVal, langCode = "zh") {
     if (seenTitles.has(titleKey)) return;
     seenTitles.add(titleKey);
     const formatted = m ? `${cleanPunct(m[1])}${colon}${cleanPunct(m[2])}` : body;
-    out.push(`${out.length + 1}. ${formatted}`);
+    out.push(formatted);
   });
-  return out.join("\n");
+  if (out.length <= 1) return out[0] || "";
+  return out.map((s, idx) => `${idx + 1}. ${s}`).join("\n");
 }
 
 // 核心差异化卖点生成器（不凑固定条数：有几条独立真差异就列几条，一点只说一个独立卖点，不把同一特点拆成两点）
