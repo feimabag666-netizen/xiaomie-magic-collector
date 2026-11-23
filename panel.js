@@ -4141,77 +4141,65 @@ function formatSellingPointsLines(rawVal, langCode = "zh") {
 
   const rawLines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   const out = [];
+  const seenTitles = new Set();
   rawLines.forEach((line) => {
-    if (out.length >= 2) return;
+    if (out.length >= 6) return;
     let body = line.replace(/^\d{1,2}\s*[.、:：)\]]\s*/, "");
     body = cleanPunct(body);
     if (!body) return;
-    // 确保“左侧标题：右侧内容”只保留一个清晰冒号
+    // 确保“左侧标题：右侧内容”只保留一个清晰冒号，并去重避免重复讲同一个特点
     const m = body.match(/^([^:：]{2,28})\s*[:：]\s*(.+)$/);
+    const titleKey = (m ? cleanPunct(m[1]) : body.slice(0, 12)).toLowerCase();
+    if (seenTitles.has(titleKey)) return;
+    seenTitles.add(titleKey);
     const formatted = m ? `${cleanPunct(m[1])}${colon}${cleanPunct(m[2])}` : body;
     out.push(`${out.length + 1}. ${formatted}`);
   });
   return out.join("\n");
 }
 
-// 核心差异化卖点生成器（只留 1-2 点，深挖造型设计/升级工艺/结构巧思等对比同类的差异优势，绝不把帆布/塑料等普通材质充当卖点）
+// 核心差异化卖点生成器（不凑固定条数：有几条独立真差异就列几条，一点只说一个独立卖点，不把同一特点拆成两点）
 function buildMasterSellingPoints(p, req, isSeed, lang = "zh") {
   const reqLine = req ? (lang === "zh" ? `，${req}` : `, ${req}`) : "";
   const rawBlob = `${p.rawTitle || ""} ${p.coreFeatures || ""} ${p.specBits || ""}`;
-  const isGenericMat = /^(?:帆布|布|棉|棉布|涤纶|牛津布|尼龙|塑料|pp|pe|abs|pvc|硅胶|不锈钢|铁|铝|木|纸|皮革|pu|玻璃|陶瓷|常规|精选|优质)/i.test(String(p.material || "").trim());
-
-  const craftMatches = [];
-  if (/耐磨|抗刮|防刮|加厚|加固|高密|抗撕裂|耐摔|抗压/i.test(rawBlob)) craftMatches.push("升级耐磨加固工艺，比普通款更抗造不易起毛变形");
-  else if (/防水|防泼水|防渗|防漏|密封/i.test(rawBlob)) craftMatches.push("增加防泼水密封工艺，日常溅水不渗漏更省心");
-  else if (/折叠|伸缩|便携|轻量|超轻|免打孔|磁吸|静音|快开|一键/i.test(rawBlob)) craftMatches.push("巧思结构设计，比常规老款拿取收纳更顺手");
-  else if (/分区|多袋|大容量|多层|立体|加宽|人体工学|减负/i.test(rawBlob)) craftMatches.push("立体分区结构升级，装得多还不显臃肿凌乱");
-
-  const designHighlight = /复古|潮|撞色|拼接|立体|极简|原创|几何|廓形|手绘|印花|刺绣|轻奢|创意/i.test(rawBlob)
-    ? "造型设计新潮独特，一眼跳出市面千篇一律的公模款"
-    : `针对同类痛点做了${p.coreFeatures}升级，体验明显甩开普通款`;
-
-  const secondHighlight = craftMatches[0]
-    || (!isGenericMat && p.material ? `升级${p.material}工艺处理，耐磨耐用度明显优于普通同类` : "细节工艺与受力位双重加固，高频使用依然挺括耐看");
 
   if (lang === "en") {
-    return [
-      `1. Standout Design: ${translateCommonValue(p.coreFeatures, "en")} breaks away from generic lookalikes`,
-      `2. Upgraded Craft: Reinforced wear-resistant build lasts noticeably longer than standard peers${reqLine}`,
-    ].join("\n");
+    return `1. Standout Edge: ${translateCommonValue(p.coreFeatures, "en")} outperforms generic peers in daily use${reqLine}`;
   }
-
   if (lang === "ru") {
-    return [
-      `1. Уникальный дизайн: ${p.coreFeatures} выгодно выделяется среди типовых аналогов`,
-      `2. Усиленная обработка: повышенная износостойкость заметно превосходит обычные модели${reqLine}`,
-    ].join("\n");
+    return `1. Главное отличие: ${p.coreFeatures} выгодно выделяется среди типовых аналогов${reqLine}`;
   }
-
   if (lang === "ja") {
-    return [
-      `1. 際立つデザイン：${p.coreFeatures}で定番品と一線を画す仕上がり`,
-      `2. 耐久加工の差：摩耗に強い補強仕上げで通常品より長持ち${reqLine}`,
-    ].join("\n");
+    return `1. 際立つ差別化：${p.coreFeatures}で従来品と一線を画す仕上がり${reqLine}`;
   }
-
   if (lang === "ko") {
-    return [
-      `1. 차별화된 디자인：${p.coreFeatures} 적용으로 흔한 일반 모델과 확실히 다름`,
-      `2. 강화 내구 공정：마모 방지 보강 마감으로 일반 제품보다 오래 사용${reqLine}`,
-    ].join("\n");
+    return `1. 핵심 차별점：${p.coreFeatures} 적용으로 일반 모델과 확실한 차이${reqLine}`;
   }
-
   if (lang !== "zh") {
-    return [
-      `1. Standout Design: ${p.coreFeatures}`,
-      `2. Craft Advantage: Reinforced wear-resistant finish outlasts ordinary peers${reqLine}`,
-    ].join("\n");
+    return `1. Standout Edge: ${p.coreFeatures}${reqLine}`;
   }
 
-  return [
-    `1. 差异设计：${designHighlight}`,
-    `2. 工艺优势：${secondHighlight}${reqLine}`,
-  ].join("\n");
+  // 按不同独立维度提取真实差异（造型设计 / 耐磨防泼水工艺 / 独创结构），每点只讲一个独立卖点
+  const pts = [];
+  if (/复古|潮|撞色|拼接|立体|极简|原创|几何|廓形|手绘|印花|刺绣|轻奢|创意/i.test(rawBlob)) {
+    pts.push("造型设计新潮：外观轮廓与细节搭配独特，一眼区别于市面千篇一律的普通公模款");
+  }
+  if (/耐磨|抗刮|防刮|加厚|加固|高密|抗撕裂|耐摔|抗压/i.test(rawBlob)) {
+    pts.push("耐磨加固工艺：专门增加耐磨加固处理，比同类普通款更抗造、高频使用不易起毛变形");
+  } else if (/防水|防泼水|防渗|防漏|密封/i.test(rawBlob)) {
+    pts.push("防泼水密封工艺：表面或接口增加防水防漏处理，日常溅水渗漏痛点直接解决");
+  }
+  if (/折叠|伸缩|便携|超轻|免打孔|磁吸|静音|快开|一键/i.test(rawBlob)) {
+    pts.push("巧思快用结构：相比常规老款优化了开合与收纳方式，随手拿取省力顺手");
+  } else if (/分区|多袋|大容量|多层|加宽|人体工学|减负/i.test(rawBlob)) {
+    pts.push("分区减负结构：内部合理分区与受力优化，比普通单层款装得更多且不凌乱");
+  }
+
+  if (!pts.length) {
+    pts.push(`核心差异优势：主打${p.coreFeatures}，直接解决同类普通款最常见的痛点短板`);
+  }
+  if (reqLine) pts[pts.length - 1] += reqLine;
+  return pts.map((s, idx) => `${idx + 1}. ${s}`).join("\n");
 }
 
 function buildMasterMultiLangStory(angle, p, req, isSeed, lang) {
@@ -4715,15 +4703,14 @@ async function aiGenOnce(provider, field, req, ctx, group) {
 
   const sysPrompt = group === "point"
     ? [
-        `你是一位极度挑剔的资深选品专家，专门帮卖家深挖商品对比市面上同类普通货的“真正差异化杀手锏”。`,
+        `你是一位极度挑剔的资深选品专家，专门依据商品页面真实内容，深挖它对比市面上相似商品的“真正独特卖点”。`,
         `必须严格使用【${langPack.promptLang}】输出最终正文！整段只能出现这一种语言，不许夹杂其他语言（品牌名除外）。`,
-        `【独特卖点深挖铁律（只写 1~2 点真正区别于同类商品的差异优势，绝不写普通材质/大路货特点，零AI味）】：`,
-        `1. 只要 1~2 点：宁缺毋滥，只写 1 点或 2 点最狠的差异优势，绝不写第 3 点！`,
-        `2. 必须对比同类型普通商品深挖差异优势：重点挖掘“这款比普通同类强在哪里”——例如造型设计独特新潮、专门加了耐磨/防泼水/加厚加固工艺所以更耐磨耐用、独创分区/快开/防漏/减负等结构巧思！`,
-        `3. 严禁把普通基础材质或大路货特点当卖点（违者重写）：严禁写“材质壁垒：帆布/塑料/不锈钢/棉布/PP/牛津布”这种任何同类都有的普通材质，也严禁写“多色可选、做工精细、结实耐用、送礼体面、颜值百搭、性价比高”以及装箱数、箱规尺寸、MOQ、交期、货号等规格参数！`,
-        `4. 语言精炼、一眼记住：每条控制在 10~20 个字，短促有力、口语化、有画面感，消费者扫一眼就能记住它的独特优势！`,
-        `5. 彻底去AI味：绝不许出现“赋能、致力于、品质卓越、深受好评、远销海外、匠心打造、不二之选、完美契合、闭环、抓手、天花板、闭眼入、YYDS、神器、材质壁垒”。`,
-        `6. 排版铁律：按 1. 差异核心词：一句话点透比普通款强在哪里 逐条换行排列（最多 2 条），左右结构，只保留序号点号和冒号，严禁使用任何括号或方框（禁止 ()、（）、【】、[]、「」、<>）。`,
+        `【独特卖点深挖铁律（不规定固定条数，一点只讲一个独立卖点，绝不把同一特点拆成两点，零AI味）】：`,
+        `1. 不规定必须写几点：完全依据该商品页面内容如实判断——如果只有一个最独特的差异卖点，就只写 1 点；如果有多个互不重叠的独特差异，就如实列出（1~4 点均可），绝不凑数！`,
+        `2. 一点只能说一个独立卖点，严禁重复凑条数：如果第 1 点已经讲了某个特点（比如耐磨工艺或造型设计），它的具体差异优势必须合并写在这一条里面，绝不能拆成第 1 点和第 2 点重复说同一件事！`,
+        `3. 只列真正有差异优势的独特卖点：必须直指它与其他相似商品不一样的地方（例如造型设计独特新潮、加了耐磨/防泼水/加固工艺更耐磨、独创结构巧思等）；严禁把普通基础材质（帆布/塑料/不锈钢/棉布/PP等）、普通特点（多色可选、做工精细、送礼体面、颜值百搭）或规格/箱规/MOQ/交期/货号当作卖点！`,
+        `4. 语言精炼、一看就记住、彻底去AI味：绝不许出现“赋能、致力于、品质卓越、深受好评、远销海外、匠心打造、不二之选、完美契合、闭环、抓手、天花板、闭眼入、YYDS、神器、材质壁垒”。`,
+        `5. 排版铁律：按 1. 核心卖点词：该卖点对比其他相似商品的具体差异优势 逐条换行排列，左右结构，只保留序号点号和冒号，严禁使用任何括号或方框（禁止 ()、（）、【】、[]、「」、<>）。`,
       ].join("\n")
     : [
         `你是拥有15年一线生活与外贸实战阅历的真人故事讲述者。`,
@@ -4737,7 +4724,7 @@ async function aiGenOnce(provider, field, req, ctx, group) {
       ].join("\n");
 
   const userTask = group === "point"
-    ? `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n请深挖这款「${profile.shortName}」对比市面上同类普通商品的真正差异优势，提炼「${field}」${req ? `（特别要求：${req}）` : ""}。\n【严格要求】：\n1. 只提炼 1~2 点最核心的差异优势（如新潮独特造型设计、加了耐磨/防泼水/加固工艺更耐磨、独创结构巧思），绝不写普通基础材质（如帆布/塑料/不锈钢）或大路货特点，绝不写第 3 点；\n2. 每条格式为：1. 差异核心词：一句话说清比普通同类强在哪里（每条 10~20 字，一眼记住，零AI味）；\n3. 左右结构，只保留序号后的点号和冒号，严禁使用【】、[]、「」、()、（）、①②③④、**、•、；等多余符号；\n4. 严格使用${langPack.label}，直接输出这 1~2 行，不要加任何前缀或开场白。`
+    ? `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n请依据商品页面真实内容，判断并提炼这款「${profile.shortName}」与其他相似商品最核心的不同点作为「${field}」${req ? `（特别要求：${req}）` : ""}。\n【严格要求】：\n1. 不规定固定条数（可以只有 1 点，也可以有 2~4 点），有几个真正独特、互不重叠的差异卖点就列几点；\n2. 一点只说一个独立卖点，它的具体差异优势必须写在同一条里，严禁把同一个特点拆成 2 点凑数；\n3. 绝不写普通基础材质或普通特点，格式为：1. 独特卖点词：对比其他相似商品的具体差异优势（语言精炼、一看就记住、零AI味）；\n4. 左右结构，只保留序号后的点号和冒号，严禁使用【】、[]、「」、()、（）、①②③④、**、•、；等多余符号，严格使用${langPack.label}直接输出。`
     : `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n本次唯一故事角度：${ctx.angles || "服务细节故事"}（只围绕这一个角度写透）\n精神内核（化为具体人物动作与现场细节，严禁照抄口号）：${ctx.soul || "用心服务"}\n请基于当前商品真实参数与联网搜索素材，写出一段「${field}」${req ? `（特别要求：${req}）` : ""}，180~300字，严格使用${langPack.label}，必须包含具体人物、时间、地点、客户地区和真实数据，形象生动；只写商品名字「${profile.shortName}」，绝不写货号或型号，严禁任何括号或多余符号，合并为单行输出。`;
 
   const messages = [
