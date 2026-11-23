@@ -4300,6 +4300,92 @@ const _adminApiVault = (() => {
 })();
 window.__xmAdminApiVault = _adminApiVault;
 
+// ================= 防卸载重装重置 20 次免费额度：硬件指纹 + 服务端跨卸载持久同步 =================
+const TRIAL_QUOTA_API_BASES = ["https://api.xiaomie.tools", "https://xiaomie-magic-collector-cvz.pages.dev"];
+let _cachedDeviceFp = "";
+let _serverTrialMaxUsed = 0;
+let _initialServerQuotaSyncPromise = null;
+
+async function computeDeviceFingerprint() {
+  if (_cachedDeviceFp) return _cachedDeviceFp;
+  const parts = [];
+  try { parts.push(navigator.platform || ""); } catch {}
+  try { parts.push(String(navigator.hardwareConcurrency || "")); } catch {}
+  try { parts.push(String(navigator.deviceMemory || "")); } catch {}
+  try { parts.push(`${screen.width}x${screen.height}x${screen.colorDepth}`); } catch {}
+  try { parts.push(Intl.DateTimeFormat().resolvedOptions().timeZone || ""); } catch {}
+  try { parts.push(navigator.language || ""); } catch {}
+  try {
+    const cv = document.createElement("canvas");
+    const gl = cv.getContext("webgl") || cv.getContext("experimental-webgl");
+    if (gl) {
+      const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+      if (dbg) {
+        parts.push(String(gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) || ""));
+        parts.push(String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || ""));
+      }
+    }
+  } catch {}
+  try {
+    const cv2 = document.createElement("canvas");
+    cv2.width = 180;
+    cv2.height = 36;
+    const ctx = cv2.getContext("2d");
+    if (ctx) {
+      ctx.textBaseline = "top";
+      ctx.font = "14px Arial, sans-serif";
+      ctx.fillStyle = "#4a3563";
+      ctx.fillText("XM-Collector-FP-2026", 4, 8);
+      parts.push(cv2.toDataURL().slice(-64));
+    }
+  } catch {}
+  const raw = parts.join("|");
+  try {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
+    _cachedDeviceFp = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 40);
+  } catch {
+    let h = 2166136261;
+    for (let i = 0; i < raw.length; i++) {
+      h ^= raw.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    _cachedDeviceFp = "xmfp" + (h >>> 0).toString(16).padStart(8, "0");
+  }
+  return _cachedDeviceFp;
+}
+
+async function syncTrialQuotaWithServer(localUsed = 0, forceNetwork = false) {
+  if (typeof fetch !== "function" || typeof window.__captured !== "undefined") return _serverTrialMaxUsed;
+  const runSync = async () => {
+    const deviceFp = await computeDeviceFingerprint();
+    let best = Math.max(_serverTrialMaxUsed, Math.max(0, Math.min(20, Number(localUsed) || 0)));
+    for (const base of TRIAL_QUOTA_API_BASES) {
+      try {
+        const r = await fetch(`${base}/api/trial-quota`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deviceFp, usedCount: best }),
+          signal: AbortSignal.timeout(3500),
+        });
+        if (!r.ok) continue;
+        const j = await r.json().catch(() => null);
+        if (j && j.ok && typeof j.usedCount === "number") {
+          best = Math.max(best, Math.min(20, j.usedCount));
+          _serverTrialMaxUsed = Math.max(_serverTrialMaxUsed, best);
+          break;
+        }
+      } catch {}
+    }
+    return _serverTrialMaxUsed;
+  };
+  if (forceNetwork) return runSync();
+  if (!_initialServerQuotaSyncPromise) {
+    _initialServerQuotaSyncPromise = Promise.race([runSync(), sleep(2600).then(() => _serverTrialMaxUsed)]);
+  }
+  return _initialServerQuotaSyncPromise;
+}
+
 async function getAuthState() {
   const s = await chrome.storage.local.get("xmAuthState").catch(() => ({}));
   const syncS = chrome.storage?.sync
@@ -4323,6 +4409,14 @@ async function getAuthState() {
   }
   if (st.plan === "trial" && typeof syncGuard.trialMaxUsedCount === "number" && syncGuard.trialMaxUsedCount > (st.usedCount || 0)) {
     st.usedCount = Math.min(20, syncGuard.trialMaxUsedCount);
+  }
+  // 首次加载时与服务端同步该电脑历史已用试用次数（卸载重装扩展后依然保留原采集个数）
+  if (st.plan === "trial") {
+    const serverUsed = await syncTrialQuotaWithServer(st.usedCount || 0, false).catch(() => _serverTrialMaxUsed);
+    if (serverUsed > (st.usedCount || 0)) {
+      st.usedCount = Math.min(20, serverUsed);
+      chrome.storage.local.set({ xmAuthState: st }).catch(() => {});
+    }
   }
 
   if (!st.loggedIn && (st.plan === "pack100" || st.plan === "lifetime")) {
@@ -4356,12 +4450,19 @@ async function saveAuthState(patch) {
     next.adminApiDestroyed = false;
   }
   await chrome.storage.local.set({ xmAuthState: next }).catch(() => {});
-  // 同步写入 chrome.storage.sync，防止恶意用户通过卸载重装插件无限重置 20 个免费试用额度或重复使用同一激活码
+  // 同步写入 chrome.storage.sync + 服务端设备指纹/HttpOnly Cookie，防止卸载重装插件重置 20 个免费试用额度
+  if (next.plan === "trial") {
+    const serverUsed = await syncTrialQuotaWithServer(next.usedCount || 0, true).catch(() => _serverTrialMaxUsed);
+    if (serverUsed > (next.usedCount || 0)) {
+      next.usedCount = Math.min(20, serverUsed);
+      await chrome.storage.local.set({ xmAuthState: next }).catch(() => {});
+    }
+  }
   if (chrome.storage?.sync) {
     const syncS = await chrome.storage.sync.get("xmTrialSyncGuards").catch(() => ({}));
     const prevGuard = syncS?.xmTrialSyncGuards || {};
     const trialMaxUsedCount = next.plan === "trial"
-      ? Math.max(prevGuard.trialMaxUsedCount || 0, next.usedCount || 0)
+      ? Math.max(prevGuard.trialMaxUsedCount || 0, next.usedCount || 0, _serverTrialMaxUsed)
       : (prevGuard.trialMaxUsedCount || 0);
     const usedLicenseRecords = [...new Set([...(prevGuard.usedLicenseRecords || []), ...(next.usedLicenseRecords || [])])].slice(-80);
     await chrome.storage.sync.set({
