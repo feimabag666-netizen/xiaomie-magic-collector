@@ -4521,7 +4521,7 @@ const _adminApiVault = (() => {
 window.__xmAdminApiVault = _adminApiVault;
 
 // ================= 防卸载重装重置 20 次免费额度：硬件指纹 + 服务端跨卸载持久同步 =================
-const TRIAL_QUOTA_API_BASES = ["https://api.xiaomie.tools", "https://xiaomie-magic-collector-cvz.pages.dev"];
+const TRIAL_QUOTA_API_BASES = ["https://xiaomie-magic-collector-cvz.pages.dev", "https://api.xiaomie.tools"];
 let _cachedDeviceFp = "";
 let _serverTrialMaxUsed = 0;
 let _initialServerQuotaSyncPromise = null;
@@ -8331,13 +8331,14 @@ function switchAuthModalTab(tab = "google") {
   }
 }
 
-function openAuthModal(provider = "google", forced = false, customNotice = "") {
+function openAuthModal(provider = "email", forced = false, customNotice = "") {
   const authModal = $("authModal");
   if (!authModal) return;
+  const effectiveTab = provider === "email" ? "email" : "email";
   if ($("authModalTitle")) {
     $("authModalTitle").textContent = forced
       ? "🔒 免费试用 20 个已用完 · 请完成官方账号登录"
-      : (customNotice ? "🔒 请先完成官方账号登录" : (provider === "email" ? "📧 全球官方邮箱登录 · Official Sign In" : "🌐 Google 官方真实授权登录"));
+      : (customNotice ? "🔒 请先完成官方账号登录" : "📧 全球官方邮箱 / Google 账号登录");
   }
   if ($("googleAuthStatusMsg")) $("googleAuthStatusMsg").textContent = "";
   if ($("emailAuthStatusMsg")) $("emailAuthStatusMsg").textContent = "";
@@ -8353,7 +8354,7 @@ function openAuthModal(provider = "google", forced = false, customNotice = "") {
   if ($("btnCloseAuthModal")) {
     $("btnCloseAuthModal").style.display = forced ? "none" : "";
   }
-  switchAuthModalTab(provider);
+  switchAuthModalTab(effectiveTab);
   if (forced || customNotice) {
     try { if ($("pricingModal") && $("pricingModal").open) $("pricingModal").close(); } catch {}
   }
@@ -9230,7 +9231,7 @@ window.addEventListener("load", async () => {
     };
   }
   let _emailOtpToken = "";
-  const OTP_API_BASES = ["https://api.xiaomie.tools", "https://xiaomie-magic-collector-cvz.pages.dev"];
+  const OTP_API_BASES = ["https://xiaomie-magic-collector-cvz.pages.dev", "https://api.xiaomie.tools"];
   async function postOtpApi(path, payload) {
     let lastErr = null;
     for (const base of OTP_API_BASES) {
@@ -9240,6 +9241,12 @@ window.addEventListener("load", async () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ app_id: "collector", ...payload }),
         });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => null);
+          if (errJson && errJson.error) return errJson;
+          lastErr = new Error(`HTTP ${res.status}`);
+          continue;
+        }
         return await res.json();
       } catch (e) { lastErr = e; }
     }
