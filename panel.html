@@ -308,30 +308,93 @@
   .form-item label { margin: 0; font-weight: 600; color: var(--ink-soft); white-space: nowrap; }
   .form-item input { width: 110px; text-align: center; }
 
-  /* 进度条与采集结果表格 */
+  /* 紧凑采集输入条与进度表格 */
+  .collect-bar {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
   textarea#urls {
-    width: 100%;
-    height: 110px;
-    padding: 10px 12px;
-    font-size: 13px;
+    flex: 1;
+    min-width: 220px;
+    height: 38px;
+    min-height: 38px;
+    max-height: 84px;
+    padding: 8px 11px;
+    font-size: 12.5px;
+    line-height: 20px;
     border: 1px solid #d8cee8;
-    border-radius: 10px;
+    border-radius: 9px;
     resize: vertical;
     background: #fcfbfe;
+    overflow-y: auto;
   }
-  #bar { height: 8px; background: #edeaf4; border-radius: 99px; margin: 12px 0; overflow: hidden; }
+  .collect-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .collect-meta-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+    font-size: 12px;
+  }
+  #bar { height: 5px; background: #edeaf4; border-radius: 99px; margin: 6px 0 8px; overflow: hidden; }
   #bar > div { height: 100%; background: linear-gradient(90deg, var(--brand), #9d6fd8); width: 0; transition: width 0.25s ease; }
-  .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
-  table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 12.5px; background: #fff; }
-  td, th { border-bottom: 1px solid var(--line); padding: 9px 10px; text-align: left; vertical-align: middle; }
-  th { background: #f7f4fb; color: #523d68; font-weight: 700; white-space: nowrap; }
-  #tbl th:nth-child(1), #tbl td:nth-child(1) { width: auto; word-break: break-all; overflow-wrap: anywhere; line-height: 1.45; }
-  #tbl th:nth-child(2), #tbl td:nth-child(2) { width: 88px; white-space: nowrap; text-align: center; }
-  #tbl th:nth-child(3), #tbl td:nth-child(3),
+  .table-wrap {
+    width: 100%;
+    max-width: 100%;
+    max-height: 240px;
+    overflow-y: auto;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fff;
+  }
+  table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 12px; background: #fff; }
+  td, th { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: middle; }
+  th {
+    background: #f7f4fb;
+    color: #523d68;
+    font-weight: 700;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    font-size: 11.5px;
+    padding: 7px 8px;
+  }
+  #tbl tbody tr:hover td { background: #faf7fe; }
+  #tbl th:nth-child(1), #tbl td:nth-child(1) { width: 36px; text-align: center; white-space: nowrap; color: #7c6b96; font-weight: 700; }
+  #tbl th:nth-child(2), #tbl td:nth-child(2) { width: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #tbl td.url-cell { cursor: pointer; color: #3b2d52; }
+  #tbl td.url-cell:hover { color: var(--brand); text-decoration: underline; }
+  #tbl th:nth-child(3), #tbl td:nth-child(3) { width: 170px; white-space: nowrap; overflow: hidden; }
   #tbl th:nth-child(4), #tbl td:nth-child(4),
   #tbl th:nth-child(5), #tbl td:nth-child(5),
-  #tbl th:nth-child(6), #tbl td:nth-child(6) { width: 64px; white-space: nowrap; text-align: center; }
-  #tbl th:nth-child(7), #tbl td:nth-child(7) { width: 28%; word-break: break-word; overflow-wrap: anywhere; line-height: 1.45; }
+  #tbl th:nth-child(6), #tbl td:nth-child(6),
+  #tbl th:nth-child(7), #tbl td:nth-child(7) { width: 46px; white-space: nowrap; text-align: center; padding: 6px 4px; }
+  #tbl th:nth-child(8), #tbl td:nth-child(8) { width: 118px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .task-seq-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: 6px;
+    background: #f2ecf9;
+    color: #5c4379;
+    font-size: 11px;
+    font-weight: 700;
+  }
   tr:last-child td { border-bottom: none; }
   .ok { color: var(--green); font-weight: 600; }
   .fail { color: var(--danger); font-weight: 600; }
@@ -785,37 +848,39 @@
     <div id="captureAttrsPreview" class="hint" style="display:none;word-break:break-all;overflow-wrap:anywhere;max-width:100%"></div>
   </div>
 
-  <!-- 批量链接输入与操作按钮 -->
-  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px">
-    <span style="font-size:12.5px;font-weight:600;color:var(--ink-soft)">🔗 网页链接（每行一条）：</span>
-    <label style="margin:0;font-size:12px;color:var(--brand);cursor:pointer;font-weight:600">
-      📄 导入 TXT 链接文件 <input id="txtFile" type="file" accept=".txt,text/plain" style="display:none">
-    </label>
+  <!-- 紧凑合一：链接输入 + 一键开始采集 + 进度队列 -->
+  <div class="collect-bar">
+    <textarea id="urls" rows="1" placeholder="粘贴 1 条或多条商品/网页链接（每行一条），或右侧导入 TXT…"></textarea>
+    <div class="collect-bar-actions">
+      <label style="margin:0;padding:7px 11px;font-size:12px;color:var(--brand);cursor:pointer;font-weight:600;border:1px solid #dcd2e8;border-radius:8px;background:#fff;white-space:nowrap" title="批量导入 TXT 链接文件">
+        📄 导入TXT <input id="txtFile" type="file" accept=".txt,text/plain" style="display:none">
+      </label>
+      <button id="go" style="padding:8px 20px;font-size:13.5px;white-space:nowrap">🚀 开始采集</button>
+      <button type="button" id="stop" style="display:none;border-color:var(--danger);color:var(--danger);font-weight:700;padding:8px 14px;white-space:nowrap">⏹ 停止</button>
+    </div>
   </div>
-  <textarea id="urls" placeholder="粘贴 1 条或多条商品/网页链接（每行一条）…"></textarea>
 
-  <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+  <div class="collect-meta-bar">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <button id="go">🚀 开始采集</button>
-      <button type="button" id="stop" style="display:none;border-color:var(--danger);color:var(--danger);font-weight:700">⏹ 停止采集</button>
-      <label style="font-size:12.5px;display:inline-flex;align-items:center;gap:4px;cursor:pointer">
+      <label style="font-size:12px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;color:var(--ink-soft)">
         <input type="checkbox" id="skipDone"> 跳过已采链接
       </label>
-      <button type="button" id="clearDone" style="padding:5px 10px;font-size:12px">🧹 清除记录</button>
+      <button type="button" id="clearDone" style="padding:3px 9px;font-size:11.5px">🧹 清除记录</button>
     </div>
-    <span id="status" style="font-weight:600;color:var(--brand);font-size:13px">准备就绪</span>
+    <span id="status" style="font-weight:600;color:var(--brand);font-size:12.5px">准备就绪</span>
   </div>
 
   <div id="bar"><div></div></div>
 
-  <div class="table-wrap">
+  <div class="table-wrap" id="taskTableWrap">
     <table id="tbl">
       <tr>
-        <th>网页链接</th>
-        <th>状态</th>
+        <th>#</th>
+        <th>网页链接（悬停看完整链接）</th>
+        <th>状态 / 进度</th>
         <th>主图</th>
-        <th>详情图</th>
-        <th>SKU图</th>
+        <th>详情</th>
+        <th>SKU</th>
         <th>视频</th>
         <th>保存目录</th>
       </tr>

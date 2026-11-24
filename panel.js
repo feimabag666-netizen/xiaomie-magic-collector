@@ -2379,50 +2379,86 @@ function waitTabLoaded(tabId) {
 }
 
 function addRow(url, status, cls, m, d, s, v, dir) {
-  const tr = $("tbl").insertRow();
-  tr.insertCell().innerText = url;
-  const c = tr.insertCell(); c.innerText = status; c.className = cls;
+  const tbl = $("tbl");
+  const seq = tbl.rows.length;
+  const tr = tbl.insertRow(-1);
+  const cSeq = tr.insertCell();
+  cSeq.innerHTML = `<span class="task-seq-badge">${seq}</span>`;
+  const cUrl = tr.insertCell();
+  cUrl.className = "url-cell";
+  cUrl.textContent = url;
+  cUrl.title = url;
+  const c = tr.insertCell(); c.innerText = status; c.className = cls; c.title = status;
   tr.insertCell().innerText = m; tr.insertCell().innerText = d;
-  tr.insertCell().innerText = s; tr.insertCell().innerText = v; tr.insertCell().innerText = dir;
+  tr.insertCell().innerText = s; tr.insertCell().innerText = v;
+  const cDir = tr.insertCell(); cDir.innerText = dir; cDir.title = dir || "";
+  const wrap = $("taskTableWrap");
+  if (wrap) wrap.scrollTop = wrap.scrollHeight;
 }
 
 function createTaskRow(url, status = "⏳ 等待队列中") {
-  const tr = $("tbl").insertRow();
+  const tbl = $("tbl");
+  const seq = tbl.rows.length;
+  // 最新添加的商品永远追加在最后一行
+  const tr = tbl.insertRow(-1);
+  const cSeq = tr.insertCell();
+  cSeq.innerHTML = `<span class="task-seq-badge">${seq}</span>`;
+
   const cUrl = tr.insertCell();
-  cUrl.innerText = url;
+  cUrl.className = "url-cell";
+  cUrl.textContent = url;
+  cUrl.title = `${url}\n（点击复制完整链接）`;
+  cUrl.onclick = () => {
+    try {
+      navigator.clipboard?.writeText(url);
+      const old = cUrl.textContent;
+      cUrl.textContent = "✅ 已复制：" + url;
+      setTimeout(() => { cUrl.textContent = old; }, 1200);
+    } catch {}
+  };
+
   const cStatus = tr.insertCell();
   cStatus.className = "skip";
-  const lbl = document.createElement("div");
-  lbl.style.cssText = "font-size:11.5px;margin-bottom:3px;line-height:1.3";
-  lbl.innerText = status;
-  const barWrap = document.createElement("div");
-  barWrap.style.cssText = "display:flex;align-items:center;gap:6px";
+  const topLine = document.createElement("div");
+  topLine.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:3px;line-height:1.25";
+  const lbl = document.createElement("span");
+  lbl.style.cssText = "font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0";
+  lbl.textContent = status;
+  lbl.title = status;
+  const pctEl = document.createElement("span");
+  pctEl.style.cssText = "font-size:10.5px;font-weight:700;color:#6b5b8a;flex-shrink:0";
+  pctEl.textContent = "0%";
+  topLine.append(lbl, pctEl);
+
   const track = document.createElement("div");
-  track.style.cssText = "flex:1;height:6px;background:#ece7f6;border-radius:999px;overflow:hidden;min-width:72px";
+  track.style.cssText = "width:100%;height:5px;background:#ece7f6;border-radius:999px;overflow:hidden";
   const fill = document.createElement("div");
   fill.style.cssText = "height:100%;width:0%;background:linear-gradient(90deg,#7c3aed,#a855f7);border-radius:999px;transition:width 0.25s ease";
   track.appendChild(fill);
-  const pctEl = document.createElement("span");
-  pctEl.style.cssText = "font-size:10.5px;font-weight:700;color:#6b5b8a;min-width:30px;text-align:right";
-  pctEl.innerText = "0%";
-  barWrap.append(track, pctEl);
-  cStatus.append(lbl, barWrap);
-  const cM = tr.insertCell(); cM.innerText = "-";
-  const cD = tr.insertCell(); cD.innerText = "-";
-  const cS = tr.insertCell(); cS.innerText = "-";
-  const cV = tr.insertCell(); cV.innerText = "-";
-  const cDir = tr.insertCell(); cDir.innerText = "";
-  return { tr, cStatus, lbl, fill, pctEl, cM, cD, cS, cV, cDir };
+  cStatus.append(topLine, track);
+
+  const cM = tr.insertCell(); cM.textContent = "-";
+  const cD = tr.insertCell(); cD.textContent = "-";
+  const cS = tr.insertCell(); cS.textContent = "-";
+  const cV = tr.insertCell(); cV.textContent = "-";
+  const cDir = tr.insertCell(); cDir.textContent = ""; cDir.title = "";
+
+  const wrap = $("taskTableWrap");
+  if (wrap) wrap.scrollTop = wrap.scrollHeight;
+  return { tr, cSeq, cUrl, cStatus, lbl, fill, pctEl, cM, cD, cS, cV, cDir };
 }
 
 function updateTaskRow(ref, { status, cls, pct, m, d, s, v, dir } = {}) {
   if (!ref) return;
-  if (status !== undefined) ref.lbl.innerText = status;
+  if (status !== undefined) {
+    ref.lbl.textContent = status;
+    ref.lbl.title = status;
+  }
   if (cls !== undefined) ref.cStatus.className = cls;
   if (pct !== undefined) {
     const p = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
     ref.fill.style.width = `${p}%`;
-    ref.pctEl.innerText = `${p}%`;
+    ref.pctEl.textContent = `${p}%`;
     if (cls === "ok" || p >= 100) {
       ref.fill.style.background = "linear-gradient(90deg,#16a34a,#22c55e)";
       ref.pctEl.style.color = "#15803d";
@@ -2437,11 +2473,14 @@ function updateTaskRow(ref, { status, cls, pct, m, d, s, v, dir } = {}) {
       ref.pctEl.style.color = "#5b21b6";
     }
   }
-  if (m !== undefined) ref.cM.innerText = m;
-  if (d !== undefined) ref.cD.innerText = d;
-  if (s !== undefined) ref.cS.innerText = s;
-  if (v !== undefined) ref.cV.innerText = v;
-  if (dir !== undefined) ref.cDir.innerText = dir;
+  if (m !== undefined) ref.cM.textContent = m;
+  if (d !== undefined) ref.cD.textContent = d;
+  if (s !== undefined) ref.cS.textContent = s;
+  if (v !== undefined) ref.cV.textContent = v;
+  if (dir !== undefined) {
+    ref.cDir.textContent = dir;
+    ref.cDir.title = dir || "";
+  }
 }
 
 // 并发池辅助：保持原数组顺序的同时加速多图拉取
