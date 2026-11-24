@@ -6161,12 +6161,12 @@ function classifyImageForFilterMode(url, label, w, h, meta, imgFilterMode = "ai"
     return { keepSave: false, keepOcr: false, category: "noise" };
   }
 
-  // 2) 识别噪音图（客服二维码、物流发货横幅、售后退换、店铺掌柜推荐、支付徽标、极窄分割条）
-  const isNoiseUrl = /(?:avatar|favicon|qrcode|qr_code|wechat_qr|alipay|wxpay|payment-icon|trust-badge|service-banner|shipping-banner|coupon-banner)/i.test(u);
-  const isNoiseCtx = /(?:看了又看|猜你喜欢|掌柜推荐|同店推荐|相关推荐|为您推荐|客服微信|扫码咨询|快递说明|物流说明|退换货说明|售后保障|收藏店铺|店铺公告|related\s*products|you\s*may\s*also\s*like|customer\s*review\s*avatar|payment\s*methods)/i.test(ctx);
-  const isDividerStrip = (w > 0 && h > 0) && (h < 85 || w < 85 || ratio > 6.8 || (maxSide < 160 && label !== "SKU图"));
+  // 2) 严格识别并剔除噪音杂图（淘宝/天猫/抖音/拼多多/快手/小红书平台引流图、客服二维码、发货/售后横幅、掌柜推荐、支付徽标、窄条横幅）
+  const isNoiseUrl = /(?:avatar|favicon|qrcode|qr_code|wechat|weixin|alipay|wxpay|payment|trust-badge|service-banner|shipping-banner|coupon-banner|shop_sign|store_banner|taobao|tmall|douyin|tiktok|pinduoduo|kuaishou|xiaohongshu|jingdong|wangwang|aliwangwang|1688_logo|promo_banner)/i.test(u);
+  const isNoiseCtx = /(?:淘宝|天猫|抖音|拼多多|快手|小红书|京东|微信|扫码|加微|看了又看|猜你喜欢|掌柜推荐|同店推荐|相关推荐|为您推荐|客服|快递说明|物流说明|发货说明|退换货|售后保障|买家须知|购物须知|温馨提示|收藏店铺|关注店铺|店铺公告|诚招代理|招代理|related\s*products|you\s*may\s*also\s*like|customer\s*review\s*avatar|payment\s*methods)/i.test(ctx);
+  const isDividerStrip = (w > 0 && h > 0) && (h < 100 || w < 100 || ratio > 5.5 || (ratio > 3.6 && h < 260) || (maxSide < 180 && label !== "SKU图"));
   if (isNoiseUrl || isNoiseCtx || isDividerStrip) {
-    return { keepSave: imgFilterMode === "all" && !isDividerStrip, keepOcr: false, category: "noise" };
+    return { keepSave: false, keepOcr: false, category: "noise" };
   }
 
   // 3) 主图与 SKU 图天然属于核心商品图
@@ -6904,7 +6904,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         const h = item.image?.h || item.domDims?.h || 0;
         const decision = classifyImageForFilterMode(item.url, label, w, h, item.meta, imgFilterMode, isNonEcom);
         if (decision.keepOcr && item.image) {
-          ocrCandidatePool.push({ ...item.image, isSpecChart: decision.category === "spec_chart" || label !== "主图" });
+          ocrCandidatePool.push({ ...item.image, assetRef: item, isSpecChart: decision.category === "spec_chart" || label !== "主图" });
         }
         if (!decision.keepSave) {
           aiFilteredCount++;
@@ -6962,6 +6962,13 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
             $("status").innerText = `双线程识别图片文字 (${ocrDoneCount}/${candidates.length})…`;
             const labelTag = `详情图${String(i + 1).padStart(3, "0")}`;
             if (t) {
+              // 若图片文字包含淘宝/抖音/拼多多/快手/小红书/微信二维码/买家须知等杂图引流内容（且非真实规格参数表），自动拦截不落盘
+              const isJunkOcrImg = /(?:淘宝|天猫|抖音|拼多多|快手|小红书|京东|微信号|扫码加|加微信|二维码|买家须知|购物须知|发货说明|物流说明|退换货说明|售后说明|诚招代理|关注店铺|收藏店铺|店铺首页|联系客服|掌柜推荐|跨店满减|直播间专享)/i.test(t)
+                && !/(?:箱规|装箱数|外箱尺寸|毛重|净重|产品尺寸|外形尺寸|规格参数)/i.test(t);
+              if (isJunkOcrImg && cand.assetRef) {
+                cand.assetRef.__dropJunkByOcr = true;
+                aiFilteredCount++;
+              }
               ocrItems.push({ label: labelTag, text: t });
               ocrTexts.push(`【${labelTag} OCR】\n${t}`);
               ocrCount++;
@@ -7018,18 +7025,20 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       );
     }
     if (opts.detail) {
-      for (let i = 0; i < detailAssets.length; i++) {
-        const asset = detailAssets[i];
+      const cleanDetailAssets = detailAssets.filter(a => !a.__dropJunkByOcr);
+      for (let i = 0; i < cleanDetailAssets.length; i++) {
+        const asset = cleanDetailAssets[i];
         const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
         const source = asset.image ? URL.createObjectURL(asset.image.blob) : asset.url;
-        if (await dl(source, mediaPath("详情图", mediaFilename(mediaBase, "detail", i, detailAssets.length, ext)), saveDir, asset.image?.blob)) nd++;
+        if (await dl(source, mediaPath("详情图", mediaFilename(mediaBase, "detail", i, cleanDetailAssets.length, ext)), saveDir, asset.image?.blob)) nd++;
       }
     }
     if (opts.main) {
-      for (const [i, asset] of mainAssets.entries()) {
+      const cleanMainAssets = mainAssets.filter(a => !a.__dropJunkByOcr);
+      for (const [i, asset] of cleanMainAssets.entries()) {
         const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
         const source = asset.image ? URL.createObjectURL(asset.image.blob) : asset.url;
-        if (await dl(source, mediaPath("主图", mediaFilename(mediaBase, "main", i, mainAssets.length, ext)), saveDir, asset.image?.blob)) nm++;
+        if (await dl(source, mediaPath("主图", mediaFilename(mediaBase, "main", i, cleanMainAssets.length, ext)), saveDir, asset.image?.blob)) nm++;
       }
     }
     if (doSku) {
