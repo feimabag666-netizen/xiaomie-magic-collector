@@ -28,6 +28,7 @@ function getKv(env) {
 }
 
 const PLAN_RANK = { trial: 1, pack100: 2, lifetime: 3, free_vip: 4 };
+const OWNER_FREE_EMAILS = new Set(["feimabag666@gmail.com"]);
 
 export async function onRequestOptions(context) {
   return new Response(null, { status: 204, headers: buildCorsHeaders(context.request) });
@@ -64,19 +65,24 @@ export async function onRequestPost(context) {
     } catch {}
   }
 
+  const isOwnerFree = OWNER_FREE_EMAILS.has(email);
   const now = Date.now();
   const base = existing || {
     email,
     provider,
-    plan: "trial",
+    plan: isOwnerFree ? "free_vip" : "trial",
     usedCount: 0,
-    quotaLimit: 20,
+    quotaLimit: isOwnerFree ? 999999 : 20,
     paidAmount: "",
-    note: "",
+    note: isOwnerFree ? "管理员默认终身免费账号" : "",
     deviceFp,
     createdAt: now,
     updatedAt: now,
   };
+  if (isOwnerFree && !base.adminLocked) {
+    base.plan = "free_vip";
+    base.quotaLimit = 999999;
+  }
 
   // 若管理员在后台明确指定了该账号为 free_vip / lifetime / pack100，以服务端更高权益为准
   const serverRank = PLAN_RANK[base.plan] || 1;

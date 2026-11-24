@@ -28,7 +28,7 @@ function getKv(env) {
 }
 
 function getAdminEmails(env) {
-  const raw = String(env.ADMIN_EMAILS || "info@xiaomie.tools,2315748@qq.com");
+  const raw = String(env.ADMIN_EMAILS || "feimabag666@gmail.com,info@xiaomie.tools,2315748@qq.com");
   return raw
     .split(/[,;\s]+/)
     .map(s => s.trim().toLowerCase())
