@@ -920,10 +920,22 @@ if ($("clearDone")) {
 }
 if ($("stop")) {
   $("stop").onclick = () => {
-    stopRequested = true;
-    if (typeof clearCollectQueue === "function") clearCollectQueue();
-    if (cancelSleepResolve) cancelSleepResolve();
-    $("status").innerText = "正在停止采集并清空等待队列（当前商品处理完毕后即停）…";
+    if (typeof pauseCollection === "function") pauseCollection();
+  };
+}
+if ($("resume")) {
+  $("resume").onclick = () => {
+    if (typeof resumeCollection === "function") resumeCollection();
+  };
+}
+if ($("skipCurrent")) {
+  $("skipCurrent").onclick = () => {
+    if (typeof skipCurrentTasks === "function") skipCurrentTasks();
+  };
+}
+if ($("deleteCurrent")) {
+  $("deleteCurrent").onclick = () => {
+    if (typeof deleteAllPendingTasks === "function") deleteAllPendingTasks();
   };
 }
 
@@ -2453,6 +2465,14 @@ function addRow(url, status, cls, m, d, s, v, dir) {
   tr.insertCell().innerText = m; tr.insertCell().innerText = d;
   tr.insertCell().innerText = s; tr.insertCell().innerText = v;
   const cDir = tr.insertCell(); cDir.innerText = dir; cDir.title = dir || "";
+  const cAct = tr.insertCell();
+  const btnDel = document.createElement("button");
+  btnDel.type = "button";
+  btnDel.className = "row-act-btn del";
+  btnDel.textContent = "🗑️";
+  btnDel.title = "删除该条记录";
+  btnDel.onclick = () => { tr.remove(); syncTaskBucketsUI(); };
+  cAct.appendChild(btnDel);
   syncTaskBucketsUI();
   const wrap = $("doneTasksWrap");
   if (wrap) wrap.scrollTop = wrap.scrollHeight;
@@ -2504,11 +2524,32 @@ function createTaskRow(url, status = "⏳ 等待队列中") {
   const cS = tr.insertCell(); cS.textContent = "-";
   const cV = tr.insertCell(); cV.textContent = "-";
   const cDir = tr.insertCell(); cDir.textContent = ""; cDir.title = "";
+  const cAct = tr.insertCell();
+  const btnSkip = document.createElement("button");
+  btnSkip.type = "button";
+  btnSkip.className = "row-act-btn";
+  btnSkip.textContent = "⏭";
+  btnSkip.title = "跳过此商品";
+  const btnDel = document.createElement("button");
+  btnDel.type = "button";
+  btnDel.className = "row-act-btn del";
+  btnDel.textContent = "🗑️";
+  btnDel.title = "删除此任务";
+  cAct.append(btnSkip, btnDel);
+
+  const ref = { tr, bucket: "queued", task: null, cSeq, cUrl, cStatus, lbl, fill, pctEl, cM, cD, cS, cV, cDir, cAct, btnSkip, btnDel };
+  btnSkip.onclick = () => {
+    if (ref.task && typeof skipTask === "function") skipTask(ref.task);
+  };
+  btnDel.onclick = () => {
+    if (typeof deleteTask === "function") deleteTask(ref.task, tr);
+    else { tr.remove(); syncTaskBucketsUI(); }
+  };
 
   syncTaskBucketsUI();
   const wrap = $("queuedTasksWrap");
   if (wrap) wrap.scrollTop = wrap.scrollHeight;
-  return { tr, bucket: "queued", cSeq, cUrl, cStatus, lbl, fill, pctEl, cM, cD, cS, cV, cDir };
+  return ref;
 }
 
 function updateTaskRow(ref, { status, cls, pct, m, d, s, v, dir } = {}) {
@@ -2520,10 +2561,11 @@ function updateTaskRow(ref, { status, cls, pct, m, d, s, v, dir } = {}) {
   if (cls !== undefined) {
     ref.cStatus.className = cls;
     const targetBucket = cls === "run" ? "active" : ((cls === "ok" || cls === "fail" || cls === "skip") ? "done" : "queued");
+    if (ref.btnSkip) ref.btnSkip.style.display = targetBucket === "done" ? "none" : "";
     if (ref.bucket !== targetBucket) {
       const targetTblId = targetBucket === "active" ? "tblActive" : (targetBucket === "done" ? "tblDone" : "tblQueued");
       const tbody = getTaskTableBody(targetTblId);
-      if (tbody && ref.tr) {
+      if (tbody && ref.tr && ref.tr.isConnected) {
         tbody.appendChild(ref.tr);
         ref.bucket = targetBucket;
         syncTaskBucketsUI();
@@ -6602,10 +6644,12 @@ async function allocateUniqueProductSlot(prefix, rawNo, suffix, step, cleanTitle
   return { allocatedNo: candidateNo, nextNo, code, folder, hasUserNo: true };
 }
 
-async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = null, onProgress = null) {
+async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = null, onProgress = null, taskCtx = null) {
   const reportProg = (pct, label) => {
+    if (taskCtx?.aborted) return;
     try { if (typeof onProgress === "function") onProgress(pct, label); } catch {}
   };
+  await checkTaskControl(taskCtx);
   reportProg(10, "🌐 正在读取网页…");
   let tab = null;
   let data = initialData;
@@ -6613,8 +6657,11 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
   const is1688 = is1688OfferUrl(url);
   try {
     if (!data) {
+      await checkTaskControl(taskCtx);
       tab = await chrome.tabs.create({ url, active: false });
+      if (taskCtx) taskCtx.tabId = tab.id;
       const loaded = await waitTabLoaded(tab.id);
+      await checkTaskControl(taskCtx);
       if (!loaded) {
         let probe = null;
         if (is1688) {
@@ -7204,9 +7251,11 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       if (!urlList.length) return [];
       const isSkuBatch = label === "SKU图";
       const fetched = await mapPool(urlList, 6, async (u, idx) => {
+        await checkTaskControl(taskCtx);
         $("status").innerText = `读取${label} (${idx + 1}/${urlList.length})…`;
         const meta = data.imageMeta?.[u] || null;
         let im = await fetchImg(u, activeSourceTabId, meta?.rawUrl || "");
+        await checkTaskControl(taskCtx);
         if (isSkuBatch && im) {
           im = await ensureCrispSkuImage(im);
         }
@@ -7272,8 +7321,10 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
           let allFoundEarly = false;
           reportProg(42, `🔍 双线程OCR识别 (0/${candidates.length})…`);
           await mapPool(candidates, OCR_POOL_SIZE, async (cand, i) => {
+            await checkTaskControl(taskCtx);
             if (stopRequested || allFoundEarly) return;
             const t = await ocrImg(cand);
+            await checkTaskControl(taskCtx);
             ocrDoneCount++;
             const pctNow = 42 + Math.round((ocrDoneCount / Math.max(1, candidates.length)) * 23);
             reportProg(pctNow, `🔍 双线程OCR识别 (${ocrDoneCount}/${candidates.length})…`);
@@ -7342,6 +7393,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         saveDir
       );
     }
+    await checkTaskControl(taskCtx);
     const usedDetailNames = new Set();
     const usedMainNames = new Set();
     const usedSkuNames = new Set();
@@ -7351,6 +7403,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
     if (opts.detail) {
       const cleanDetailAssets = detailAssets.filter(a => !a.__dropJunkByOcr);
       for (let i = 0; i < cleanDetailAssets.length; i++) {
+        await checkTaskControl(taskCtx);
         const asset = cleanDetailAssets[i];
         const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
         const source = asset.image ? URL.createObjectURL(asset.image.blob) : asset.url;
@@ -7360,6 +7413,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
     if (opts.main) {
       const cleanMainAssets = mainAssets.filter(a => !a.__dropJunkByOcr);
       for (const [i, asset] of cleanMainAssets.entries()) {
+        await checkTaskControl(taskCtx);
         const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
         const source = asset.image ? URL.createObjectURL(asset.image.blob) : asset.url;
         if (await dl(source, mediaPath("主图", mediaFilename(mediaBase, "main", i, cleanMainAssets.length, ext, asset.url, namingCfg, sharedFlatNames || usedMainNames)), saveDir, asset.image?.blob)) nm++;
@@ -7367,6 +7421,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
     }
     if (doSku) {
       for (const [i, asset] of skuAssets.entries()) {
+        await checkTaskControl(taskCtx);
         const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
         const source = asset.image ? URL.createObjectURL(asset.image.blob) : asset.url;
         if (await dl(source, mediaPath("SKU图", mediaFilename(mediaBase, "sku", i, skuAssets.length, ext, asset.url, namingCfg, sharedFlatNames || usedSkuNames)), saveDir, asset.image?.blob)) ns++;
@@ -7374,6 +7429,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
     }
     if (opts.video) {
       for (let i = 0; i < data.videos.length; i++) {
+        await checkTaskControl(taskCtx);
         const vUrl = data.videos[i];
         $("status").innerText = `保存视频/动画 (${i + 1}/${data.videos.length})…`;
         const ext = mediaExtFromUrl(vUrl, "mp4");
@@ -7398,6 +7454,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       imageCapReached: !!data.imageCapReached, videoCapReached: !!data.videoCapReached };
   } finally {
     window.__currentProductDeadline = 0;
+    if (taskCtx) taskCtx.tabId = null;
     if (tab) chrome.tabs.remove(tab.id).catch(() => {});
   }
 }
@@ -7420,21 +7477,202 @@ let queueLastSuffix = "";
 let queueProcessedCounter = 0;
 let goBtnOriginalLabel = "";
 
+class TaskControlError extends Error {
+  constructor(action) {
+    super(`TASK_${String(action || "abort").toUpperCase()}`);
+    this.name = "TaskControlError";
+    this.controlAction = action;
+  }
+}
+
+let pauseRequested = false;
+const activeTaskSet = new Set();
+const pauseWaiters = new Set();
+
+function wakeAllPauseWaiters() {
+  for (const fn of [...pauseWaiters]) {
+    pauseWaiters.delete(fn);
+    try { fn(); } catch {}
+  }
+}
+
+function wakeTaskPauseWaiter(task) {
+  if (task && typeof task._wakePause === "function") {
+    const fn = task._wakePause;
+    task._wakePause = null;
+    pauseWaiters.delete(fn);
+    try { fn(); } catch {}
+  }
+}
+
+async function checkTaskControl(taskCtx) {
+  if (taskCtx?.aborted) throw new TaskControlError(taskCtx.aborted);
+  while (pauseRequested && !taskCtx?.aborted) {
+    await new Promise(resolve => {
+      const done = () => {
+        pauseWaiters.delete(done);
+        if (taskCtx && taskCtx._wakePause === done) taskCtx._wakePause = null;
+        resolve();
+      };
+      pauseWaiters.add(done);
+      if (taskCtx) taskCtx._wakePause = done;
+    });
+  }
+  if (taskCtx?.aborted) throw new TaskControlError(taskCtx.aborted);
+}
+
+function pauseCollection() {
+  if (!isCollectQueueRunning && activeTaskWorkers === 0 && collectTaskQueue.length === 0) return;
+  pauseRequested = true;
+  if (cancelSleepResolve) cancelSleepResolve();
+  for (const t of activeTaskSet) {
+    if (t?.rowRef && !t.aborted) {
+      updateTaskRow(t.rowRef, { status: "⏸ 已暂停（点继续恢复）", cls: "run" });
+    }
+  }
+  updateQueueBtnState();
+  $("status").innerText = `⏸ 已暂停采集（运行中 ${activeTaskSet.size} 条 · 排队 ${collectTaskQueue.length} 条），点击「继续」恢复`;
+}
+
+function resumeCollection() {
+  if (!pauseRequested) return;
+  pauseRequested = false;
+  for (const t of activeTaskSet) {
+    if (t?.rowRef && !t.aborted) {
+      updateTaskRow(t.rowRef, { status: "▶️ 已恢复采集…", cls: "run" });
+    }
+  }
+  wakeAllPauseWaiters();
+  if (collectTaskQueue.length > 0 && activeTaskWorkers < MAX_CONCURRENT_TASKS) {
+    scheduleCollectWorkers();
+  }
+  updateQueueBtnState();
+  updateOverallProgressUI();
+}
+
+function abortTaskNow(task, action) {
+  if (!task || task.aborted) return;
+  task.aborted = action;
+  try { task.abortCtrl?.abort(action); } catch {}
+  if (task.tabId) {
+    const tid = task.tabId;
+    task.tabId = null;
+    try { chrome.tabs.remove(tid).catch(() => {}); } catch {}
+  }
+  wakeTaskPauseWaiter(task);
+}
+
+function skipTask(task) {
+  if (!task) return;
+  const qIdx = collectTaskQueue.indexOf(task);
+  if (qIdx >= 0) {
+    collectTaskQueue.splice(qIdx, 1);
+    task.aborted = "skip";
+    if (task.rowRef) updateTaskRow(task.rowRef, { status: "⏭️ 已跳过", cls: "skip", pct: 100, m: "-", d: "-", s: "-", v: "-", dir: "" });
+    queueSkipN++;
+    collectQueueCompleted++;
+    updateQueueBtnState();
+    updateOverallProgressUI();
+    return;
+  }
+  if (activeTaskSet.has(task)) {
+    if (task.rowRef) updateTaskRow(task.rowRef, { status: "⏭️ 正在跳过…", cls: "run" });
+    abortTaskNow(task, "skip");
+    updateQueueBtnState();
+  }
+}
+
+function skipCurrentTasks() {
+  if (activeTaskSet.size > 0) {
+    for (const t of [...activeTaskSet]) skipTask(t);
+  } else if (collectTaskQueue.length > 0) {
+    skipTask(collectTaskQueue[0]);
+  }
+}
+
+function deleteTask(task, fallbackTr = null) {
+  if (task) {
+    const qIdx = collectTaskQueue.indexOf(task);
+    if (qIdx >= 0) {
+      collectTaskQueue.splice(qIdx, 1);
+      task.aborted = "delete";
+      collectQueueTotalEnqueued = Math.max(0, collectQueueTotalEnqueued - 1);
+      if (task.rowRef?.tr) task.rowRef.tr.remove();
+      syncTaskBucketsUI();
+      updateQueueBtnState();
+      updateOverallProgressUI();
+      return;
+    }
+    if (activeTaskSet.has(task)) {
+      collectQueueTotalEnqueued = Math.max(0, collectQueueTotalEnqueued - 1);
+      abortTaskNow(task, "delete");
+      if (task.rowRef?.tr) task.rowRef.tr.remove();
+      syncTaskBucketsUI();
+      updateQueueBtnState();
+      return;
+    }
+    if (task.rowRef?.tr) {
+      task.rowRef.tr.remove();
+      syncTaskBucketsUI();
+      return;
+    }
+  }
+  if (fallbackTr) {
+    fallbackTr.remove();
+    syncTaskBucketsUI();
+  }
+}
+
+function deleteAllPendingTasks() {
+  pauseRequested = false;
+  while (collectTaskQueue.length > 0) {
+    const t = collectTaskQueue.shift();
+    if (t) {
+      t.aborted = "delete";
+      collectQueueTotalEnqueued = Math.max(0, collectQueueTotalEnqueued - 1);
+      if (t.rowRef?.tr) t.rowRef.tr.remove();
+    }
+  }
+  for (const t of [...activeTaskSet]) {
+    collectQueueTotalEnqueued = Math.max(0, collectQueueTotalEnqueued - 1);
+    abortTaskNow(t, "delete");
+    if (t.rowRef?.tr) t.rowRef.tr.remove();
+  }
+  wakeAllPauseWaiters();
+  if (cancelSleepResolve) cancelSleepResolve();
+  syncTaskBucketsUI();
+  updateQueueBtnState();
+  if (activeTaskWorkers === 0) {
+    isCollectQueueRunning = false;
+    if ($("bar")?.firstElementChild) $("bar").firstElementChild.style.width = "0%";
+    $("status").innerText = "已删除当前采集与排队任务";
+    updateQueueBtnState();
+  }
+}
+
 function updateQueueBtnState() {
   const btn = $("go");
   const clearBtn = $("clearDone");
+  const stopBtn = $("stop");
+  const resumeBtn = $("resume");
+  const skipBtn = $("skipCurrent");
+  const delBtn = $("deleteCurrent");
   const busy = isCollectQueueRunning || activeTaskWorkers > 0 || collectTaskQueue.length > 0;
   if (clearBtn) {
     clearBtn.disabled = busy;
     clearBtn.title = busy ? "正在采集中，暂不可清除记录" : "清除当前列表记录（已采查重历史仍会保留）";
   }
+  if (stopBtn) stopBtn.style.display = (busy && !pauseRequested) ? "" : "none";
+  if (resumeBtn) resumeBtn.style.display = (busy && pauseRequested) ? "" : "none";
+  if (skipBtn) skipBtn.style.display = busy ? "" : "none";
+  if (delBtn) delBtn.style.display = busy ? "" : "none";
   if (!btn) return;
   if (!goBtnOriginalLabel) goBtnOriginalLabel = btn.innerText || "开始采集";
-  if (isCollectQueueRunning || activeTaskWorkers > 0) {
+  if (busy) {
     btn.disabled = false;
     btn.innerText = collectTaskQueue.length > 0
-      ? `➕ 加入等待队列（运行 ${activeTaskWorkers} / 排队 ${collectTaskQueue.length}）`
-      : `➕ 加入等待队列（运行 ${activeTaskWorkers}）`;
+      ? `➕ 加入队列（运行 ${activeTaskWorkers} / 排队 ${collectTaskQueue.length}）`
+      : `➕ 加入队列（运行 ${activeTaskWorkers}）`;
   } else {
     btn.disabled = false;
     btn.innerText = goBtnOriginalLabel;
@@ -7453,12 +7691,17 @@ function updateOverallProgressUI() {
   const total = Math.max(1, collectQueueTotalEnqueued);
   const donePct = Math.min(100, Math.round((collectQueueCompleted / total) * 100));
   if ($("bar")?.firstElementChild) $("bar").firstElementChild.style.width = `${donePct}%`;
+  if (pauseRequested) {
+    $("status").innerText = `⏸ 已暂停采集（运行中 ${activeTaskSet.size} 条 · 排队 ${collectTaskQueue.length} 条），点击「继续」恢复`;
+    return;
+  }
   if (activeTaskWorkers > 0 || collectTaskQueue.length > 0) {
     $("status").innerText = `多线程采集中：运行 ${activeTaskWorkers} 条 · 队列等待 ${collectTaskQueue.length} 条 · 已完成 ${collectQueueCompleted}/${total}`;
   }
 }
 
 async function runSingleQueuedTask(task) {
+  if (task.aborted) return task.aborted;
   const { url: u, capture: pageCapture, rowRef } = task;
   const { saveDir, prefix, suffix, step, minSize, maxMinute, maxHour, maxDay, opts, persist } = readSettings();
   await chrome.storage.local.set(persist);
@@ -7470,8 +7713,8 @@ async function runSingleQueuedTask(task) {
   const maxQuota = (curAuth.plan === "lifetime" || curAuth.plan === "free_vip") ? Infinity : (curAuth.plan === "pack100" ? (curAuth.quotaLimit || 100) : 20);
   if ((curAuth.usedCount || 0) >= maxQuota) {
     if (curAuth.plan === "trial" && !curAuth.loggedIn) {
-      $("status").innerText = "免费试用期 20 个产品额度已用完，请先登录官方账号（支持 Google 官方授权 或 全球官方邮箱登录）！";
-      if (typeof openAuthModal === "function") openAuthModal("google", true);
+      $("status").innerText = "免费试用期 20 个产品额度已用完，请先登录官方账号（支持 Google 官方授权 或 全球邮箱登录）！";
+      if (typeof openAuthModal === "function") openAuthModal("email", true);
     } else {
       $("status").innerText = curAuth.plan === "trial"
         ? "免费试用期 20 个产品额度已用完，请升级付费方案（¥500 采集 100 个产品 / ¥999 终身不限量授权）后继续采集"
@@ -7480,13 +7723,13 @@ async function runSingleQueuedTask(task) {
     }
     updateTaskRow(rowRef, { status: "⚠️ 额度已用完", cls: "fail", pct: 0 });
     clearCollectQueue();
-    return;
+    return "fail";
   }
 
   if ($("skipDone").checked && queueDoneUrls.includes(u)) {
     updateTaskRow(rowRef, { status: "已采集过，跳过", cls: "skip", pct: 100, m: "-", d: "-", s: "-", v: "-", dir: "" });
     queueSkipN++;
-    return;
+    return "skip";
   }
 
   const gate = await rateGate(maxMinute, maxHour, maxDay, !!pageCapture);
@@ -7494,7 +7737,7 @@ async function runSingleQueuedTask(task) {
     updateTaskRow(rowRef, { status: gate.message, cls: "fail", pct: 0 });
     $("status").innerText = gate.message;
     clearCollectQueue();
-    return;
+    return "fail";
   }
 
   // 原子分配编号，保证多线程并发采集时不会撞号
@@ -7506,8 +7749,11 @@ async function runSingleQueuedTask(task) {
     await chrome.storage.local.set({ startNo: queueNextNo, nextNo: queueNextNo, userSetStartNo: true }).catch(() => {});
   }
 
+  activeTaskSet.add(task);
   updateTaskRow(rowRef, { status: "🚀 启动采集…", cls: "run", pct: 5 });
+  updateQueueBtnState();
   try {
+    await checkTaskControl(task);
     const r = await collectOne(
       u,
       { prefix, rawNo: assignedNo, suffix, step },
@@ -7515,8 +7761,10 @@ async function runSingleQueuedTask(task) {
       opts,
       minSize,
       pageCapture,
-      (pct, label) => updateTaskRow(rowRef, { pct, status: label, cls: "run" })
+      (pct, label) => updateTaskRow(rowRef, { pct, status: label, cls: "run" }),
+      task
     );
+    await checkTaskControl(task);
     updateTaskRow(rowRef, { status: "✅ 完成", cls: "ok", pct: 100, m: r.nm, d: r.nd, s: r.ns, v: r.nv, dir: r.folder });
     if (!queueDoneUrls.includes(u)) queueDoneUrls.push(u);
     queueOkN++;
@@ -7535,12 +7783,28 @@ async function runSingleQueuedTask(task) {
     await chrome.storage.local.set({ doneUrls: queueDoneUrls });
     if (updatedAuth.plan === "trial" && nextUsed >= 20 && !updatedAuth.loggedIn) {
       $("status").innerText = "免费试用期 20 个产品额度已全部用完，请先登录官方账号（支持 Google 官方授权 或 全球官方邮箱登录）！";
-      if (typeof openAuthModal === "function") openAuthModal("google", true);
+      if (typeof openAuthModal === "function") openAuthModal("email", true);
       clearCollectQueue();
     }
+    return "ok";
   } catch (e) {
+    if (e instanceof TaskControlError || task.aborted) {
+      const act = e?.controlAction || task.aborted;
+      if (act === "delete") {
+        if (rowRef?.tr) rowRef.tr.remove();
+        syncTaskBucketsUI();
+        return "delete";
+      }
+      updateTaskRow(rowRef, { status: "⏭️ 已跳过", cls: "skip", pct: 100, m: "-", d: "-", s: "-", v: "-", dir: "" });
+      queueSkipN++;
+      return "skip";
+    }
     updateTaskRow(rowRef, { status: "❌ 失败: " + e.message, cls: "fail", pct: 100, m: 0, d: 0, s: 0, v: 0, dir: "" });
     queueFailN++;
+    return "fail";
+  } finally {
+    activeTaskSet.delete(task);
+    updateQueueBtnState();
   }
 }
 
@@ -7550,40 +7814,44 @@ async function spawnQueueWorkerLoop() {
   updateOverallProgressUI();
   try {
     while (collectTaskQueue.length > 0 && !stopRequested) {
+      if (pauseRequested) {
+        await checkTaskControl(null);
+        if (collectTaskQueue.length === 0 || stopRequested) break;
+      }
       const task = collectTaskQueue.shift();
-      if (!task) break;
+      if (!task || task.aborted) continue;
       queueProcessedCounter++;
       window.__batchTotalCount = Math.max(collectQueueTotalEnqueued, queueProcessedCounter + collectTaskQueue.length);
       window.__batchCurrentIndex = queueProcessedCounter;
       updateQueueBtnState();
       updateOverallProgressUI();
-      await runSingleQueuedTask(task);
-      collectQueueCompleted++;
+      const outcome = await runSingleQueuedTask(task);
+      if (outcome !== "delete") collectQueueCompleted++;
       updateOverallProgressUI();
       if (collectTaskQueue.length > 0 && !stopRequested) {
-        await interruptibleSleep(800);
+        if (pauseRequested) await checkTaskControl(null);
+        else await interruptibleSleep(800);
       }
     }
   } finally {
     activeTaskWorkers--;
     updateQueueBtnState();
     if (activeTaskWorkers === 0) {
-      if (collectTaskQueue.length > 0 && !stopRequested) {
+      if (collectTaskQueue.length > 0 && !stopRequested && !pauseRequested) {
         scheduleCollectWorkers();
         return;
       }
       isCollectQueueRunning = false;
+      pauseRequested = false;
       window.__batchTotalCount = 1;
       window.__batchCurrentIndex = 0;
-      if ($("bar")?.firstElementChild) $("bar").firstElementChild.style.width = "100%";
-      const stopTag = stopRequested ? "（已手动停止）" : "";
+      if ($("bar")?.firstElementChild) $("bar").firstElementChild.style.width = collectQueueTotalEnqueued > 0 ? "100%" : "0%";
       const nextNoHint = queueNextNo ? `（下次编号 ${queueLastPrefix}${queueNextNo}${queueLastSuffix}）` : "";
-      $("status").innerText = `结束${stopTag}：成功 ${queueOkN}，跳过 ${queueSkipN}，失败 ${queueFailN}${nextNoHint}`;
+      $("status").innerText = `结束：成功 ${queueOkN}，跳过 ${queueSkipN}，失败 ${queueFailN}${nextNoHint}`;
       collectQueueCompleted = 0;
       collectQueueTotalEnqueued = 0;
       queueProcessedCounter = 0;
       updateQueueBtnState();
-      if ($("stop")) $("stop").style.display = "none";
     }
   }
 }
@@ -7592,6 +7860,7 @@ async function scheduleCollectWorkers() {
   if (!isCollectQueueRunning) {
     isCollectQueueRunning = true;
     stopRequested = false;
+    pauseRequested = false;
     queueOkN = 0;
     queueSkipN = 0;
     queueFailN = 0;
@@ -7600,9 +7869,8 @@ async function scheduleCollectWorkers() {
     queueDoneUrls = await getStore("doneUrls", []);
     const { startNo } = readSettings();
     queueNextNo = startNo;
-    if ($("stop")) $("stop").style.display = "";
   }
-  while (activeTaskWorkers < MAX_CONCURRENT_TASKS && collectTaskQueue.length > 0 && !stopRequested) {
+  while (activeTaskWorkers < MAX_CONCURRENT_TASKS && collectTaskQueue.length > 0 && !stopRequested && !pauseRequested) {
     spawnQueueWorkerLoop();
   }
   updateQueueBtnState();
@@ -7644,7 +7912,11 @@ $("go").onclick = async () => {
 
   for (const j of jobs) {
     const pos = collectTaskQueue.length + 1;
+    j.aborted = null;
+    j.tabId = null;
+    j.abortCtrl = typeof AbortController === "function" ? new AbortController() : null;
     j.rowRef = createTaskRow(j.url, isCollectQueueRunning ? `⏳ 等待队列中（第 ${pos} 位）` : "⏳ 准备采集…");
+    j.rowRef.task = j;
     collectTaskQueue.push(j);
   }
   // 点击开始采集后立即清空上方网址输入框，网址直接进入下方排队模块
