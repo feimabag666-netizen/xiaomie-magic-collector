@@ -28,7 +28,7 @@ function getKv(env) {
 }
 
 const PLAN_RANK = { trial: 1, pack100: 2, lifetime: 3, free_vip: 4 };
-const OWNER_FREE_EMAILS = new Set(["feimabag666@gmail.com"]);
+const DEFAULT_OWNER_FREE_EMAILS = new Set(["feimabag666@gmail.com"]);
 
 export async function onRequestOptions(context) {
   return new Response(null, { status: 204, headers: buildCorsHeaders(context.request) });
@@ -65,8 +65,8 @@ export async function onRequestPost(context) {
     } catch {}
   }
 
-  const isOwnerFree = OWNER_FREE_EMAILS.has(email);
   const now = Date.now();
+  const isOwnerFree = DEFAULT_OWNER_FREE_EMAILS.has(email);
   const base = existing || {
     email,
     provider,
@@ -74,7 +74,7 @@ export async function onRequestPost(context) {
     usedCount: 0,
     quotaLimit: isOwnerFree ? 999999 : 20,
     paidAmount: "",
-    note: isOwnerFree ? "管理员默认终身免费账号" : "",
+    note: isOwnerFree ? "创始人/管理员默认终身免费" : "",
     deviceFp,
     createdAt: now,
     updatedAt: now,
