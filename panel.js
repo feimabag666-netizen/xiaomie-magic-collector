@@ -685,9 +685,60 @@ function translateCommonValue(val, lang) {
   return out;
 }
 
-const SET_IDS = ["saveDir","prefix","startNo","step","suffix","maxMinute","maxHour","maxDay","optSubdir","optParams","optUrl","optMain","optProduct","optDetail","optSku","optVideo","optCopy","optMinSize","minSize","skipDone","outputLang"];
+const SET_IDS = ["saveDir","prefix","startNo","step","suffix","maxMinute","maxHour","maxDay","optSubdir","optParams","optUrl","optMain","optProduct","optDetail","optSku","optVideo","optCopy","optMinSize","minSize","skipDone","outputLang","optMediaRename","mediaNamePrefix","mediaNameMainWord","mediaNameDetailWord","mediaNameVideoWord"];
 let nonEcomOverrideActive = false;
 let savedEcomState = null;
+let _mediaModelManuallyEdited = false;
+
+function getTopModelCode() {
+  const p = $("prefix")?.value || "";
+  const n = ($("startNo")?.value || "").trim();
+  const sf = $("suffix")?.value || "";
+  return `${p}${n}${sf}`.trim();
+}
+
+function readMediaNamingConfig() {
+  const enabled = $("optMediaRename") ? !!$("optMediaRename").checked : true;
+  const prefix = ($("mediaNamePrefix")?.value || "").trim();
+  const modelVal = ($("mediaNameModel")?.value || "").trim();
+  const topModel = getTopModelCode();
+  const isModelSynced = !_mediaModelManuallyEdited || !modelVal || modelVal === topModel;
+  const mainWord = ($("mediaNameMainWord")?.value || "").trim() || "main";
+  const detailWord = ($("mediaNameDetailWord")?.value || "").trim() || "details";
+  const videoWord = ($("mediaNameVideoWord")?.value || "").trim() || "videos";
+  return { enabled, prefix, customModel: modelVal, isModelSynced, mainWord, detailWord, videoWord };
+}
+
+function updateMediaNamingPreview() {
+  const wrap = $("mediaNamingFieldsWrap");
+  const prevEl = $("mediaNamingPreview");
+  const cfg = readMediaNamingConfig();
+  if (wrap) {
+    wrap.style.opacity = cfg.enabled ? "1" : "0.52";
+    wrap.querySelectorAll("input").forEach(inp => { inp.disabled = !cfg.enabled; });
+  }
+  if (!prevEl) return;
+  if (!cfg.enabled) {
+    prevEl.textContent = "未勾选：将保留图片/视频原始文件名，不做自动重命名。";
+    return;
+  }
+  const sampleModel = (!cfg.isModelSynced && cfg.customModel) ? cfg.customModel : (getTopModelCode() || "型号");
+  const m1 = mediaFilename(sampleModel, "main", 0, 2, "jpg", "", cfg);
+  const d1 = mediaFilename(sampleModel, "detail", 0, 2, "jpg", "", cfg);
+  const v1 = mediaFilename(sampleModel, "video", 0, 1, "mp4", "", cfg);
+  prevEl.textContent = `命名预览：${m1} ｜ ${d1} ｜ ${v1}`;
+}
+
+function syncMediaNameModelFromTop(force = false) {
+  const modelEl = $("mediaNameModel");
+  if (!modelEl) return;
+  const topModel = getTopModelCode();
+  if (force || !_mediaModelManuallyEdited || !modelEl.value.trim()) {
+    modelEl.value = topModel;
+    _mediaModelManuallyEdited = false;
+  }
+  updateMediaNamingPreview();
+}
 
 async function loadSettings() {
   const s = await chrome.storage.local.get(SET_IDS.concat(["nextNo", "imgFilterMode", "userSetStartNo"]));
@@ -711,6 +762,7 @@ async function loadSettings() {
   } else if (!s.userSetStartNo && $("startNo")) {
     $("startNo").value = "";
   }
+  syncMediaNameModelFromTop(true);
   updateLangBadgesUI();
   syncLangToggle();
 }
@@ -738,13 +790,19 @@ function readSettings() {
   const maxDay = Math.max(maxHour, parseInt($("maxDay").value, 10) || 200);
   const outputLang = $("outputLang") ? $("outputLang").value : "auto";
   const imgFilterMode = getImgFilterMode();
+  const mediaNaming = readMediaNamingConfig();
   const opts = { subdir: $("optSubdir").checked, params: $("optParams").checked, url: $("optUrl").checked,
                  main: $("optMain").checked, product: $("optProduct").checked, detail: $("optDetail").checked,
                  sku: $("optSku").checked, video: $("optVideo").checked, copy: $("optCopy") ? $("optCopy").checked : true,
-                 outputLang, imgFilterMode };
+                 outputLang, imgFilterMode, mediaNaming };
   // 若当前处于非电商网页（如博客）临时默认状态，持久化时保留用户原本对电商页的 optParams/optSku 设置
   const st = { saveDir, prefix, suffix, startNo, userSetStartNo: Boolean(startNo), step, minSize, optMinSize: $("optMinSize").checked, maxMinute, maxHour, maxDay, skipDone: $("skipDone").checked,
                outputLang, imgFilterMode,
+               optMediaRename: mediaNaming.enabled,
+               mediaNamePrefix: mediaNaming.prefix,
+               mediaNameMainWord: mediaNaming.mainWord,
+               mediaNameDetailWord: mediaNaming.detailWord,
+               mediaNameVideoWord: mediaNaming.videoWord,
                optSubdir: opts.subdir,
                optParams: (nonEcomOverrideActive && savedEcomState) ? savedEcomState.optParams : opts.params,
                optUrl: opts.url, optMain: opts.main,
@@ -772,6 +830,33 @@ window.addEventListener("load", () => {
   $("startNo")?.addEventListener("change", () => {
     const val = $("startNo").value.trim();
     chrome.storage.local.set({ startNo: val, nextNo: val, userSetStartNo: Boolean(val) }).catch(() => {});
+  });
+  // 型号区（产品前缀 / 起始编号 / 编号后缀）变动时，实时同步到下方「图片、视频命名」的型号
+  ["prefix", "startNo", "suffix"].forEach(id => {
+    $(id)?.addEventListener("input", () => syncMediaNameModelFromTop(true));
+    $(id)?.addEventListener("change", () => syncMediaNameModelFromTop(true));
+  });
+  $("mediaNameModel")?.addEventListener("input", () => {
+    const cur = ($("mediaNameModel").value || "").trim();
+    const top = getTopModelCode();
+    _mediaModelManuallyEdited = Boolean(cur && cur !== top);
+    updateMediaNamingPreview();
+  });
+  const persistMediaNaming = () => {
+    const cfg = readMediaNamingConfig();
+    updateMediaNamingPreview();
+    chrome.storage.local.set({
+      optMediaRename: cfg.enabled,
+      mediaNamePrefix: cfg.prefix,
+      mediaNameMainWord: cfg.mainWord,
+      mediaNameDetailWord: cfg.detailWord,
+      mediaNameVideoWord: cfg.videoWord,
+    }).catch(() => {});
+  };
+  $("optMediaRename")?.addEventListener("change", persistMediaNaming);
+  ["mediaNamePrefix", "mediaNameMainWord", "mediaNameDetailWord", "mediaNameVideoWord"].forEach(id => {
+    $(id)?.addEventListener("input", persistMediaNaming);
+    $(id)?.addEventListener("change", persistMediaNaming);
   });
 });
 
@@ -6155,8 +6240,63 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
   };
 }
 
-function mediaFilename(base, category, index, count, ext) {
-  return `${String(base).replace(/[\\/:*?"<>|]/g, "")}${category}${count > 1 ? index + 1 : ""}.${ext}`;
+function extractOriginalMediaFilename(rawUrl, fallbackCategory, index, ext) {
+  let origName = "";
+  try {
+    if (rawUrl && /^https?:/i.test(String(rawUrl))) {
+      const u = new URL(String(rawUrl));
+      const segs = u.pathname.split("/").filter(Boolean);
+      const last = segs.length ? decodeURIComponent(segs[segs.length - 1]) : "";
+      origName = last
+        .replace(/[\\/:*?"<>|\r\n\t]+/g, "_")
+        .replace(/^\.+|\.+$/g, "")
+        .trim();
+    }
+  } catch {}
+  if (!origName) {
+    origName = `${fallbackCategory}_${index + 1}.${ext}`;
+  } else if (!/\.(?:jpg|jpeg|png|webp|avif|gif|apng|svg|mp4|webm|mov|m4v)$/i.test(origName)) {
+    origName = `${origName}.${ext}`;
+  }
+  return origName.slice(0, 140);
+}
+
+function dedupeFilename(filename, usedSet) {
+  if (!usedSet) return filename;
+  const key0 = filename.toLowerCase();
+  if (!usedSet.has(key0)) {
+    usedSet.add(key0);
+    return filename;
+  }
+  const dot = filename.lastIndexOf(".");
+  const stem = dot > 0 ? filename.slice(0, dot) : filename;
+  const suffixExt = dot > 0 ? filename.slice(dot) : "";
+  let n = 2;
+  while (usedSet.has(`${stem} (${n})${suffixExt}`.toLowerCase())) n++;
+  const finalName = `${stem} (${n})${suffixExt}`;
+  usedSet.add(finalName.toLowerCase());
+  return finalName;
+}
+
+function mediaFilename(base, category, index, count, ext, rawUrl = "", namingCfg = null, usedSet = null) {
+  const cfg = namingCfg || (typeof readMediaNamingConfig === "function" ? readMediaNamingConfig() : { enabled: true });
+  // 未勾选「图片、视频命名」时：保留图片/视频原始文件名，不改名字
+  if (cfg && cfg.enabled === false) {
+    const orig = extractOriginalMediaFilename(rawUrl, category, index, ext);
+    return dedupeFilename(orig, usedSet);
+  }
+  const cleanPart = s => String(s || "").replace(/[\\/:*?"<>|\r\n\t]+/g, "").replace(/\s+/g, " ").trim();
+  const prefixPart = cleanPart(cfg?.prefix || "");
+  const modelPart = cleanPart((!cfg?.isModelSynced && cfg?.customModel) ? cfg.customModel : base);
+  let catWord = "";
+  if (category === "main") catWord = cleanPart(cfg?.mainWord || "main") || "main";
+  else if (category === "detail") catWord = cleanPart(cfg?.detailWord || "details") || "details";
+  else if (category === "video") catWord = cleanPart(cfg?.videoWord || "videos") || "videos";
+  else catWord = cleanPart(category) || "media";
+  const seqPart = String(index + 1);
+  const stem = [prefixPart, modelPart, catWord, seqPart].filter(Boolean).join(" ");
+  const finalName = `${stem || `${category}_${index + 1}`}.${ext}`;
+  return dedupeFilename(finalName, usedSet);
 }
 function mediaExtFromUrl(url, fallback = "jpg") {
   if (/^data:image\/svg\+xml/i.test(String(url || ""))) return "svg";
@@ -6333,6 +6473,7 @@ async function allocateUniqueProductSlot(prefix, rawNo, suffix, step, cleanTitle
   storedFolders.add(folder);
   const nextNo = incrementProductNumber(candidateNo, step);
   if ($("startNo")) $("startNo").value = nextNo;
+  syncMediaNameModelFromTop(false);
   await chrome.storage.local.set({
     startNo: nextNo,
     nextNo,
@@ -7084,13 +7225,19 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         saveDir
       );
     }
+    const usedDetailNames = new Set();
+    const usedMainNames = new Set();
+    const usedSkuNames = new Set();
+    const usedVideoNames = new Set();
+    const sharedFlatNames = opts.subdir ? null : new Set();
+    const namingCfg = opts.mediaNaming || readMediaNamingConfig();
     if (opts.detail) {
       const cleanDetailAssets = detailAssets.filter(a => !a.__dropJunkByOcr);
       for (let i = 0; i < cleanDetailAssets.length; i++) {
         const asset = cleanDetailAssets[i];
         const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
         const source = asset.image ? URL.createObjectURL(asset.image.blob) : asset.url;
-        if (await dl(source, mediaPath("详情图", mediaFilename(mediaBase, "detail", i, cleanDetailAssets.length, ext)), saveDir, asset.image?.blob)) nd++;
+        if (await dl(source, mediaPath("详情图", mediaFilename(mediaBase, "detail", i, cleanDetailAssets.length, ext, asset.url, namingCfg, sharedFlatNames || usedDetailNames)), saveDir, asset.image?.blob)) nd++;
       }
     }
     if (opts.main) {
@@ -7098,14 +7245,14 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       for (const [i, asset] of cleanMainAssets.entries()) {
         const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
         const source = asset.image ? URL.createObjectURL(asset.image.blob) : asset.url;
-        if (await dl(source, mediaPath("主图", mediaFilename(mediaBase, "main", i, cleanMainAssets.length, ext)), saveDir, asset.image?.blob)) nm++;
+        if (await dl(source, mediaPath("主图", mediaFilename(mediaBase, "main", i, cleanMainAssets.length, ext, asset.url, namingCfg, sharedFlatNames || usedMainNames)), saveDir, asset.image?.blob)) nm++;
       }
     }
     if (doSku) {
       for (const [i, asset] of skuAssets.entries()) {
         const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
         const source = asset.image ? URL.createObjectURL(asset.image.blob) : asset.url;
-        if (await dl(source, mediaPath("SKU图", mediaFilename(mediaBase, "sku", i, skuAssets.length, ext)), saveDir, asset.image?.blob)) ns++;
+        if (await dl(source, mediaPath("SKU图", mediaFilename(mediaBase, "sku", i, skuAssets.length, ext, asset.url, namingCfg, sharedFlatNames || usedSkuNames)), saveDir, asset.image?.blob)) ns++;
       }
     }
     if (opts.video) {
@@ -7113,7 +7260,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         const vUrl = data.videos[i];
         $("status").innerText = `保存视频/动画 (${i + 1}/${data.videos.length})…`;
         const ext = mediaExtFromUrl(vUrl, "mp4");
-        const targetPath = mediaPath("视频", mediaFilename(mediaBase, "video", i, data.videos.length, ext));
+        const targetPath = mediaPath("视频", mediaFilename(mediaBase, "video", i, data.videos.length, ext, vUrl, namingCfg, sharedFlatNames || usedVideoNames));
         if (/^data:image\/svg\+xml/i.test(vUrl)) {
           const commaIdx = vUrl.indexOf(",");
           const rawSvg = commaIdx >= 0 ? decodeURIComponent(vUrl.slice(commaIdx + 1)) : "";
@@ -7232,6 +7379,7 @@ async function runSingleQueuedTask(task) {
   if (assignedNo) {
     queueNextNo = incrementProductNumber(assignedNo, step);
     $("startNo").value = queueNextNo;
+    syncMediaNameModelFromTop(false);
     await chrome.storage.local.set({ startNo: queueNextNo, nextNo: queueNextNo, userSetStartNo: true }).catch(() => {});
   }
 

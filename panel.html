@@ -929,6 +929,41 @@
       </div>
     </div>
 
+    <div class="setting-block" id="mediaNamingBlock">
+      <div class="setting-block-title">
+        <label style="margin:0;display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-weight:700;color:#4a3563">
+          <input type="checkbox" id="optMediaRename" checked>
+          <span>🏷️ 图片、视频命名</span>
+        </label>
+        <span style="font-size:11px;font-weight:500;color:var(--muted)">不勾选则保留原始文件名</span>
+      </div>
+      <div id="mediaNamingFieldsWrap">
+        <div class="form-grid" style="margin-top:6px;gap:8px 10px">
+          <div class="form-item">
+            <label for="mediaNamePrefix">命名前缀</label>
+            <input id="mediaNamePrefix" value="" placeholder="默认为空">
+          </div>
+          <div class="form-item">
+            <label for="mediaNameModel">同步型号</label>
+            <input id="mediaNameModel" value="" placeholder="同步上方型号">
+          </div>
+          <div class="form-item">
+            <label for="mediaNameMainWord">主图词</label>
+            <input id="mediaNameMainWord" value="main" placeholder="main">
+          </div>
+          <div class="form-item">
+            <label for="mediaNameDetailWord">详情图词</label>
+            <input id="mediaNameDetailWord" value="details" placeholder="details">
+          </div>
+          <div class="form-item" style="grid-column:1 / -1">
+            <label for="mediaNameVideoWord">视频词</label>
+            <input id="mediaNameVideoWord" value="videos" placeholder="videos" style="flex:1;max-width:180px">
+          </div>
+        </div>
+        <div id="mediaNamingPreview" class="hint" style="margin-top:6px;color:#5c4379;font-size:11.5px;background:#f5f0ff;padding:5px 8px;border-radius:6px;border:1px dashed #d8c9ef"></div>
+      </div>
+    </div>
+
     <div class="setting-block">
       <div class="setting-block-title">
         <span>⏱️ 采集频率控制</span>
