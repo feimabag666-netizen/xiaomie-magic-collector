@@ -8772,8 +8772,8 @@ window.addEventListener("load", async () => {
       btn.disabled = true;
       if (msgEl) { msgEl.style.color = "#0f766e"; msgEl.textContent = "正在创建空中云汇 (Airwallex) 安全收银台订单…"; }
       const endpoints = [
-        "https://api.xiaomie.tools/api/airwallex-checkout",
         "https://xiaomie-magic-collector-cvz.pages.dev/api/airwallex-checkout",
+        "https://api.xiaomie.tools/api/airwallex-checkout",
       ];
       let checkoutUrl = "";
       let lastErr = "";
