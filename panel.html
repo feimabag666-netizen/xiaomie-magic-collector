@@ -627,47 +627,27 @@
       <button type="button" id="btnActivateLifetime" data-plan-select="lifetime" style="width:100%;background:#8156b2;color:#fff;border-color:#8156b2;font-weight:700;padding:7px 10px;font-size:12px;cursor:pointer">选择 SVIP 终身至尊用户（¥999 / $139）</button>
     </div>
   </div>
-  <!-- 官方双币种专属收银台（支持 微信支付 / 境内支付宝 / 全球海外支付 PayPal/国际信用卡） -->
-  <div id="paymentCheckoutPane" style="display:none;border:2px solid #86efac;border-radius:12px;padding:14px 16px;background:#f8fafc;margin-bottom:12px">
+  <!-- 官方双币种专属收银台（国内支付宝扫码 + 全球海外支付） -->
+  <div id="paymentCheckoutPane" style="display:none;border:2px solid #93c5fd;border-radius:12px;padding:14px 16px;background:#f8fafc;margin-bottom:12px">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-      <strong id="checkoutPlanTitle" style="font-size:14px;color:#15803d;cursor:pointer" title="防伪加密收银台">💳 收银台：⭐ VIP 用户（100个产品） — 应付 ¥500.00 / $69.00 USD</strong>
+      <strong id="checkoutPlanTitle" style="font-size:14px;color:#1d4ed8;cursor:pointer" title="防伪加密收银台">💳 收银台：⭐ VIP 用户（100个产品） — 应付 ¥500.00 / $69.00 USD</strong>
       <div style="display:inline-flex;border:1px solid #cbd5e1;border-radius:8px;overflow:hidden;background:#fff">
-        <button type="button" id="payTabWechat" style="border:0;padding:5px 12px;font-size:12px;font-weight:700;background:#07c160;color:#fff;cursor:pointer">💚 微信支付 (CNY)</button>
-        <button type="button" id="payTabAlipay" style="border:0;padding:5px 12px;font-size:12px;font-weight:700;background:#fff;color:#334155;cursor:pointer">💙 境内支付宝 (CNY)</button>
+        <button type="button" id="payTabAlipay" style="border:0;padding:5px 12px;font-size:12px;font-weight:700;background:#1677ff;color:#fff;cursor:pointer">💙 国内支付宝扫码 (CNY)</button>
         <button type="button" id="payTabGlobal" style="border:0;padding:5px 12px;font-size:12px;font-weight:700;background:#fff;color:#334155;cursor:pointer">🌐 全球海外支付 (USD)</button>
       </div>
     </div>
 
-    <!-- 真实微信支付收款人与扫码卡片（微信支付通道） -->
-    <div id="wechatPayeeCard" style="padding:12px 14px;margin-bottom:12px;border-radius:10px;background:#f0fdf4;border:1px solid #86efac;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-      <div style="font-size:12.5px;color:#166534;line-height:1.6">
-        <div>💚 官方微信收款账号：<strong id="wechatAccountText" style="font-size:14px;color:#15803d;letter-spacing:0.5px">建建 (*建)</strong></div>
-        <div>👤 收款人实名核验：<strong style="color:#0f172a">建建（*建）</strong>（手机微信扫码转账时请核对实名为 <strong>*建</strong>）</div>
-      </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <span style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;font-size:12px;font-weight:800;background:#dcfce7;color:#15803d;border:1px solid #86efac;border-radius:8px">🟢 微信官方实名认证 · 安全秒到账</span>
-      </div>
-    </div>
-
-    <!-- 真实支付宝收款人与账号卡片（境内支付宝通道 · 支持全自动发卡平台 + 手机直接转账） -->
-    <div id="alipayPayeeCard" style="display:none;padding:12px 14px;margin-bottom:12px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-        <div style="font-size:12.5px;color:#1e3a8a;line-height:1.6">
-          <div>💳 收款支付宝账号：<strong id="alipayAccountText" style="font-size:14px;color:#1d4ed8;user-select:all;letter-spacing:0.5px">2315748@qq.com</strong></div>
-          <div>👤 收款人真实姓名：<strong style="color:#0f172a">李建</strong>（转账时核对姓名为 <strong>*建</strong>）</div>
+    <!-- 国内支付宝扫码付款卡片 -->
+    <div id="alipayPayeeCard" style="display:block;padding:12px 14px;margin-bottom:12px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="font-size:12.5px;color:#1e3a8a;line-height:1.65">
+          <div>💙 <strong>国内支付宝扫码付款</strong>（手机支付宝扫一扫下方二维码，核对收款人实名：<strong>*建</strong>）</div>
+          <div>📧 付款完成后，请将<strong>付款截图 + 您的登录邮箱/购买套餐</strong>发邮件给客服：<strong style="color:#1d4ed8;user-select:all">info@xiaomie.tools</strong></div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <a id="btnOpenAlipayAutoPay" href="https://afdian.com" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;font-size:12px;font-weight:800;background:#1677ff;color:#fff;border-radius:8px;text-decoration:none;cursor:pointer">🚀 前往支付宝全自动发卡收银台（付完屏幕秒出卡密） ↗</a>
-          <button type="button" id="btnCopyAlipayAccount" style="padding:7px 12px;font-size:12px;font-weight:700;background:#fff;color:#1677ff;border:1px solid #93c5fd;white-space:nowrap;border-radius:8px;cursor:pointer">📋 复制支付宝账号</button>
+          <a id="btnEmailSupportAfterPay" href="mailto:info@xiaomie.tools?subject=%E5%B0%8F%E5%92%A9%E9%AD%94%E6%B3%95%E9%87%87%E9%9B%86%E4%BB%98%E6%AC%BE%E5%BC%80%E9%80%9A%E7%94%B3%E8%AF%B7&body=%E6%82%A8%E5%A5%BD%EF%BC%8C%E6%88%91%E5%B7%B2%E9%80%9A%E8%BF%87%E6%94%AF%E4%BB%98%E5%AE%9D%E6%89%AB%E7%A0%81%E4%BB%98%E6%AC%BE%EF%BC%8C%E8%AF%B7%E4%B8%BA%E6%88%91%E5%BC%80%E9%80%9A%E6%8E%88%E6%9D%83%EF%BC%9A%0A1.%20%E6%88%91%E7%9A%84%E7%99%BB%E5%BD%95%E9%82%AE%E7%AE%B1%EF%BC%9A%0A2.%20%E8%B4%AD%E4%B9%B0%E5%A5%97%E9%A4%90%EF%BC%9A%0A3.%20%E4%BB%98%E6%AC%BE%E6%88%AA%E5%9B%BE%E5%B7%B2%E9%99%84%E5%9C%A8%E9%99%84%E4%BB%B6%E4%B8%AD%E3%80%82" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;font-size:12px;font-weight:800;background:#1677ff;color:#fff;border-radius:8px;text-decoration:none;cursor:pointer">📧 付款后发邮件给客服 ↗</a>
         </div>
       </div>
-      <details id="alipayAutoLinkSettings" style="margin-top:6px;font-size:11.5px;color:#475569">
-        <summary style="cursor:pointer;font-weight:700">⚙️ 商家设置：自定义境内全自动发卡链接（如爱发电 / 面包多 / 发卡平台商品页）</summary>
-        <div style="display:flex;gap:6px;margin-top:6px">
-          <input type="url" id="customAlipayAutoUrlInput" placeholder="填入您的自动发卡链接（如 https://afdian.com/a/yourname）" style="flex:1;padding:5px 8px;font-size:11.5px" />
-          <button type="button" id="btnSaveAlipayAutoUrl" style="padding:5px 12px;font-size:11.5px;font-weight:700;background:#1677ff;color:#fff;border-color:#1677ff">保存发卡链接</button>
-        </div>
-      </details>
     </div>
 
     <!-- 全球海外支付通道（PayPal / Visa / MasterCard / Apple Pay / Google Pay） -->
@@ -700,25 +680,15 @@
 
     <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
       <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0">
-        <div id="checkoutQrBox" style="width:136px;height:136px;padding:8px;border:2px solid #1677ff;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden">
-          <svg viewBox="0 0 120 120" width="114" height="114" aria-label="支付二维码">
-            <rect width="120" height="120" fill="#fff"/>
-            <rect x="8" y="8" width="32" height="32" fill="none" stroke="#1677ff" stroke-width="6" id="qrCorner1"/>
-            <rect x="18" y="18" width="12" height="12" fill="#1677ff" id="qrDot1"/>
-            <rect x="80" y="8" width="32" height="32" fill="none" stroke="#1677ff" stroke-width="6" id="qrCorner2"/>
-            <rect x="90" y="18" width="12" height="12" fill="#1677ff" id="qrDot2"/>
-            <rect x="8" y="80" width="32" height="32" fill="none" stroke="#1677ff" stroke-width="6" id="qrCorner3"/>
-            <rect x="18" y="90" width="12" height="12" fill="#1677ff" id="qrDot3"/>
-            <rect x="44" y="44" width="32" height="32" rx="6" fill="#1677ff" id="qrCenterBg"/>
-            <text x="60" y="65" text-anchor="middle" fill="#fff" font-size="11" font-weight="bold" id="qrCenterText">支付宝</text>
-          </svg>
+        <div id="checkoutQrBox" style="width:176px;height:230px;padding:6px;border:2px solid #1677ff;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden">
+          <img id="checkoutAlipayQrImg" src="alipay-pay-qr.jpg" alt="支付宝收款码" style="width:100%;height:100%;object-fit:contain;border-radius:6px;display:block" title="打开支付宝扫一扫付款（*建）" />
         </div>
         <span id="checkoutAmountBadge" style="font-size:11.5px;font-weight:800;color:#1e3a8a;background:#dbeafe;padding:2px 8px;border-radius:99px">应付：¥500.00</span>
       </div>
       <div style="flex:1;min-width:220px">
-        <div id="checkoutMethodHint" style="font-size:12.5px;font-weight:700;color:#1677ff;margin-bottom:5px">请使用手机【支付宝】扫码转账，或点击上方全自动发卡收银台付款</div>
+        <div id="checkoutMethodHint" style="font-size:12.5px;font-weight:700;color:#1677ff;margin-bottom:5px">请使用手机【支付宝】扫一扫左侧二维码付款（收款人实名：*建）</div>
         <div id="checkoutMethodSubHint" style="font-size:11.5px;color:var(--ink-soft);line-height:1.55;margin-bottom:8px">
-          🚀 <strong>24小时无人值守全自动秒开通</strong>：在收银台付款完成后，屏幕上会立即自动显示您的专属激活卡密（同时自动发送至您的邮箱）。直接将收到的激活卡密填入下方，点击「立即自动核验激活」即可秒速开通，全程 100% 自动化，无需联系人工客服！
+          📧 <strong>付款后发邮件给客服即可开通</strong>：使用支付宝扫码支付对应套餐金额后，将「付款截图 + 您的登录邮箱 + 购买套餐」发送邮件至客服邮箱 <strong>info@xiaomie.tools</strong>。客服核实后会回复专属激活码，填入下方点击激活即可生效。
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-bottom:8px">
           <div>

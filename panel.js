@@ -8166,25 +8166,18 @@ function showCheckoutVerifyMsg(text, isError = true) {
   box.textContent = text;
 }
 
-async function switchCheckoutPayMethod(method = "wechat") {
-  _pendingPayMethod = method;
-  const isWechat = method === "wechat";
+async function switchCheckoutPayMethod(method = "alipay") {
   const isGlobal = method === "global";
-  const isAlipay = method === "alipay";
+  const isAlipay = !isGlobal;
+  _pendingPayMethod = isGlobal ? "global" : "alipay";
   const isLife = _pendingCheckoutPlan === "lifetime";
   const mCfg = MERCHANT_PAY_LINKS.alipay || {};
 
-  if ($("wechatPayeeCard")) $("wechatPayeeCard").style.display = isWechat ? "flex" : "none";
-  if ($("alipayPayeeCard")) $("alipayPayeeCard").style.display = isAlipay ? "flex" : "none";
+  if ($("alipayPayeeCard")) $("alipayPayeeCard").style.display = isAlipay ? "block" : "none";
   if ($("globalPayeeCard")) $("globalPayeeCard").style.display = isGlobal ? "block" : "none";
 
-  const btnWechat = $("payTabWechat");
   const btnAlipay = $("payTabAlipay");
   const btnGlobal = $("payTabGlobal");
-  if (btnWechat) {
-    btnWechat.style.background = isWechat ? "#07c160" : "#fff";
-    btnWechat.style.color = isWechat ? "#fff" : "#334155";
-  }
   if (btnAlipay) {
     btnAlipay.style.background = isAlipay ? "#1677ff" : "#fff";
     btnAlipay.style.color = isAlipay ? "#fff" : "#334155";
@@ -8194,7 +8187,7 @@ async function switchCheckoutPayMethod(method = "wechat") {
     btnGlobal.style.color = isGlobal ? "#fff" : "#334155";
   }
 
-  const qrColor = isWechat ? "#07c160" : (isGlobal ? "#0070ba" : "#1677ff");
+  const qrColor = isGlobal ? "#0070ba" : "#1677ff";
   let payUrl = isLife ? (mCfg.lifetimeUrl || mCfg.account) : (mCfg.pack100Url || mCfg.account);
 
   if (isGlobal) {
@@ -8206,45 +8199,39 @@ async function switchCheckoutPayMethod(method = "wechat") {
 
   if ($("checkoutQrBox")) {
     $("checkoutQrBox").style.borderColor = qrColor;
-    if (isWechat) {
-      $("checkoutQrBox").innerHTML = `<img id="checkoutWechatQrImg" src="wechat-pay-qr.png" alt="微信支付收款码" style="width:120px;height:120px;object-fit:contain;border-radius:6px;display:block;cursor:pointer" title="微信扫一扫付款（建建 *建）" />`;
+    if (isAlipay) {
+      $("checkoutQrBox").innerHTML = `<img id="checkoutAlipayQrImg" src="alipay-pay-qr.jpg" alt="支付宝收款码" style="width:100%;height:100%;object-fit:contain;border-radius:6px;display:block" title="打开支付宝扫一扫付款（*建）" />`;
     } else {
-      $("checkoutQrBox").innerHTML = buildRealQrSvg(payUrl, qrColor, 116);
+      $("checkoutQrBox").innerHTML = buildRealQrSvg(payUrl, qrColor, 148);
     }
   }
   if ($("checkoutAmountBadge")) {
-    $("checkoutAmountBadge").style.color = isWechat ? "#15803d" : qrColor;
-    $("checkoutAmountBadge").style.background = isWechat ? "#dcfce7" : "#dbeafe";
+    $("checkoutAmountBadge").style.color = qrColor;
+    $("checkoutAmountBadge").style.background = "#dbeafe";
     $("checkoutAmountBadge").textContent = isGlobal
       ? (isLife ? "应付：$139.00 USD" : "应付：$69.00 USD")
       : (isLife ? "应付：¥999.00" : "应付：¥500.00");
   }
   if ($("checkoutMethodHint")) {
     $("checkoutMethodHint").style.color = qrColor;
-    if (isWechat) {
-      $("checkoutMethodHint").textContent = `请使用手机【微信】扫一扫转账至：建建(*建)，转账金额：${isLife ? "¥999.00" : "¥500.00"}`;
-    } else if (isGlobal) {
+    if (isGlobal) {
       $("checkoutMethodHint").textContent = "请点击上方「前往 PayPal / 国际信用卡安全收银台」付款，或使用手机扫码付款";
     } else {
-      $("checkoutMethodHint").textContent = `请使用手机【支付宝】扫码转账，或直接转账至上方账号：${mCfg.account || "2315748@qq.com"}（${mCfg.payeeName || "李建"}）`;
+      $("checkoutMethodHint").textContent = `请使用手机【支付宝】扫一扫左侧二维码付款（收款人实名：*建，金额：${isLife ? "¥999.00" : "¥500.00"}），付款后发邮件给客服 info@xiaomie.tools`;
     }
   }
   if ($("checkoutOrderNoLabel")) {
-    if (isWechat) {
-      $("checkoutOrderNoLabel").textContent = "第 1 项：微信支付交易单号（账单凭证详情） *";
-    } else if (isGlobal) {
-      $("checkoutOrderNoLabel").textContent = "第 1 项：境外支付交易单号（PayPal Transaction ID / 信用卡收据单号） *";
+    if (isGlobal) {
+      $("checkoutOrderNoLabel").textContent = "支付交易流水号（PayPal Transaction ID / 信用卡收据单号，可选）";
     } else {
-      $("checkoutOrderNoLabel").textContent = "第 1 项：支付宝交易流水号（账单订单号） *";
+      $("checkoutOrderNoLabel").textContent = "支付宝交易流水号（可选 · 账单订单号）";
     }
   }
   if ($("checkoutOrderNoInput")) {
-    if (isWechat) {
-      $("checkoutOrderNoInput").placeholder = "填入微信支付凭证详情中的 28~32 位交易单号";
-    } else if (isGlobal) {
+    if (isGlobal) {
       $("checkoutOrderNoInput").placeholder = "填入 PayPal 账单中的 17 位 Transaction ID 或信用卡收据单号";
     } else {
-      $("checkoutOrderNoInput").placeholder = "填入支付宝账单详情中的 16~28 位订单流水号";
+      $("checkoutOrderNoInput").placeholder = "填入支付宝账单详情中的交易流水号（可选）";
     }
   }
 
@@ -8252,12 +8239,10 @@ async function switchCheckoutPayMethod(method = "wechat") {
   if (btnPay) {
     btnPay.style.background = qrColor;
     btnPay.style.borderColor = qrColor;
-    if (isWechat) {
-      btnPay.textContent = "✅ 核验微信支付单号与激活码，立即激活授权";
-    } else if (isGlobal) {
-      btnPay.textContent = "✅ 核验 PayPal / 国际支付单号与激活码，立即激活授权";
+    if (isGlobal) {
+      btnPay.textContent = "✅ 核验激活码，立即激活授权";
     } else {
-      btnPay.textContent = "✅ 核验境内支付宝单号与激活码，立即激活授权";
+      btnPay.textContent = "✅ 填入客服回复的激活码，立即开通授权";
     }
   }
   showCheckoutVerifyMsg("", false);
