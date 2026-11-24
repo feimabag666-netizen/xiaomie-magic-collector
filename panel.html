@@ -370,17 +370,45 @@
     font-size: 11.5px;
     padding: 7px 8px;
   }
-  #tbl tbody tr:hover td { background: #faf7fe; }
-  #tbl th:nth-child(1), #tbl td:nth-child(1) { width: 36px; text-align: center; white-space: nowrap; color: #7c6b96; font-weight: 700; }
-  #tbl th:nth-child(2), #tbl td:nth-child(2) { width: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #tbl td.url-cell { cursor: pointer; color: #3b2d52; }
-  #tbl td.url-cell:hover { color: var(--brand); text-decoration: underline; }
-  #tbl th:nth-child(3), #tbl td:nth-child(3) { width: 170px; white-space: nowrap; overflow: hidden; }
-  #tbl th:nth-child(4), #tbl td:nth-child(4),
-  #tbl th:nth-child(5), #tbl td:nth-child(5),
-  #tbl th:nth-child(6), #tbl td:nth-child(6),
-  #tbl th:nth-child(7), #tbl td:nth-child(7) { width: 46px; white-space: nowrap; text-align: center; padding: 6px 4px; }
-  #tbl th:nth-child(8), #tbl td:nth-child(8) { width: 118px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .task-tbl tbody tr:hover td { background: #faf7fe; }
+  .task-tbl th:nth-child(1), .task-tbl td:nth-child(1) { width: 36px; text-align: center; white-space: nowrap; color: #7c6b96; font-weight: 700; }
+  .task-tbl th:nth-child(2), .task-tbl td:nth-child(2) { width: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .task-tbl td.url-cell { cursor: pointer; color: #3b2d52; }
+  .task-tbl td.url-cell:hover { color: var(--brand); text-decoration: underline; }
+  .task-tbl th:nth-child(3), .task-tbl td:nth-child(3) { width: 170px; white-space: nowrap; overflow: hidden; }
+  .task-tbl th:nth-child(4), .task-tbl td:nth-child(4),
+  .task-tbl th:nth-child(5), .task-tbl td:nth-child(5),
+  .task-tbl th:nth-child(6), .task-tbl td:nth-child(6),
+  .task-tbl th:nth-child(7), .task-tbl td:nth-child(7) { width: 46px; white-space: nowrap; text-align: center; padding: 6px 4px; }
+  .task-tbl th:nth-child(8), .task-tbl td:nth-child(8) { width: 118px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .task-folds {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .task-fold {
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: #faf8fd;
+    overflow: hidden;
+  }
+  .task-fold > summary {
+    padding: 6px 11px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #523d68;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .task-fold > summary::-webkit-details-marker { display: none; }
+  .task-fold > summary::after { content: "▾ 展开"; font-size: 11px; color: #8c7aa6; font-weight: 500; }
+  .task-fold[open] > summary::after { content: "▴ 收起"; }
+  .task-fold > .table-wrap { border: none; border-top: 1px solid var(--line); border-radius: 0; max-height: 210px; }
   .task-seq-badge {
     display: inline-flex;
     align-items: center;
@@ -862,7 +890,7 @@
   <div class="collect-meta-bar">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <label style="font-size:12px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;color:var(--ink-soft)">
-        <input type="checkbox" id="skipDone"> 跳过已采链接
+        <input type="checkbox" id="skipDone" checked> 跳过已采链接（包括已清除的）
       </label>
       <button type="button" id="clearDone" style="padding:3px 9px;font-size:11.5px">🧹 清除记录</button>
     </div>
@@ -871,11 +899,12 @@
 
   <div id="bar"><div></div></div>
 
-  <div class="table-wrap" id="taskTableWrap">
-    <table id="tbl">
+  <!-- 仅直接显示当前正在采集的项目 -->
+  <div class="table-wrap" id="activeTasksWrap" style="display:none">
+    <table id="tblActive" class="task-tbl">
       <tr>
         <th>#</th>
-        <th>网页链接（悬停看完整链接）</th>
+        <th>正在采集（悬停看完整链接）</th>
         <th>状态 / 进度</th>
         <th>主图</th>
         <th>详情</th>
@@ -884,6 +913,44 @@
         <th>保存目录</th>
       </tr>
     </table>
+  </div>
+
+  <!-- 其余排队中 & 已完成项目收纳到折叠区 -->
+  <div class="task-folds">
+    <details id="queuedTasksDetails" class="task-fold" style="display:none">
+      <summary><span>⏳ 排队 <strong id="queuedTasksCount">0</strong> 条</span></summary>
+      <div class="table-wrap" id="queuedTasksWrap">
+        <table id="tblQueued" class="task-tbl">
+          <tr>
+            <th>#</th>
+            <th>网页链接（悬停看完整链接）</th>
+            <th>状态 / 进度</th>
+            <th>主图</th>
+            <th>详情</th>
+            <th>SKU</th>
+            <th>视频</th>
+            <th>保存目录</th>
+          </tr>
+        </table>
+      </div>
+    </details>
+    <details id="doneTasksDetails" class="task-fold" style="display:none">
+      <summary><span>✅ 完成 <strong id="doneTasksCount">0</strong> 条</span></summary>
+      <div class="table-wrap" id="doneTasksWrap">
+        <table id="tblDone" class="task-tbl">
+          <tr>
+            <th>#</th>
+            <th>网页链接（悬停看完整链接）</th>
+            <th>状态 / 进度</th>
+            <th>主图</th>
+            <th>详情</th>
+            <th>SKU</th>
+            <th>视频</th>
+            <th>保存目录</th>
+          </tr>
+        </table>
+      </div>
+    </details>
   </div>
 </fieldset>
 

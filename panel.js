@@ -741,13 +741,18 @@ function syncMediaNameModelFromTop(force = false) {
 }
 
 async function loadSettings() {
-  const s = await chrome.storage.local.get(SET_IDS.concat(["nextNo", "imgFilterMode", "userSetStartNo"]));
+  const s = await chrome.storage.local.get(SET_IDS.concat(["nextNo", "imgFilterMode", "userSetStartNo", "skipDoneDefaultV2"]));
   for (const id of SET_IDS) {
     if (id === "startNo" && !s.userSetStartNo) continue;
+    if (id === "skipDone" && !s.skipDoneDefaultV2) continue;
     if (s[id] === undefined) continue;
     const el = $(id);
     if (!el) continue;
     if (el.type === "checkbox") el.checked = !!s[id]; else el.value = s[id];
+  }
+  if (!s.skipDoneDefaultV2) {
+    if ($("skipDone")) $("skipDone").checked = true;
+    chrome.storage.local.set({ skipDone: true, skipDoneDefaultV2: true }).catch(() => {});
   }
   if (s.imgFilterMode) {
     const r = document.querySelector(`input[name="imgFilterMode"][value="${s.imgFilterMode}"]`);
@@ -897,10 +902,20 @@ $("txtFile").addEventListener("change", async e => {
 
 if ($("clearDone")) {
   $("clearDone").onclick = async () => {
+    if (isCollectQueueRunning || activeTaskWorkers > 0 || collectTaskQueue.length > 0) return;
+    ["tblActive", "tblQueued", "tblDone"].forEach(id => {
+      const t = $(id);
+      if (!t) return;
+      while (t.rows.length > 1) t.deleteRow(1);
+    });
+    taskRowSeq = 0;
+    if (typeof syncTaskBucketsUI === "function") syncTaskBucketsUI();
+    if ($("bar")?.firstElementChild) $("bar").firstElementChild.style.width = "0%";
     sessionUsedCodes.clear();
     sessionUsedFolders.clear();
-    await chrome.storage.local.remove(["doneUrls", "collectTimes", "usedFolderCodes", "usedFolderNames"]).catch(() => {});
-    $("status").innerText = "已清除历史采集查重、文件夹占用与频率记录，可重新采集任意商品。";
+    // 保留 doneUrls，确保「跳过已采链接（包括已清除的）」对已清除记录依然生效
+    await chrome.storage.local.remove(["collectTimes", "usedFolderCodes", "usedFolderNames"]).catch(() => {});
+    $("status").innerText = "准备就绪";
   };
 }
 if ($("stop")) {
@@ -2403,9 +2418,30 @@ function waitTabLoaded(tabId) {
   });
 }
 
+let taskRowSeq = 0;
+
+function getTaskTableBody(tblId) {
+  const t = $(tblId);
+  if (!t) return null;
+  return t.tBodies[0] || t;
+}
+
+function syncTaskBucketsUI() {
+  const activeCount = Math.max(0, ($("tblActive")?.rows.length || 1) - 1);
+  const queuedCount = Math.max(0, ($("tblQueued")?.rows.length || 1) - 1);
+  const doneCount = Math.max(0, ($("tblDone")?.rows.length || 1) - 1);
+
+  if ($("activeTasksWrap")) $("activeTasksWrap").style.display = activeCount > 0 ? "" : "none";
+  if ($("queuedTasksDetails")) $("queuedTasksDetails").style.display = queuedCount > 0 ? "" : "none";
+  if ($("queuedTasksCount")) $("queuedTasksCount").textContent = String(queuedCount);
+  if ($("doneTasksDetails")) $("doneTasksDetails").style.display = doneCount > 0 ? "" : "none";
+  if ($("doneTasksCount")) $("doneTasksCount").textContent = String(doneCount);
+}
+
 function addRow(url, status, cls, m, d, s, v, dir) {
-  const tbl = $("tbl");
-  const seq = tbl.rows.length;
+  const tbl = $("tblDone") || $("tblActive");
+  if (!tbl) return;
+  const seq = ++taskRowSeq;
   const tr = tbl.insertRow(-1);
   const cSeq = tr.insertCell();
   cSeq.innerHTML = `<span class="task-seq-badge">${seq}</span>`;
@@ -2417,14 +2453,15 @@ function addRow(url, status, cls, m, d, s, v, dir) {
   tr.insertCell().innerText = m; tr.insertCell().innerText = d;
   tr.insertCell().innerText = s; tr.insertCell().innerText = v;
   const cDir = tr.insertCell(); cDir.innerText = dir; cDir.title = dir || "";
-  const wrap = $("taskTableWrap");
+  syncTaskBucketsUI();
+  const wrap = $("doneTasksWrap");
   if (wrap) wrap.scrollTop = wrap.scrollHeight;
 }
 
 function createTaskRow(url, status = "⏳ 等待队列中") {
-  const tbl = $("tbl");
-  const seq = tbl.rows.length;
-  // 最新添加的商品永远追加在最后一行
+  const tbl = $("tblQueued") || $("tblActive");
+  const seq = ++taskRowSeq;
+  // 最新添加的商品永远追加在最后一行（先放入排队折叠区，开始采时自动移入「正在采集」区）
   const tr = tbl.insertRow(-1);
   const cSeq = tr.insertCell();
   cSeq.innerHTML = `<span class="task-seq-badge">${seq}</span>`;
@@ -2468,9 +2505,10 @@ function createTaskRow(url, status = "⏳ 等待队列中") {
   const cV = tr.insertCell(); cV.textContent = "-";
   const cDir = tr.insertCell(); cDir.textContent = ""; cDir.title = "";
 
-  const wrap = $("taskTableWrap");
+  syncTaskBucketsUI();
+  const wrap = $("queuedTasksWrap");
   if (wrap) wrap.scrollTop = wrap.scrollHeight;
-  return { tr, cSeq, cUrl, cStatus, lbl, fill, pctEl, cM, cD, cS, cV, cDir };
+  return { tr, bucket: "queued", cSeq, cUrl, cStatus, lbl, fill, pctEl, cM, cD, cS, cV, cDir };
 }
 
 function updateTaskRow(ref, { status, cls, pct, m, d, s, v, dir } = {}) {
@@ -2479,7 +2517,22 @@ function updateTaskRow(ref, { status, cls, pct, m, d, s, v, dir } = {}) {
     ref.lbl.textContent = status;
     ref.lbl.title = status;
   }
-  if (cls !== undefined) ref.cStatus.className = cls;
+  if (cls !== undefined) {
+    ref.cStatus.className = cls;
+    const targetBucket = cls === "run" ? "active" : ((cls === "ok" || cls === "fail" || cls === "skip") ? "done" : "queued");
+    if (ref.bucket !== targetBucket) {
+      const targetTblId = targetBucket === "active" ? "tblActive" : (targetBucket === "done" ? "tblDone" : "tblQueued");
+      const tbody = getTaskTableBody(targetTblId);
+      if (tbody && ref.tr) {
+        tbody.appendChild(ref.tr);
+        ref.bucket = targetBucket;
+        syncTaskBucketsUI();
+        const wrapId = targetBucket === "active" ? "activeTasksWrap" : (targetBucket === "done" ? "doneTasksWrap" : "queuedTasksWrap");
+        const w = $(wrapId);
+        if (w) w.scrollTop = w.scrollHeight;
+      }
+    }
+  }
   if (pct !== undefined) {
     const p = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
     ref.fill.style.width = `${p}%`;
@@ -7369,6 +7422,12 @@ let goBtnOriginalLabel = "";
 
 function updateQueueBtnState() {
   const btn = $("go");
+  const clearBtn = $("clearDone");
+  const busy = isCollectQueueRunning || activeTaskWorkers > 0 || collectTaskQueue.length > 0;
+  if (clearBtn) {
+    clearBtn.disabled = busy;
+    clearBtn.title = busy ? "正在采集中，暂不可清除记录" : "清除当前列表记录（已采查重历史仍会保留）";
+  }
   if (!btn) return;
   if (!goBtnOriginalLabel) goBtnOriginalLabel = btn.innerText || "开始采集";
   if (isCollectQueueRunning || activeTaskWorkers > 0) {
