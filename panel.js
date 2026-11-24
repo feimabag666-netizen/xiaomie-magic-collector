@@ -5380,24 +5380,41 @@ function formatPriceTiersForOutput(tiers, rawPriceStr, { minQty = 0, priceMode =
 // 识别并提取多规格商品（按 规格1 / 规格2 / 规格3 分别整理 型号、规格、箱规、价格 等差异参数）
 const SPEC_VARYING_FIELDS = new Set(["型号", "详细规格", "容量", "产品尺寸", "单件重量", "每箱多少个", "箱子毛净重", "箱子尺寸", "箱子立方数", "价格"]);
 
+// 提取纯物理规格名（剥离颜色词，颜色绝不能单独成为规格；仅容量/尺寸/单件重量/功率/电压/大小号等物理规格可独立成规格）
+const _PHYSICAL_SPEC_RE = /(?:\d+(?:\.\d+)?\s*(?:ml|l|oz|cm|mm|m|g|kg|w|kw|v|mah|ah|寸|英寸|号|升|毫升|克|千克|公斤|瓦|伏|件套|支装|个装|层|格)|大号|中号|小号|特大号|加大号|迷你|mini|\b(?:xs|s|m|l|xl|xxl|2xl|3xl)\b)/i;
+const _COLOR_WORD_RE = /(?:^|[\s\-—_\/／|,+]+)(?:(?:浅|深|亮|暗|哑光|磨砂|香槟|玫瑰|樱花|雾霾|克莱因|天|藏|宝|军|草|橄榄|墨|酒|枣|蜜桃|奶油|象牙|珍珠|星耀|曜石|炫酷|经典|纯)?(?:黑|白|红|粉|蓝|绿|灰|黄|橙|橘|紫|棕|咖|咖啡|金|银|青|茶|米|卡其|杏|驼|透明)色?|(?:black|white|red|pink|blue|green|gray|grey|yellow|orange|purple|brown|gold|silver|beige|khaki|navy|cyan|ivory|transparent|clear))(?=$|[\s\-—_\/／|,+]+)/gi;
+
+function normalizePhysicalSpecName(rawSpec) {
+  const s = stripBracketsAndBoxes(String(rawSpec || "").trim());
+  if (!s) return "";
+  const parts = s.split(/\s*(?:[/／|>]|--+|—+)\s*/).map(p => p.trim()).filter(Boolean);
+  const cleanedParts = [];
+  for (const part of parts) {
+    const noColor = part.replace(_COLOR_WORD_RE, " ").replace(/^[\s\-—_\/／|,+]+|[\s\-—_\/／|,+]+$/g, "").trim();
+    if (noColor && _PHYSICAL_SPEC_RE.test(noColor)) {
+      cleanedParts.push(noColor);
+    }
+  }
+  const merged = cleanedParts.join(" ").replace(/\s{2,}/g, " ").trim();
+  return (merged && _PHYSICAL_SPEC_RE.test(merged)) ? merged : "";
+}
+
 function detectDistinctMultiSpecs(data, attrs = {}) {
   const rawVariants = Array.isArray(data?.variantsData) ? data.variantsData : [];
-  // 过滤纯颜色 SKU，仅保留含容量/尺寸/型号/款型差异的规格
-  const specMetricRe = /(?:\d+(?:\.\d+)?\s*(?:ml|l|oz|cm|mm|m|g|kg|w|v|寸|英寸|号|升|毫升|件套|支装|个装|层|格|款)|大号|中号|小号|特大号|加厚|标准款|升级款|迷你|mini|pro|max)/i;
   const specMap = new Map();
   for (const v of rawVariants) {
-    const parts = String(v.spec || "").split(/\s*[/／|>]\s*/).map(s => s.trim()).filter(Boolean);
-    const metricPart = parts.find(p => specMetricRe.test(p)) || (parts.length > 1 ? parts[parts.length - 1] : "");
-    if (!metricPart || !specMetricRe.test(metricPart)) continue;
-    if (!specMap.has(metricPart)) {
-      specMap.set(metricPart, {
-        spec: metricPart,
+    const normSpec = normalizePhysicalSpecName(v.spec);
+    if (!normSpec) continue;
+    const key = normSpec.toLowerCase();
+    if (!specMap.has(key)) {
+      specMap.set(key, {
+        spec: normSpec,
         model: v.model || "",
         prices: v.price > 0 ? [v.price] : [],
         currency: v.currency || "¥",
       });
     } else if (v.price > 0) {
-      specMap.get(metricPart).prices.push(v.price);
+      specMap.get(key).prices.push(v.price);
     }
   }
   if (specMap.size >= 2) {
@@ -5414,7 +5431,7 @@ function detectDistinctMultiSpecs(data, attrs = {}) {
 async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMode, markupPct, baseCode, useSubModel = false, outLang }, cache = {}) {
   const detected = detectDistinctMultiSpecs(data, data?.attrs || {});
   const capVal = String(data?.attrs?.["容量"] || data?.attrs?.["详细规格"] || "");
-  const hasMultiCapHint = /\d+\s*(?:ml|l|cm|寸|号)\s*[-~—/／、,，]\s*\d+\s*(?:ml|l|cm|寸|号)/i.test(capVal) || detected.length >= 2;
+  const hasMultiCapHint = /\d+\s*(?:ml|l|cm|寸|号|g|kg|w|v)\s*[-~—/／、,，]\s*\d+\s*(?:ml|l|cm|寸|号|g|kg|w|v)/i.test(capVal) || detected.length >= 2;
   if (!hasMultiCapHint) return [];
 
   if (!cache.aiMultiSpecs) {
@@ -5434,15 +5451,15 @@ async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMod
           {
             role: "system",
             content: [
-              "你是电商多规格参数结构化整理助手。该商品存在多个不同规格（如不同容量/尺寸/款型），请严格依据提供的网页文本、SKU列表和OCR文字，按每个独立规格分别整理其对应的差异参数。",
+              "你是电商多规格参数结构化整理助手。该商品存在多个不同物理规格（如容量、尺寸、单件重量、功率、电压、大小号），请严格依据提供的网页文本、SKU列表和OCR文字，按每个独立物理规格分别整理其对应的差异参数。",
               "严格输出纯 JSON 数组，每个元素格式：",
-              `{"spec":"规格名称如350ml","model":"该规格型号(无则留空)","size":"产品尺寸","weight":"单件重量(带单位)","cartonQty":"每箱多少个","cartonWeight":"箱子毛净重","cartonSize":"箱子尺寸","cartonCbm":"箱子立方数","price":"该规格价格(如有阶梯写清XXX件多少钱，过滤低于${minQty}件的价格)"}`,
-              "铁律：只列真正存在参数/价格/箱规差异的规格（纯颜色不要拆成多个规格）；找不到某个子项留空字符串，绝不编造；若实际只有 1 个规格返回空数组 []。",
+              `{"spec":"纯物理规格名如350ml或500ml或迷你(严禁带颜色词)","model":"该规格型号(无则留空)","size":"产品尺寸","weight":"单件重量(带单位)","cartonQty":"每箱多少个","cartonWeight":"箱子毛净重","cartonSize":"箱子尺寸","cartonCbm":"箱子立方数","price":"该规格价格(如有阶梯写清XXX件多少钱，过滤低于${minQty}件的价格)"}`,
+              "铁律：颜色绝对不能单独成为规格！同一规格的不同颜色（如“迷你--黑色”“迷你--红色”）必须合并为同一个规格“迷你”，只有容量、尺寸、单件重量、功率、电压、大小号等物理规格才能独立成规格；若实际只有 1 个物理规格返回空数组 []。",
             ].join("\n"),
           },
           {
             role: "user",
-            content: `商品标题：${String(data?.title || "").slice(0, 120)}\n识别到的规格列表：\n${variantsHint || capVal}\n网页阶梯价：${tiersHint || "无"}\n详情与OCR文本：\n${ctxText}\n请输出纯JSON数组：`,
+            content: `商品标题：${String(data?.title || "").slice(0, 120)}\n识别到的物理规格列表：\n${variantsHint || capVal}\n网页阶梯价：${tiersHint || "无"}\n详情与OCR文本：\n${ctxText}\n请输出纯JSON数组：`,
           },
         ];
         for (const p of providers) {
@@ -5453,14 +5470,17 @@ async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMod
             if (!m) continue;
             const arr = JSON.parse(m[0]);
             if (Array.isArray(arr) && arr.length >= 2) {
-              return arr.slice(0, 8).map((it, idx) => {
+              const dedup = new Map();
+              for (const it of arr) {
+                const normSp = normalizePhysicalSpecName(it.spec);
+                if (!normSp) continue;
+                const k = normSp.toLowerCase();
+                if (dedup.has(k)) continue;
                 let pr = normalizeRawPriceText(it.price || "");
                 if (pr && priceMode === "markup_pct") pr = applyPriceMarkupPct(pr, markupPct);
-                return {
-                  spec: stripBracketsAndBoxes(String(it.spec || "").trim()),
-                  model: useSubModel
-                    ? (baseCode ? `${baseCode}-${idx + 1}` : stripBracketsAndBoxes(String(it.model || "").trim()))
-                    : stripBracketsAndBoxes(String(it.model || "").trim()),
+                dedup.set(k, {
+                  spec: normSp,
+                  rawModel: stripBracketsAndBoxes(String(it.model || "").trim()),
                   size: stripBracketsAndBoxes(String(it.size || "").trim()),
                   weight: it.weight ? normalizeUnitWeight(it.weight, data?.attrs || {}) : "",
                   cartonQty: stripBracketsAndBoxes(String(it.cartonQty || "").trim()),
@@ -5468,8 +5488,14 @@ async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMod
                   cartonSize: stripBracketsAndBoxes(String(it.cartonSize || "").trim()),
                   cartonCbm: stripBracketsAndBoxes(String(it.cartonCbm || "").trim()),
                   price: pr,
-                };
-              }).filter(x => x.spec);
+                });
+                if (dedup.size >= 8) break;
+              }
+              const list = [...dedup.values()].map((item, idx) => ({
+                ...item,
+                model: useSubModel ? (baseCode ? `${baseCode}-${idx + 1}` : item.rawModel) : item.rawModel,
+              }));
+              if (list.length >= 2) return list;
             }
           } catch {}
         }
