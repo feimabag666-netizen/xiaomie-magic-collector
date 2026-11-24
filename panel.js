@@ -8426,21 +8426,21 @@ async function switchCheckoutPayMethod(method = "alipay") {
   if ($("checkoutMethodHint")) {
     $("checkoutMethodHint").style.color = qrColor;
     if (isGlobal) {
-      $("checkoutMethodHint").textContent = "请点击上方「前往 PayPal / 国际信用卡安全收银台」付款，或使用手机扫码付款";
+      $("checkoutMethodHint").textContent = "请点击上方「前往空中云汇 (Airwallex) 安全收银台付款」，支付成功后自动发送邮件并自动开通权益";
     } else {
       $("checkoutMethodHint").textContent = `请使用手机【支付宝】扫一扫左侧二维码付款（收款人实名：*建，金额：${isLife ? "¥999.00" : "¥500.00"}），付款后发邮件给客服 info@xiaomie.tools`;
     }
   }
   if ($("checkoutOrderNoLabel")) {
     if (isGlobal) {
-      $("checkoutOrderNoLabel").textContent = "支付交易流水号（PayPal Transaction ID / 信用卡收据单号，可选）";
+      $("checkoutOrderNoLabel").textContent = "空中云汇 (Airwallex) 订单号（自动开通无需填写，仅作备用）";
     } else {
       $("checkoutOrderNoLabel").textContent = "支付宝交易流水号（可选 · 账单订单号）";
     }
   }
   if ($("checkoutOrderNoInput")) {
     if (isGlobal) {
-      $("checkoutOrderNoInput").placeholder = "填入 PayPal 账单中的 17 位 Transaction ID 或信用卡收据单号";
+      $("checkoutOrderNoInput").placeholder = "空中云汇付款后会自动开通，无需手动填写";
     } else {
       $("checkoutOrderNoInput").placeholder = "填入支付宝账单详情中的交易流水号（可选）";
     }
@@ -8755,6 +8755,65 @@ window.addEventListener("load", async () => {
         }, 2200);
       } catch {
         prompt("请复制支付宝收款账号：", acct);
+      }
+    };
+  }
+  if ($("btnOpenAirwallexCheckout")) {
+    $("btnOpenAirwallexCheckout").onclick = async () => {
+      const btn = $("btnOpenAirwallexCheckout");
+      const msgEl = $("airwallexCheckoutStatus");
+      const st = await getAuthState();
+      if (!st.loggedIn || !st.accountName || !/@/.test(st.accountName)) {
+        if (msgEl) { msgEl.style.color = "#b91c1c"; msgEl.textContent = "请先登录您的 Google 账号或电子邮箱，以便付款后自动开通权益！"; }
+        if (typeof openAuthModal === "function") openAuthModal("google", false);
+        return;
+      }
+      const planId = _pendingCheckoutPlan === "lifetime" ? "lifetime" : "pack100";
+      btn.disabled = true;
+      if (msgEl) { msgEl.style.color = "#0f766e"; msgEl.textContent = "正在创建空中云汇 (Airwallex) 安全收银台订单…"; }
+      const endpoints = [
+        "https://api.xiaomie.tools/api/airwallex-checkout",
+        "https://xiaomie-magic-collector-cvz.pages.dev/api/airwallex-checkout",
+      ];
+      let checkoutUrl = "";
+      let lastErr = "";
+      for (const ep of endpoints) {
+        try {
+          const resp = await fetch(ep, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ planId, email: st.accountName }),
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (resp.ok && data.ok && data.checkoutUrl) {
+            checkoutUrl = data.checkoutUrl;
+            break;
+          }
+          lastErr = data.error || `HTTP ${resp.status}`;
+        } catch (e) {
+          lastErr = e?.message || "网络请求失败";
+        }
+      }
+      btn.disabled = false;
+      if (checkoutUrl) {
+        if (msgEl) { msgEl.style.color = "#059669"; msgEl.textContent = "✅ 已打开空中云汇安全收银台！付款完成后系统将自动发邮件并开通权益，也可点击右侧「立即刷新权益」。"; }
+        try { chrome.tabs.create({ url: checkoutUrl }); } catch { window.open(checkoutUrl, "_blank", "noopener"); }
+      } else {
+        if (msgEl) { msgEl.style.color = "#b91c1c"; msgEl.textContent = `暂未获取到空中云汇收银台链接（${lastErr || "请确认 Cloudflare 已配置 AIRWALLEX_CLIENT_ID / AIRWALLEX_API_KEY"}），请联系客服 info@xiaomie.tools。`; }
+      }
+    };
+  }
+  if ($("btnRefreshCloudEntitlement")) {
+    $("btnRefreshCloudEntitlement").onclick = async () => {
+      const msgEl = $("airwallexCheckoutStatus");
+      if (msgEl) { msgEl.style.color = "#0f766e"; msgEl.textContent = "正在从云端同步最新权益…"; }
+      const cur = await getAuthState();
+      const synced = await syncCloudAccountEntitlement(cur, true);
+      await syncAuthAndApiUI();
+      if (msgEl) {
+        const planText = synced.plan === "free_vip" ? "🎁 终身免费特权" : synced.plan === "lifetime" ? "👑 SVIP 终身至尊版" : synced.plan === "pack100" ? `⭐ VIP 百品包（额度 ${synced.quotaLimit}）` : "🆓 试用版（若刚付款请稍等 10 秒再点一次）";
+        msgEl.style.color = (synced.plan !== "trial") ? "#059669" : "#b45309";
+        msgEl.textContent = `当前云端同步状态：${planText}`;
       }
     };
   }

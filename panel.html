@@ -650,32 +650,26 @@
       </div>
     </div>
 
-    <!-- 全球海外支付通道（PayPal / Visa / MasterCard / Apple Pay / Google Pay） -->
+    <!-- 全球海外支付通道（空中云汇 Airwallex · Visa / MasterCard / Apple Pay / Google Pay） -->
     <div id="globalPayeeCard" style="display:none;padding:12px 14px;margin-bottom:12px;border-radius:10px;background:#f0fdf4;border:1px solid #bbf7d0">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
         <div style="font-size:12.5px;color:#166534;font-weight:800">
-          🌍 全球海外支付通道（Global Checkout · International Payments）
+          🌍 全球海外全自动收银台（Airwallex 空中云汇 · 付款后自动开通并发送确认邮件）
         </div>
         <div style="font-size:11.5px;color:#15803d;background:#dcfce7;padding:3px 8px;border-radius:6px;font-weight:700">
-          支持 PayPal · Visa · MasterCard · Amex · Apple Pay · Google Pay
+          支持 Visa · MasterCard · Amex · Apple Pay · Google Pay · 国际卡
         </div>
       </div>
       <div style="font-size:12px;color:#334155;line-height:1.55;margin-bottom:8px">
-        海外买家可通过 PayPal 余额或在安全收银台直接刷 <strong>Visa / MasterCard 国际信用卡</strong>（百品包 <strong>$69.00 USD</strong> / 终身版 <strong>$139.00 USD</strong>）。支付成功后屏幕立即显示专属 License Key 并发至邮箱。
+        海外买家请点击下方按钮进入 <strong>空中云汇 (Airwallex)</strong> 官方安全收银台付款（百品包 <strong>$69.00 USD</strong> / 终身版 <strong>$139.00 USD</strong>）。支付成功后系统将<strong>自动为您开通对应权益</strong>并自动发送确认邮件至您的登录邮箱，无需人工等待。
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <a id="btnOpenGlobalPayLink" href="https://www.paypal.me/xiaomietools" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;font-size:12.5px;font-weight:800;background:#0070ba;color:#fff;border-radius:8px;text-decoration:none;cursor:pointer">
-          <span>💳 前往海外全自动收银台付款（付完屏幕秒出 License Key） ↗</span>
-        </a>
-        <button type="button" id="btnCopyGlobalPayLink" style="padding:7px 12px;font-size:12px;font-weight:700;background:#fff;color:#0070ba;border:1px solid #93c5fd;border-radius:8px;cursor:pointer">📋 复制海外收款链接</button>
+        <button type="button" id="btnOpenAirwallexCheckout" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;font-size:12.5px;font-weight:800;background:#059669;color:#fff;border:none;border-radius:8px;cursor:pointer">
+          <span>💳 前往空中云汇 (Airwallex) 安全收银台付款 ↗</span>
+        </button>
+        <button type="button" id="btnRefreshCloudEntitlement" style="padding:7px 12px;font-size:12px;font-weight:700;background:#fff;color:#059669;border:1px solid #86efac;border-radius:8px;cursor:pointer">🔄 已完成付款，立即刷新权益</button>
       </div>
-      <details id="globalPayLinkSettings" style="margin-top:8px;font-size:11.5px;color:#475569">
-        <summary style="cursor:pointer;font-weight:700">⚙️ 商家设置：自定义境外收款链接（如 Lemon Squeezy / Gumroad / PayPal.me）</summary>
-        <div style="display:flex;gap:6px;margin-top:6px">
-          <input type="url" id="customGlobalPayUrlInput" placeholder="填入您的境外收款链接（如 https://yourname.lemonsqueezy.com/checkout/buy/...）" style="flex:1;padding:5px 8px;font-size:11.5px" />
-          <button type="button" id="btnSaveGlobalPayUrl" style="padding:5px 12px;font-size:11.5px;font-weight:700;background:#059669;color:#fff;border-color:#059669">保存链接</button>
-        </div>
-      </details>
+      <div id="airwallexCheckoutStatus" style="font-size:11.5px;color:#0f766e;margin-top:6px;font-weight:600"></div>
     </div>
 
     <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">

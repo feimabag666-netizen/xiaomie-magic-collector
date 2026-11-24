@@ -88,7 +88,11 @@
           </select>
           <input id="fPaid" type="text" placeholder="付款金额/凭证（选填如 ¥500）" style="width:155px" />
           <input id="fUsed" type="number" min="0" placeholder="已用次数(留空不变)" style="width:135px" />
-          <input id="fNote" type="text" placeholder="备注（如 内部同事 / 合伙人）" style="flex:1;min-width:150px" />
+          <input id="fNote" type="text" placeholder="备注（如 国内支付宝 / 合伙人）" style="flex:1;min-width:150px" />
+          <label style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;color:#4a3563;cursor:pointer">
+            <input id="fSendEmail" type="checkbox" checked />
+            <span>📧 开通后自动发邮件通知客户</span>
+          </label>
           <button type="button" class="green" id="btnSaveAccount">✅ 保存并立即生效</button>
         </div>
       </div>
@@ -283,14 +287,18 @@
       const paidAmount = ($("fPaid").value || "").trim();
       const usedCount = $("fUsed").value;
       const note = ($("fNote").value || "").trim();
+      const sendEmail = Boolean($("fSendEmail")?.checked);
       if (!email) return showMsg("请输入目标谷歌邮箱或电子邮箱", "err");
       try {
-        await callAdminApi({ action: "upsert", email, plan, paidAmount, usedCount, note });
+        const res = await callAdminApi({ action: "upsert", email, plan, paidAmount, usedCount, note, sendEmail });
         $("fEmail").value = "";
         $("fPaid").value = "";
         $("fUsed").value = "";
         $("fNote").value = "";
-        showMsg(`✅ 已成功为 ${email} 设置为「${PLAN_LABELS[plan]}」，该账号重新打开插件即自动生效！`, "ok");
+        const mailNote = sendEmail && plan !== "trial"
+          ? (res.emailSent ? "（✅ 已自动向客户发送开通确认邮件）" : `（⚠️ 权益已生效，但通知邮件未发出：${res.emailError || "SMTP 未配置"}）`)
+          : "";
+        showMsg(`✅ 已成功为 ${email} 设置为「${PLAN_LABELS[plan]}」，该账号刷新插件即自动生效！${mailNote}`, "ok");
         await loadDashboard();
       } catch (e) {
         showMsg(e.message, "err");

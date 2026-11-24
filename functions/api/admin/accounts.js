@@ -1,5 +1,7 @@
 // Cloudflare Pages Function: /api/admin/accounts
-// 管理员后台接口：查看所有账号试用/付款/权益情况，指定任意谷歌号或邮箱为「终身免费账号 (free_vip)」或开通套餐
+// 管理员后台接口：查看所有账号试用/付款/权益情况，指定任意谷歌号或邮箱为「终身免费账号 (free_vip)」或开通套餐（支持自动发开通确认邮件）
+
+import { sendEntitlementEmail } from "../../_lib/smtp.js";
 
 function buildCorsHeaders(request) {
   const origin = request.headers.get("Origin") || "";
@@ -145,7 +147,24 @@ export async function onRequestPost(context) {
       idxArr.push(targetEmail);
       await kv.put("acct_index", JSON.stringify(idxArr.slice(-5000)));
     }
-    return jsonResp(request, { ok: true, kvBound: true, account: rec });
+    let emailSent = false;
+    let emailError = "";
+    if (body.sendEmail && plan !== "trial") {
+      try {
+        const mr = await sendEntitlementEmail(env, {
+          to: targetEmail,
+          plan,
+          quotaLimit,
+          paidAmount: rec.paidAmount,
+          source: "manual",
+        });
+        emailSent = !!mr.sent;
+        if (!mr.sent) emailError = mr.reason || "";
+      } catch (e) {
+        emailError = e?.message || "SMTP send failed";
+      }
+    }
+    return jsonResp(request, { ok: true, kvBound: true, account: rec, emailSent, emailError });
   }
 
   if (action === "delete") {
