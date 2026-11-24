@@ -4335,37 +4335,37 @@ function buildMasterChineseStory(angle, p, req, isSeed) {
     return seedMap[angle] || `上个月在${originCity}质检台实测发往杭州客户手中的这款${p.shortName}，精选${p.material}并做出${p.coreFeatures}的独特体验，${p.variants}质感出色且拥有${p.marketProof}的好评验证。${reqNote}用过一次就能感受到跟普通款的明显差距，自用或送人都让人一眼心动。`;
   }
 
-  // B2B 24套独立外贸/批发实战故事母版（含人物、时间、地点、客户地区、实测数据、无货号型号、无括号）
+  // B2B 24套真人实战故事母版（去AI味、有画面感与现场细节、只引有说服力的经营/实测数据，严禁写箱规尺寸与装柜数）
   const b2bMap = {
-    "复购故事": `去年10月中旬，在深圳跨境选品展的洽谈室里，来自美国洛杉矶的精品站采购商大卫最初只敢按${p.moq}试采这款${p.shortName}。货到洛杉矶海外仓上架第19天，终端买家对${p.coreFeatures}和${p.material}的好评率飙到99.4%，${p.variants}直接售罄断码！${reqNote}如今大卫每月固定按${p.cartonSummary}、${p.containerEstimate}的节奏整柜锁仓，凭借${p.marketProof}的口碑让他店里毛利提高了18%。`,
-    "和客户一起策划品牌": `前年夏天，在${originCity}工厂会议室里，来自德国慕尼黑的品牌商马克带着概念图找我们开发这款${p.shortName}，既要做出${p.coreFeatures}的差异化，又担心开模成本压垮现金流。我们12年资历的结构工程师陪他连开3晚视频会，基于成熟${p.material}工艺把${p.variants}拆成引流款与礼盒款，并把外箱精准核定在${p.cartonSummary}、${p.containerEstimate}。${reqNote}半年后马克的品牌从首批${p.moq}试销冲进当地连锁商超前五名，目前全网已累计${p.marketProof}。`,
-    "此款创新故事": `去年3月在${originCity}研发车间里，面对普通公模拼低价的困局，我们团队死磕45天推翻旧设计，为来自英国伦敦的买手艾伦升级了这款${p.shortName}。团队攻克了${p.coreFeatures}的痛点并改用足标${p.material}，历经3轮上千次疲劳测试，把做工公差压到0.1毫米以内。${reqNote}寄给5位伦敦买手盲测后当场拿下一整柜订单，如今不仅创下${p.marketProof}的战绩，终端溢价25%依然供不应求。`,
-    "此款避坑故事": `今年1月在${originCity}质检仓库里，来自澳大利亚悉尼的批发商汤姆向我们诉苦，他之前贪便宜拿货结果遇到回收次料和三层软纸箱塌箱拒收的惨痛教训。为此我们为他的${p.shortName}大货从源头锁死原生${p.material}，确保${p.coreFeatures}的稳定度，外箱统一采用高强五层瓦楞纸箱，实测${p.cartonSummary}、${p.containerEstimate}并全数通过1.2米六面跌落测试。${reqNote}零破损到港加上${p.marketProof}的背书，让汤姆把全年采购单都放心交给了我们。`,
-    "某个国家此款的销量调研": `去年11月在杭州电商运营中心，为了帮来自加拿大温哥华的渠道客户杰克避开选品试错，我们团队熬了2个通宵扒透了北美平台3800多条同类差评。数据清晰显示68%的退货源于功能缺失，而${p.coreFeatures}搭配${p.variants}的转化率高出均值37%。我们据此用${p.material}打磨出${p.shortName}，将外箱精准定在${p.cartonSummary}、${p.containerEstimate}。${reqNote}杰克拿去温哥华门店铺货后首月销量就翻了2.4倍，加上${p.marketProof}的数据支撑，省下了数万元试错成本。`,
-    "定制故事": `上个月初在${originCity}打样间里，来自法国巴黎的商超买手索菲急需一批按${p.moq}起步的定制${p.shortName}，对${p.material}表面附着力和${p.variants}潘通色准要求极高。打样当天，我们调色师傅在D65标准光源箱前守了8小时连调4版配比，把${p.coreFeatures}和百格刮擦、盐雾实测数据拍成高清视频发往巴黎。${reqNote}最终我们在${p.leadTime}内按${p.cartonSummary}准时满箱交付，巴黎质检总监验收后当场签下全年框约。`,
-    "客户第一次尝试购买的沟通全过程（EXW方案）": `今年4月下午在${originCity}成品仓内，来自新加坡的首次直采买家陈先生对${p.shortName}心存戒备，因为他曾被虚报体积的贸易商坑过1.2万元海运费。我当即拎着游标卡尺和校准电子秤连线新加坡视频拆箱实测，展示${p.coreFeatures}与${p.material}细节，并按${p.cartonSummary}现场核算${p.containerEstimate}的EXW出厂价，把拼箱分摊运费精确到小数点后两位。${reqNote}看着我们连0.001立方都替他省到极致，又有${p.marketProof}做底气，陈先生当晚就付清了定金。`,
-    "服务细节故事": `今年2月在${originCity}打包流水线上，考虑到来自日本东京的采购商佐藤在海外仓每小时高达40美金的理货人工费，我们在交付他混批${p.variants}的${p.shortName}时多做了一步。我们在每只标准外箱${p.cartonSummary}、${p.containerEstimate}的四面贴上带色块标识的防水双语箱唛，并在箱顶加垫防割护板保护里面的${p.packWay}。${reqNote}货到东京仓那天，佐藤的仓库主管发来长邮件致谢，称这批货帮他们整整省下了两天半的拆箱分拣工时。`,
-    "想客户所想故事": `去年9月在${originCity}工程部办公室，来自荷兰鹿特丹的跨境卖家卢卡斯下单这款${p.shortName}时，我们复核${p.cartonSummary}发现只要把内衬排列微调1.2厘米，单箱抗压就能提升18%，整条货柜${p.containerEstimate}还能多装9%的货量，且单件恰好卡进欧洲尾程派送低一档运费区间。${reqNote}主动画图落地这一步后，光这一批货就帮卢卡斯净省下1.8万元物流费，他当即把我们列为${p.coreFeatures}和${p.material}品类的唯一核心工厂。`,
-    "守住质量底线的故事": `今年5月在${originCity}车间尾检区，一批发往韩国首尔采购商金先生的${p.shortName}正准备封箱出货。尾检组长用放大镜抽检${p.coreFeatures}部位时，发现3%的半成品存在0.15毫米轻微毛边。尽管不影响使用，厂长还是当场拍板停线4小时，20多名质检员对已装进${p.cartonSummary}的货品全数开箱重检过筛。${reqNote}金先生在首尔收到零瑕疵大货后连连称赞，这也正是我们攒下${p.marketProof}铁打招牌的底气。`,
-    "免费做效果图的故事": `今年3月在${originCity}设计室里，来自西班牙马德里的分销商卡洛斯看中了${p.shortName}的${p.coreFeatures}与${p.material}潜力，却苦于跟当地大渠道提案没有视觉素材。在没收一分定金的情况下，我们设计组24小时内按${p.variants}与${p.packWay}做出全套3D渲染图、卖点拆解图及${p.cartonSummary}、${p.containerEstimate}物流核算表发往马德里。${reqNote}一周后卡洛斯拿着这套方案直接拿下了当地连锁百货的年度大单。`,
-    "大货第一个印刷必须确认的故事": `上个月中旬在${originCity}印刷产线旁，发往阿联酋迪拜客户哈桑的定制${p.shortName}刚下首件，全线立刻停机等待。我亲自端着相机在自然光下对准${p.material}表面与${p.coreFeatures}细节拍下高清微距，再用3M百格胶带连拉3次拍实测视频发给迪拜的哈桑团队。${reqNote}得到哈桑亲口确认无误后，几千件大货才正式开动并按${p.cartonSummary}封箱，十几年来保持0%定制失误率。`,
-    "维护好客户的私模故事": `前年秋天在${originCity}模具保密仓内，我们为来自意大利米兰的资深买手马可联合改款了${p.shortName}，针对${p.coreFeatures}做了独家结构升级并采用高标${p.material}，上市后迅速做到${p.marketProof}。后来3家同行贸易商加价25%想从仓库拿现货都被我们当场回绝，工装治具始终锁在双人指纹仓绝不外泄。${reqNote}马可得知后特意从米兰飞来续签了三年独家协议，直夸守契约的工厂最值得托底。`,
-    "通宵加班帮客户赶活动时间的故事": `去年11月黑五备货高峰期，在${originCity}三条灯火通明的流水线旁，来自美国纽约的卖家迈克尔临时追加300箱${p.variants}配色的${p.shortName}，而货代通知截关提前36小时。我端着浓茶守在打包线直到凌晨4点半，看着工人们把每件合格的${p.material}成品擦净，按${p.cartonSummary}逐箱过秤打紧打包带。${reqNote}清晨6点15分货柜准时铅封驶向港口，纽约那头的迈克尔收到满柜实拍时激动的声音都在发颤。`,
-    "为避免色差，连续3天亲自监督工人挑选到货的面料，连饭都忘记吃的故事": `今年4月在${originCity}原料质检区，发往韩国釜山客户朴小姐的${p.variants}多色系${p.shortName}刚到一批${p.material}原料，灯箱检测发现有轻微色温偏差。为了绝不让偏色品混入${p.coreFeatures}组装线，我搬张塑料凳守在原料区整整3天，午饭放凉都顾不上吃，带着6名老师傅拿标准色卡逐批过筛。${reqNote}最终按${p.cartonSummary}交付的大货色差小于0.5，釜山复检团队直接把全年订单都锁给了我们。`,
-    "完美衔接厂长、客户、第三方和物流，全程无疏漏的故事": `今年6月在${originCity}装货月台，来自马来西亚吉隆坡的采购经理林先生下单了整柜${p.shortName}，要求${p.moq}起订按${p.leadTime}准时出运。我们建了精确到小时的对接表：早8点盯紧厂长核对${p.material}与${p.coreFeatures}首检公差，下午2点备齐${p.cartonSummary}和${p.containerEstimate}箱单配合第三方AQL抽检，傍晚准时装柜。${reqNote}全程照片数据同步发往吉隆坡，林先生坐在办公室喝着咖啡就把几万件货稳稳收入仓库。`,
-    "和品牌一起成长的故事": `三年前在${originCity}一间小样品间里，来自泰国曼谷的创业卖家阿南只拿着几万块预算，按${p.moq}试单采购我们的${p.shortName}。为了帮他缓解库存压力，我们主动常备${p.material}半成品把翻单交期压在${p.leadTime}，陪着他把${p.coreFeatures}和${p.variants}一路打磨成如今${p.marketProof}的曼谷热销标杆。${reqNote}上个月按${p.cartonSummary}发走他第30个整柜时，阿南已经把当年的小工作室做成了当地头部品牌。`,
-    "客户的事情就是我的事情": `去年8月深夜在${originCity}出货区，来自德国汉堡的运营新手安娜因弄错海外仓入库条码规则，急得满头大汗打电话过来时，180多箱按${p.cartonSummary}封箱的${p.shortName}已经准备装车。我只回了一句别慌有我，当晚带着14名仓库兄弟通宵拆箱，把几千件${p.packWay}换贴新条码并用扫码枪100%复核通过，早8点准时发车。${reqNote}帮汉堡团队挽回几万块罚款后，安娜公司把所有主力单全转到了我们厂。`,
-    "10多年来把客户公司当成自己公司的故事": `这十几年在${originCity}车间机台前，为来自日本大阪的资深买家田中先生服务这款${p.shortName}时，我们把他的偏好做成了专属防呆档案卡：包括${p.material}硬度、${p.coreFeatures}质检重点、${p.variants}配比以及大阪仓限高对应的${p.cartonSummary}与${p.containerEstimate}。${reqNote}每次原材料涨价前20天我们都会提前提醒他锁料，目前已稳定合作出货达到${p.marketProof}，真正像替自家买卖管账一样精打细算。`,
-    "帮客户踩坑急救的故事": `去年旺季前5天在${originCity}生产线上，来自波兰华沙的采购商彼得紧急来电求救：他原先找的小厂交货前突然加价停工，平台断货罚款眼看就要赔穿。核对需求后发现与我们常备${p.material}的${p.shortName}高度吻合，厂长当即抽调两条熟手线插单，把常规周期压缩到72小时内，按${p.cartonSummary}满箱标准抢上了开往欧洲的末班船。${reqNote}帮彼得保住华沙旺季链接后，他又陆续介绍了4位欧洲同行过来拿货。`,
-    "遇到无赖，帮客户追货的故事": `今年2月清晨6点在周边小厂门口，为了帮来自沙特利雅得的长期客户法赫德保住船期，我们业务经理拿着游标卡尺和合同直接堵门清点他外采的配套赠品。当时那家小作坊想坐地起价拖延，差点耽误和我们的${p.shortName}按${p.cartonSummary}、${p.containerEstimate}并柜发往利雅得。${reqNote}硬是在中午前全数核验追回并准时发船后，法赫德感慨在${originCity}有个靠得住的源头伙伴比签十份合同都管用。`,
-    "解决别人不愿意做的组合定制问题": `今年4月在${originCity}包装车间，来自墨西哥城的商超买家罗伯特想把${p.shortName}按${p.variants}做成多色混装礼盒，问了6家大厂都被嫌麻烦拒接。我们专门在流水线定制了分格防呆治具，每装满一箱${p.qtyCtn}、外箱${p.ctnSize}就自动过高精度克重秤核对${p.weights}，少1件或偏差15克立刻声光报警。${reqNote}正是啃下了这块硬骨头，这款组合装帮罗伯特在墨西哥城迅速做出了${p.marketProof}的亮眼业绩。`,
-    "宁可不赚钱，高价请人帮忙，也要严守交期的故事": `去年夏季限电叠加物流高峰期，在${originCity}包装线旁，为了确保发往巴西圣保罗客户卡拉的${p.shortName}大促订单一分钟不晚地按${p.leadTime}交齐，我们自掏腰包开双倍日薪请来18名熟练工三班倒，并包专车连夜将按${p.cartonSummary}、${p.containerEstimate}封好的货柜直送港口。${reqNote}那单虽然倒贴了几千元车费，却帮卡拉守住了圣保罗平台头部坑位，随后两年千万级大单全交给了我们。`,
-    "参加客户婚礼，和客户处成朋友的故事": `去年深秋，在${originCity}与我们合作了5年的老买家、来自智利圣地亚哥的迭戈特意寄来手写婚礼请柬。五年前他就是从这款${p.shortName}的${p.moq}试单认识我们的，五年间一起打磨${p.coreFeatures}工艺、核对每批次${p.material}与${p.cartonSummary}箱规，累计发往圣地亚哥上百个柜子零差错。${reqNote}当他在婚礼上把我们介绍为最值得信赖的中国家人时，所有车间里死磕过的日夜都值了。`,
+    "复购故事": `去年10月中旬在深圳选品展的展位上，洛杉矶买手大卫原本对这款${p.shortName}还有点犹豫，只肯先拿一批小单试水。货在当地上架才第19天，他半夜直接发来消息说这批货卖断码了，买家晒单里夸得最多的就是${p.coreFeatures}顺手、${p.material}用着扎实，好评率冲到99.4%，退货率比他之前卖的通货低了一大半。${reqNote}后来他几乎每25天就准时翻一次单，光这一款就把他店里的平均毛利拉高了18%，加上${p.marketProof}的真实口碑，现在成了他店里雷打不动的常青款。`,
+    "和客户一起策划品牌": `前年夏天在${originCity}样品间里，德国客户马克拿着一叠手绘草图过来，想借这款${p.shortName}做自己的牌子，但又怕前期开模投入太高回不了本。我们拉着做结构的老师傅陪他连聊了三个晚上，没让他花冤枉钱重开整套模具，而是保留成熟的${p.material}底子，专门在${p.coreFeatures}和${p.variants}配色上做出区分度。${reqNote}上线不到半年，马克的牌子复购率做到34%，从首批小单一路冲进当地连锁渠道前五，现在全网累计已经有${p.marketProof}的销量背书。`,
+    "此款创新故事": `去年3月在${originCity}打样桌上，市面上同款都在拼低价、买家差评一片，我们干脆花了45天把老结构推翻重改，专门给伦敦买手艾伦打磨了这版${p.shortName}。重点解决的就是大家最头疼的${p.coreFeatures}问题，材料也换成更耐用的${p.material}，上线前自己人连测了上千次高频开合与承重都没松动。${reqNote}寄给5位伦敦买手盲测，有4位当场拍板下单，终端定价比普通款贵出25%照样月月卖空，跑出了${p.marketProof}的亮眼成绩。`,
+    "此款避坑故事": `今年1月在${originCity}仓库里，悉尼老客户汤姆一见面就大倒苦水，说之前图便宜拿过一批通货，结果回收料发脆、到手才卖一周差评率就飙到11%，赔进去好几万广告费。后来他把${p.shortName}转到我们这儿，我们把原生${p.material}和${p.coreFeatures}的抽检标准直接拉满，每批货出厂前都按5%比例做实测筛查，把不良率硬生生压在0.3%以内。${reqNote}这批货到悉尼后三个月零客诉，加上${p.marketProof}的实打实口碑，汤姆把全年主力单都锁给了我们。`,
+    "某个国家此款的销量调研": `去年11月在杭州办公室，为了帮温哥华客户杰克少踩选品坑，我们熬了两个通宵翻完北美平台3800多条同类差评。数据一统计特别扎眼，68%的退货都是因为用几次就出毛病，而带${p.coreFeatures}和热门${p.variants}的版本转化率直接高出均值37%。我们按这个结论用${p.material}帮他定版这款${p.shortName}，上线第一个月动销就翻了2.4倍。${reqNote}靠着${p.marketProof}和这组调研数据，杰克直接省下好几万测款试错费。`,
+    "定制故事": `上个月初在${originCity}打样台前，巴黎商超买手索菲急着要一批定制${p.shortName}，对${p.material}的手感和${p.variants}颜色还原挑剔到极致，之前找的两家厂连打三次样都没过她那关。接单当天调色师傅守在车间连试了4版配比，每版都在自然光和室内灯下拍实拍视频给她看，还当场做了耐磨刮擦和浸泡测试。${reqNote}第4版样品寄到巴黎当天她就直接回邮签单，首批货上架两周售罄82%，顺势把全年合作框约也签了下来。`,
+    "客户第一次尝试购买的沟通全过程（EXW方案）": `今年4月下午在${originCity}验货室里，新加坡首次直采的陈先生一直不敢下决定，因为他之前被不靠谱的中间商坑过，货不对板不说，售后根本找不到人。我没跟他空口保证，直接开视频拿样品当场拆解给他看${p.material}厚度和${p.coreFeatures}的实测效果，又把近三个月老客户的复购记录和返单周期一页页翻给他核对。${reqNote}看着不良率不到0.5%的真实质检表和${p.marketProof}的口碑，陈先生挂完电话半小时就打了定金。`,
+    "服务细节故事": `今年2月在${originCity}出货间，想到东京买家佐藤那边人工贵得吓人，每多花一小时理货都是白花花的成本，我们给他发混色${p.variants}的${p.shortName}时主动多做了一步。按颜色和款式提前做好清晰分组和双语标签，还附了一张开箱即用的清点清单。${reqNote}货到东京仓那天佐藤特意发来邮件，说仓库团队比平时足足省了两天半的分拣工时，上架速度提快一倍，当月回款周期都跟着缩短了。`,
+    "想客户所想故事": `去年9月在${originCity}办公室，鹿特丹卖家卢卡斯下单这款${p.shortName}时，我们翻看他店铺评论发现买家经常吐槽同类产品运输途中容易刮花导致退货。没等他开口，我们就主动把${p.packWay}内衬做了防磨加固，实测跌落20次表面依然零划痕，破损赔付率直接从原来的4.8%降到几乎为零。${reqNote}光减少售后退款和补发这一项，一季度就帮他多留住将近两万块纯利润，他立马把我们定成了核心供应商。`,
+    "守住质量底线的故事": `今年5月在${originCity}尾检台旁，发往首尔采购商金先生的一批${p.shortName}眼看就要封箱，质检组长顺手复查${p.coreFeatures}细节时，发现大概3%的成品边缘有轻微毛刺。其实装进袋子普通人根本看不出，但厂长当场拍板整批停线4小时，叫来20来号人全部拆包重新过筛修整。${reqNote}金先生在首尔抽检完零瑕疵通关，后来他跟同行吃饭都夸我们靠谱，这也正是我们攒出${p.marketProof}回头客的原因。`,
+    "免费做效果图的故事": `今年3月在${originCity}设计桌前，马德里分销商卡洛斯很看好这款${p.shortName}的${p.coreFeatures}卖点，但急着去见当地百货采购总监，手里连套像样的提案图都没有。我们一分钱定金没收，让美工加班一天按${p.variants}做出了实景效果图和核心对比页发给他。${reqNote}没想到一周后卡洛斯兴奋地发语音说，对方看完图当场拍板拿下了3家主力门店的试销位，首月单店日销就冲到同品类前三。`,
+    "大货第一个印刷必须确认的故事": `上个月中旬在${originCity}印刷机旁，发往迪拜客户哈桑的定制${p.shortName}刚印出第一件，我立刻让机长停机等着。亲自拿手机在自然光下拍了清晰微距，还撕了胶带连粘三次测Logo牢度，把整段实拍视频发给迪拜团队。${reqNote}等哈桑亲口回复完全没问题，几千件大货才正式开机，十几年来靠这个死规矩，定制出错率一直保持在0%，老客户翻单根本不用操心。`,
+    "维护好客户的私模故事": `前年秋天在${originCity}样品库里，我们帮米兰买手马可一起改款升级了这款${p.shortName}，在${p.coreFeatures}上做出了独家差异，在欧洲一上架就跑出${p.marketProof}的热度。没过俩月先后有3家贸易商找上门，愿意加价25%拿现货，我们连犹豫都没犹豫直接回绝，模具和专属治具一直单独封存绝不外流。${reqNote}马可听说了这事专门飞来续签了三年独家合作，说做生意最难得的就是守信用。`,
+    "通宵加班帮客户赶活动时间的故事": `去年11月黑五大促前夕，纽约卖家迈克尔的${p.shortName}突然爆单，临时急加一批热门${p.variants}补货，可货代临时通知截关提前了36小时。那晚我泡了壶浓茶一直守在车间到凌晨4点半，陪着大家一件件擦净复检，生怕赶工出纰漏。${reqNote}清晨6点15分货稳稳装车出发，迈克尔顺利接住了黑五流量高峰，那一周单品销量比平时翻了3.8倍，断货危机硬是变成了他的年度爆单周。`,
+    "为避免色差，连续3天亲自监督工人挑选到货的面料，连饭都忘记吃的故事": `今年4月在${originCity}原料区，发往釜山客户朴小姐的多色${p.shortName}刚到一批${p.material}原料，验货时发现有小部分颜色略微偏浅。为了不让色差砸了她店里98%的好评率，我干脆搬张凳子守在原料台整整三天，午饭放凉都顾不上吃，带着老师傅拿色卡逐批挑出来单独退换。${reqNote}大货到了釜山，朴小姐拆开随机抽了十来件对比几乎零色差，当场就把下一季度的订单也定了下来。`,
+    "完美衔接厂长、客户、第三方和物流，全程无疏漏的故事": `今年6月在${originCity}发货现场，吉隆坡采购经理林先生这批${p.shortName}赶着进驻连锁门店，对验货和时效卡得极死。我们提前拉了个进度表：早上8点盯紧车间核对${p.coreFeatures}首件，下午2点无缝对接第三方AQL抽检一次通过，傍晚准时装车发运。${reqNote}每个节点都发实拍和质检数据同步给林先生，他全程人在吉隆坡没操半点心，货比原计划还提前两天上架开卖。`,
+    "和品牌一起成长的故事": `三年前在${originCity}一间小样板间里，曼谷创业卖家阿南兜里预算紧张，靠着一批小单试水我们的${p.shortName}起步。看他用心做内容，我们主动帮他常备${p.material}半成品，把原本半个月的翻单周期压缩到几天，陪着他把${p.coreFeatures}和${p.variants}一路迭代成当地爆款。${reqNote}三年下来他店里复购率稳定在41%以上，上个月刚签下第30批大单，当年的二人小工作室已经做成了曼谷小有名气的本土品牌。`,
+    "客户的事情就是我的事情": `去年8月深夜在${originCity}仓库，汉堡运营新手安娜急得快哭出来，原来她把海外仓入库条码发错了，眼看整批${p.shortName}天亮就要装车，一进错仓罚款就得赔掉几万块。我只回了一句别慌交给我，当晚拉上十几个仓库兄弟通宵拆包，把几千件货全部重贴新码并用扫码枪100%复核过关，早上8点准时发车。${reqNote}帮她保住这批货和旺季排名后，安娜公司很快把同品类80%的采购额都转到了我们这儿。`,
+    "10多年来把客户公司当成自己公司的故事": `这十几年帮大阪老买家田中先生做这款${p.shortName}，我们早就把他的品控习惯记成了一本专属档案：从${p.material}的耐候性到${p.coreFeatures}的抽检松紧度，每批货都按他的终端标准提前把关。${reqNote}每次上游原料要涨价前20天，我们都会主动提醒他提前锁料，帮他省下不少采购成本，合作至今累计出货做到${p.marketProof}，不良退货率常年压在0.2%以下，早已处成了彼此托底的老搭档。`,
+    "帮客户踩坑急救的故事": `去年旺季前5天在${originCity}车间里，华沙采购商彼得急火火打来电话求救：原先合作的小厂交货前突然坐地起价还停工，他平台链接一旦断货光违约金和掉权重就损失惨重。核对完样品发现跟我们常备的${p.shortName}工艺完全对口，厂长立刻腾出两条熟手线昼夜插单，硬是72小时赶完交货。${reqNote}帮彼得稳住华沙旺季销量翻番后，他不仅把全年单全转了过来，还陆续介绍了4位欧洲同行找我们拿货。`,
+    "遇到无赖，帮客户追货的故事": `今年2月天刚蒙蒙亮，为了帮利雅得老客户法赫德保住发货节点，我们业务经理清晨6点直接堵在一家配套小作坊门口清点赠品。对方看临近船期想临时加价卡脖子，差点连累我们这批${p.shortName}错过中东斋月旺季。${reqNote}我们拿着合同逐箱核对，硬是在中午前全数追回并准时发运，法赫德收到货后首周动销就超预期60%，感慨说在${originCity}有个敢替客户出头的伙伴比什么都安心。`,
+    "解决别人不愿意做的组合定制问题": `今年4月在${originCity}包装线旁，墨西哥城买手罗伯特想把${p.shortName}按${p.variants}做成多色混装礼盒，问了6家大厂都嫌工序琐碎、人工费劲直接拒单。我们琢磨出分格防呆配货法，配完自动复秤核对件数，准确率做到100%还一点没拖慢交期。${reqNote}正是啃下这块硬骨头，这款组合礼盒在墨西哥城溢价30%依然抢手，很快跑出了${p.marketProof}的好成绩。`,
+    "宁可不赚钱，高价请人帮忙，也要严守交期的故事": `去年夏天赶上限电和物流高峰，在${originCity}产线旁，为了保证巴西圣保罗客户卡拉的${p.shortName}大促货一分钟不晚，我们自掏腰包开双倍工价临时请来十几名熟手师傅三班倒，还连夜包专车直送港口。${reqNote}那一单算下来虽然倒贴了几千块车费和人工，却帮卡拉死死守住了平台类目前三的坑位，大促单周卖空95%库存，接下来两年她的主力大单全交给了我们。`,
+    "参加客户婚礼，和客户处成朋友的故事": `去年深秋，合作五年的智利老客户迭戈专门从圣地亚哥寄来一张手写婚礼请柬。五年前他就是从这款${p.shortName}的一批小试单认识我们的，五年间一起根据买家反馈改了6版细节，把店里复购率从15%一路做到38%，累计合作上百批货没出过一次大纰漏。${reqNote}婚礼上他拉着亲友介绍我们是最靠谱的中国老朋友时，心里那股踏实劲儿比签多少大单都痛快。`,
   };
 
   if (b2bMap[angle]) return b2bMap[angle];
 
-  return `上个月在${originCity}产线旁，来自美国洛杉矶的采购商大卫团队专门来核验这款${p.shortName}在${angle}上的表现。我们从首件打样就用卡尺把${p.coreFeatures}与${p.material}的公差控制在0.02毫米以内，并按客户渠道核准了${p.cartonSummary}、${p.containerEstimate}的整箱方案，支持${p.moq}与${p.leadTime}交付。${reqNote}凭借${p.marketProof}的实测口碑，第一批货到港开箱后就赢得了大卫团队的长期续单。`;
+  return `上个月在${originCity}样品间里，洛杉矶老买手大卫专门针对${angle}复测了这款${p.shortName}。连测三天高频使用后，${p.coreFeatures}和${p.material}的稳定度完全没掉链子，不良率压在0.3%以内。${reqNote}第一批货在当地上架不到三周就卖空近九成，凭借${p.marketProof}的真实口碑，他很快又敲定了下一季度的长期返单。`;
 }
 
 function toSingleLineText(val) {
@@ -4482,20 +4482,20 @@ function buildMasterMultiLangStory(angle, p, req, isSeed, lang) {
   const enAngle = (window.XM_I18N && window.XM_I18N.dictLookup(angle)) || (/[\u4e00-\u9fff]/.test(String(angle || "")) ? "first-article verification and zero-defect fulfillment" : String(angle || "quality assurance"));
   if (lang === "en") {
     if (isSeed) {
-      return `Last month in Seattle, buyer Emily unboxed ${p.shortName} in her kitchen after 2 previous generic items wore out in 14 days. Crafted with ${translateCommonValue(p.material, "en")} and ${translateCommonValue(p.coreFeatures, "en")}, it held up through 30 straight days of daily use with zero wear, backed by ${translateCommonValue(p.marketProof, "en")}${reqText}, making her immediately order 2 more for family.`;
+      return `Last month in Seattle, Emily tried ${p.shortName} at home after two generic ones wore out in less than two weeks. With ${translateCommonValue(p.material, "en")} and ${translateCommonValue(p.coreFeatures, "en")}, it held up through 30 straight days of heavy daily use with zero wear, backed by ${translateCommonValue(p.marketProof, "en")}${reqText}, so she ended up ordering two more for her family.`;
     }
-    return `Last October on our ${translateCommonValue(p.origin, "en")} factory floor, buyer Mark from Munich tested ${p.shortName} for ${enAngle}. Our engineers verified 0.02mm tolerance under natural light, passed 1.2m 6-side drop tests on 5-ply export cartons of ${translateCommonValue(p.cartonSummary, "en")}, ${p.containerEstimate}, and shipped on ${translateCommonValue(p.moq, "en")} within ${translateCommonValue(p.leadTime, "en")}${reqText}. With ${translateCommonValue(p.marketProof, "en")}, Mark sold out his trial batch in 19 days with 0% defects and locked monthly container orders.`;
+    return `Last October in our ${translateCommonValue(p.origin, "en")} showroom, Munich buyer Mark started with a cautious trial batch of ${p.shortName} focused on ${enAngle}. After his customers praised ${translateCommonValue(p.coreFeatures, "en")} and the durable ${translateCommonValue(p.material, "en")}, the first batch sold out in 19 days with a 99.4% positive rating and a return rate under 0.4%${reqText}. Backed by ${translateCommonValue(p.marketProof, "en")}, Mark now reorders every 25 days and lifted his store margin by 18%.`;
   }
   if (lang === "ru") {
-    return `В октябре прошлого года на нашем заводе в ${translateCommonValue(p.origin, "ru")} закупщик Алексей из Москвы проверил ${p.shortName} перед заказом. Мы подтвердили допуск 0.02 мм, усилили пятислойный короб ${translateCommonValue(p.cartonSummary, "ru")}, ${p.containerEstimate} и прошли тест на падение с 1.2 м при отгрузке ${translateCommonValue(p.moq, "ru")} за ${translateCommonValue(p.leadTime, "ru")}${reqText}. Партия распродалась за 19 дней с 0% брака.`;
+    return `В октябре прошлого года закупщик Алексей из Москвы взял пробную партию ${p.shortName} после того, как устал от возвратов у прошлого поставщика. Благодаря ${p.coreFeatures} и надежному материалу ${p.material}, первая партия разошлась за 19 дней с рейтингом 99.4% и долей брака ниже 0.3%${reqText}. Теперь Алексей делает повторные заказы каждые 25 дней, увеличив маржу на 18%.`;
   }
   if (lang === "ja") {
-    return `昨年10月、${translateCommonValue(p.origin, "ja")}の工場検品室で東京のバイヤー佐藤様が${p.shortName}を実測されました。${translateCommonValue(p.material, "ja")}の質感と${p.coreFeatures}の公差0.02mmを自然光で確認し、${translateCommonValue(p.cartonSummary, "ja")}と${p.containerEstimate}の落下試験をクリアして${translateCommonValue(p.leadTime, "ja")}で出荷${reqText}。到着後19日で完売し不良率0%を達成しました。`;
+    return `昨年10月、東京のバイヤー佐藤様はリピート率改善のために${p.shortName}を少量テスト導入されました。${p.coreFeatures}の使いやすさと${p.material}の耐久性が好評で、初回入荷分はわずか19日で完売し不良率も0.3%未満に抑制${reqText}。今では25日ごとに定期リピートをいただき、店舗の粗利率も18%向上しました。`;
   }
   if (lang === "ko") {
-    return `지난해 10월 ${translateCommonValue(p.origin, "ko")} 공장 검수실에서 서울 바이어 김 대표님이 ${p.shortName}를 직접 테스트했습니다. ${translateCommonValue(p.material, "ko")} 마감과 ${p.coreFeatures} 공차 0.02mm를 확인하고 ${translateCommonValue(p.cartonSummary, "ko")}, ${p.containerEstimate} 수출 박스 낙하 테스트를 통과해 ${translateCommonValue(p.leadTime, "ko")} 내 출고했습니다${reqText}. 첫 물량이 19일 만에 완판되며 불량률 0%를 기록했습니다.`;
+    return `지난해 10월 서울 바이어 김 대표님은 반품률을 낮추기 위해 ${p.shortName} 소량 테스트 발주를 진행했습니다. ${p.coreFeatures} 장점과 탄탄한 ${p.material} 품질 덕분에 첫 물량이 19일 만에 완판되었고 불량률은 0.3% 미만으로 줄었습니다${reqText}. 현재는 25일 주기로 꾸준히 재주문하며 매장 마진율을 18% 끌어올렸습니다.`;
   }
-  return `Last October at our ${p.origin} workshop, buyer David from Los Angeles tested ${p.shortName} with ${p.coreFeatures}, ${p.material}, ${p.cartonSummary}, ${p.containerEstimate}, ${p.moq}, ${p.leadTime}${reqText}, achieving 0% defects and selling out in 19 days.`;
+  return `Last October in our ${p.origin} showroom, Los Angeles buyer David ran a trial batch of ${p.shortName}. Customers loved its ${p.coreFeatures} and ${p.material}, selling out in 19 days with 99.4% positive reviews and under 0.3% defect rate${reqText}, turning into a steady monthly reorder.`;
 }
 
 function synthesizeGroundedAiField(fieldObj, ctx) {
@@ -4520,6 +4520,7 @@ function isLowQualityOrAiFluff(text, langCode = "zh", group = "story") {
   if (/让我分析|分析一下|\*\*商品|步骤|首先|现在我需要|思考过程|作为AI|我是AI/.test(text)) return true;
   if (/赋能|致力于|品质卓越|深受好评|远销海外|不二之选|匠心打造|全方位满足|完美契合|闭环|抓手|在这个快节奏|你是否还在为|今天给大家种草|闭眼入|天花板|YYDS|绝对是你的|不可或缺的|让我们一起|材质壁垒/.test(text)) return true;
   if (/我们始终贯彻|整理这款.*的业务跟单素材|贯彻.*的工作准则/.test(text)) return true;
+  if (group === "story" && /(?:20GP|40HQ|外箱尺寸|箱规|立方数|装箱数|D65标准光源箱|0\.02毫米|铁打招牌|双人指纹仓)/i.test(text)) return true;
   if (langCode === "zh" && (text.match(/[\u4e00-\u9fa5]/g) || []).length < 35) return true;
   return false;
 }
@@ -5047,23 +5048,23 @@ async function aiGenOnce(provider, field, req, ctx, group) {
         `5. 排版铁律：按 1. 核心卖点词：该卖点对比其他相似商品的具体差异优势 逐条换行排列，左右结构，只保留序号点号和冒号，严禁使用任何括号或方框（禁止 ()、（）、【】、[]、「」、<>）。`,
       ].join("\n")
     : [
-        `你是拥有15年一线生活与外贸实战阅历的真人故事讲述者。`,
+        `你是拥有15年一线实战经验的真人讲述者，像跟老朋友复盘真实经历一样讲故事，自然口语化、有画面感和情绪转折，彻底去AI味。`,
         `必须严格使用【${langPack.promptLang}】输出最终正文！整段只能出现这一种语言，不许夹杂其他语言（品牌名除外）。`,
-        `【核心创作铁律（人物+时间+地点+客户地区缺一不可，有具体数据，只写商品名、绝不写货号型号、无任何括号与多余符号）】：`,
-        `1. 四要素必须齐备：故事开头必须写清楚具体【人物 + 时间 + 地点 + 客户地区】，例如“去年10月在永康工厂车间，来自德国慕尼黑的采购商马克……”或“上个月在杭州家里洗漱台前，来自成都的林小姐……”，严禁使用“某客户”“消费者们”等空洞代词！`,
-        `2. 只写商品名称，严禁写入货号/型号：文中只能出现商品名称「${profile.shortName}」，严禁在故事里写任何货号、型号、款号或SKU编码！`,
-        `3. 形象生动且必须有真实数据：用画面感十足的细节和真实数字说话（如实测天数、公差毫米数、好评率、省下的运费或时间、装箱与跌落测试数据等）。`,
-        `4. ${/消费者|种草|真实买家/.test(ctx.style || "") ? "B2C 消费者种草目标：紧扣日常痛点、开箱触感与前后使用对比数据，让个人消费者看完立刻产生强烈购买欲望。" : "B2B 采购商信任目标：紧扣对采购商真正有帮助的品控细节、箱规装柜核算、防坑验证与交付保障，极大增强采购商下单信任感。"}`,
-        `5. 彻底去AI味与符号禁忌：严禁AI套话（赋能、致力于、品质卓越、深受好评、远销海外、匠心打造、不二之选、完美契合、闭环、抓手、天花板、闭眼入、YYDS、神器）；严禁使用任何括号或特殊符号（禁止 ()、（）、【】、[]、「」、<>、**、•），直接合并为单行一段话输出，不加标题或字段名前缀。`,
+        `【核心创作铁律（生动自然、数据有说服力、严禁写箱规尺寸、彻底去AI味）】：`,
+        `1. 四要素自然融入：故事里必须有具体【人物 + 时间 + 地点 + 客户地区】，用真实动作和对话感开场，严禁“某客户”“消费者们”等空洞代词，也不要机械套用固定人名。`,
+        `2. 只写商品名称，严禁写入货号/型号：文中只能出现商品名称「${profile.shortName}」，严禁写任何货号、型号、款号或SKU编码！`,
+        `3. 只引用真正有说服力的商业或实测数据，严禁引用箱规尺寸：必须用打动人心的数据说话（如试单几天售罄、复购率/返单周期、退货率或破损率降幅、好评率、毛利提升、真实使用寿命或对比测试结果等）；【绝对禁止】在故事里堆砌箱规尺寸、外箱长宽高、装箱数、毛净重、立方数、20GP/40HQ装柜数等枯燥物流参数！`,
+        `4. ${/消费者|种草|真实买家/.test(ctx.style || "") ? "B2C 消费者种草目标：紧扣日常真实痛点、使用前后对比与身边人反馈，让消费者看完有代入感、立刻想买。" : "B2B 采购商信任目标：紧扣帮客户赚钱、降退货、保交期、稳品质、促返单的真实实战细节，让采购商觉得靠谱想合作。"}`,
+        `5. 彻底去AI味与符号禁忌：严禁AI套话与假大空工业词（赋能、致力于、品质卓越、深受好评、远销海外、匠心打造、不二之选、完美契合、闭环、抓手、天花板、闭眼入、YYDS、神器、0.02毫米、D65标准光源箱、铁打招牌、双人指纹仓）；严禁使用任何括号或特殊符号（禁止 ()、（）、【】、[]、「」、<>、**、•），直接合并为单行一段话输出，不加标题或字段名前缀。`,
       ].join("\n");
 
   const userTask = group === "point"
     ? `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n请依据商品页面真实内容，判断并提炼这款「${profile.shortName}」与其他相似商品最核心的不同点作为「${field}」${req ? `（特别要求：${req}）` : ""}。\n【严格要求】：\n1. 不规定固定条数（可以只有 1 点，也可以有 2~4 点），有几个真正独特、互不重叠的差异卖点就列几点；\n2. 一点只说一个独立卖点，它的具体差异优势必须写在同一条里，严禁把同一个特点拆成 2 点凑数；\n3. 绝不写普通基础材质或普通特点，格式为：1. 独特卖点词：对比其他相似商品的具体差异优势（语言精炼、一看就记住、零AI味）；\n4. 左右结构，只保留序号后的点号和冒号，严禁使用【】、[]、「」、()、（）、①②③④、**、•、；等多余符号，严格使用${langPack.label}直接输出。`
-    : `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n本次唯一故事角度：${ctx.angles || "服务细节故事"}（只围绕这一个角度写透）\n精神内核（化为具体人物动作与现场细节，严禁照抄口号）：${ctx.soul || "用心服务"}\n请基于当前商品真实参数与联网搜索素材，写出一段「${field}」${req ? `（特别要求：${req}）` : ""}，180~300字，严格使用${langPack.label}，必须包含具体人物、时间、地点、客户地区和真实数据，形象生动；只写商品名字「${profile.shortName}」，绝不写货号或型号，严禁任何括号或多余符号，合并为单行输出。`;
+    : `输出语言：${langPack.promptLang}\n内容基调：${ctx.style || "实事求是"}\n本次唯一故事角度：${ctx.angles || "服务细节故事"}（只围绕这一个角度写透）\n精神内核（化为具体人物动作与现场细节，严禁照抄口号）：${ctx.soul || "用心服务"}\n请基于当前商品真实特点与联网搜索素材，用真人讲故事的口吻写出一段生动、彻底去AI味的「${field}」${req ? `（特别要求：${req}）` : ""}，180~280字，严格使用${langPack.label}；必须有具体人物、时间、地点、客户地区以及真正有说服力的商业或实测数据（如售罄天数、复购率、退货率降幅、好评率、实测对比等），严禁写箱规尺寸/装箱数/装柜数/货号型号，严禁任何括号或多余符号，合并为单行输出。`;
 
   const messages = [
     { role: "system", content: sysPrompt },
-    { role: "user", content: `商品简称：${profile.shortName}\n本品独特结构亮点：${profile.coreFeatures}\n完整标题：${ctx.title}\n提取参数：\n${ctx.attrsText}\n箱规与装柜核算：${profile.cartonSummary}（${profile.containerEstimate}）\n页面经营与口碑数据：${profile.marketProof}\nOCR文字：${ctx.ocrText}${webSnippets ? `\nAGNES联网检索参考：\n${webSnippets}` : ""}\n\n` + userTask },
+    { role: "user", content: `商品简称：${profile.shortName}\n本品独特结构亮点：${profile.coreFeatures}\n完整标题：${ctx.title}\n提取参数：\n${ctx.attrsText}\n页面经营与口碑数据：${profile.marketProof}\nOCR文字：${ctx.ocrText}${webSnippets ? `\nAGNES联网检索参考：\n${webSnippets}` : ""}\n\n` + userTask },
   ];
 
   const r = await aiAgentRun(provider, messages, {
