@@ -860,14 +860,38 @@ window.addEventListener("load", () => {
   });
 });
 
+// 单行网址输入框：支持多行粘贴自动转空格分隔、悬停看全网址、回车直接开始采集
+$("urls")?.addEventListener("input", () => {
+  $("urls").title = $("urls").value.trim();
+});
+$("urls")?.addEventListener("paste", e => {
+  const txt = e.clipboardData?.getData("text") || "";
+  if (/\r|\n/.test(txt)) {
+    e.preventDefault();
+    const cleaned = txt.split(/\r?\n/).map(s => s.trim()).filter(Boolean).join(" ");
+    const el = $("urls");
+    const cur = el.value.trim();
+    el.value = [cur, cleaned].filter(Boolean).join(" ");
+    el.title = el.value;
+  }
+});
+$("urls")?.addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    $("go")?.click();
+  }
+});
+
 // TXT批量导入：保留原文本，交给开始采集时统一规范化商品链接或商品ID
 $("txtFile").addEventListener("change", async e => {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
   const incoming = await file.text();
+  const lines = incoming.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
   const old = $("urls").value.trim();
-  $("urls").value = [old, incoming.trim()].filter(Boolean).join("\n");
-  $("status").innerText = `已导入TXT：${incoming.split(/\r?\n/).filter(x => x.trim()).length} 行`;
+  $("urls").value = [old, ...lines].filter(Boolean).join(" ");
+  $("urls").title = $("urls").value;
+  $("status").innerText = `已导入TXT：${lines.length} 条链接，点击「开始采集」进入下方队列`;
   e.target.value = "";
 });
 
@@ -2263,9 +2287,10 @@ window.addEventListener("load", () => {
       const sel = $("openTabsSelect");
       const urls = [...(sel?.options || [])].map(o => o.dataset?.url).filter(Boolean);
       if (!urls.length) { $("status").textContent = "没有可加入队列的已打开网页"; return; }
-      const existing = $("urls").value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      const existing = $("urls").value.split(/[\r\n\s]+/).map(s => s.trim()).filter(Boolean);
       const merged = [...new Set([...existing, ...urls])];
-      $("urls").value = merged.join("\n");
+      $("urls").value = merged.join(" ");
+      $("urls").title = $("urls").value;
       await refreshUngrantedOrigins();
       $("status").textContent = `已将 ${urls.length} 个已打开的网页加入下方采集队列（合计 ${merged.length} 条）。`;
     };
@@ -7562,6 +7587,11 @@ $("go").onclick = async () => {
     const pos = collectTaskQueue.length + 1;
     j.rowRef = createTaskRow(j.url, isCollectQueueRunning ? `⏳ 等待队列中（第 ${pos} 位）` : "⏳ 准备采集…");
     collectTaskQueue.push(j);
+  }
+  // 点击开始采集后立即清空上方网址输入框，网址直接进入下方排队模块
+  if ($("urls")) {
+    $("urls").value = "";
+    $("urls").title = "";
   }
   collectQueueTotalEnqueued += jobs.length;
   await scheduleCollectWorkers();

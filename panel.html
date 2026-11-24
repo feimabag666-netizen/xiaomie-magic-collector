@@ -308,28 +308,27 @@
   .form-item label { margin: 0; font-weight: 600; color: var(--ink-soft); white-space: nowrap; }
   .form-item input { width: 110px; text-align: center; }
 
-  /* 紧凑采集输入条与进度表格 */
+  /* 紧凑单行网址输入框与进度表格 */
   .collect-bar {
     display: flex;
-    align-items: stretch;
+    align-items: center;
     gap: 8px;
     flex-wrap: wrap;
     margin-bottom: 8px;
   }
-  textarea#urls {
+  input#urls {
     flex: 1;
-    min-width: 220px;
-    height: 38px;
-    min-height: 38px;
-    max-height: 84px;
-    padding: 8px 11px;
+    min-width: 200px;
+    height: 34px;
+    padding: 0 11px;
     font-size: 12.5px;
-    line-height: 20px;
+    line-height: 34px;
     border: 1px solid #d8cee8;
-    border-radius: 9px;
-    resize: vertical;
+    border-radius: 8px;
     background: #fcfbfe;
-    overflow-y: auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .collect-bar-actions {
     display: flex;
@@ -848,15 +847,15 @@
     <div id="captureAttrsPreview" class="hint" style="display:none;word-break:break-all;overflow-wrap:anywhere;max-width:100%"></div>
   </div>
 
-  <!-- 紧凑合一：链接输入 + 一键开始采集 + 进度队列 -->
+  <!-- 紧凑合一：单行网址输入框 + 一键开始采集 + 下方队列 -->
   <div class="collect-bar">
-    <textarea id="urls" rows="1" placeholder="粘贴 1 条或多条商品/网页链接（每行一条），或右侧导入 TXT…"></textarea>
+    <input type="text" id="urls" placeholder="输入或粘贴商品/网页网址（回车或点开始采集自动清空并进入下方队列）…" autocomplete="off">
     <div class="collect-bar-actions">
-      <label style="margin:0;padding:7px 11px;font-size:12px;color:var(--brand);cursor:pointer;font-weight:600;border:1px solid #dcd2e8;border-radius:8px;background:#fff;white-space:nowrap" title="批量导入 TXT 链接文件">
+      <label style="margin:0;padding:6px 11px;font-size:12px;color:var(--brand);cursor:pointer;font-weight:600;border:1px solid #dcd2e8;border-radius:8px;background:#fff;white-space:nowrap" title="批量导入 TXT 链接文件">
         📄 导入TXT <input id="txtFile" type="file" accept=".txt,text/plain" style="display:none">
       </label>
-      <button id="go" style="padding:8px 20px;font-size:13.5px;white-space:nowrap">🚀 开始采集</button>
-      <button type="button" id="stop" style="display:none;border-color:var(--danger);color:var(--danger);font-weight:700;padding:8px 14px;white-space:nowrap">⏹ 停止</button>
+      <button id="go" style="padding:7px 18px;font-size:13px;white-space:nowrap">🚀 开始采集</button>
+      <button type="button" id="stop" style="display:none;border-color:var(--danger);color:var(--danger);font-weight:700;padding:7px 14px;white-space:nowrap">⏹ 停止</button>
     </div>
   </div>
 
