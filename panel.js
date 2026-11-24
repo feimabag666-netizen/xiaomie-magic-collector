@@ -9231,9 +9231,10 @@ window.addEventListener("load", async () => {
     };
   }
   let _emailOtpToken = "";
-  const OTP_API_BASES = ["https://xiaomie-magic-collector-cvz.pages.dev", "https://api.xiaomie.tools"];
+  const OTP_API_BASES = ["https://api.xiaomie.tools", "https://xiaomie-magic-collector-cvz.pages.dev"];
   async function postOtpApi(path, payload) {
     let lastErr = null;
+    let lastJson = null;
     for (const base of OTP_API_BASES) {
       try {
         const res = await fetch(`${base}${path}`, {
@@ -9241,15 +9242,14 @@ window.addEventListener("load", async () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ app_id: "collector", ...payload }),
         });
-        if (!res.ok) {
-          const errJson = await res.json().catch(() => null);
-          if (errJson && errJson.error) return errJson;
-          lastErr = new Error(`HTTP ${res.status}`);
-          continue;
-        }
-        return await res.json();
+        const data = await res.json().catch(() => null);
+        if (res.ok && data && data.ok) return data;
+        if (res.status >= 400 && res.status < 500 && data && data.error) return data;
+        lastJson = data;
+        lastErr = new Error(data?.error || `HTTP ${res.status}`);
       } catch (e) { lastErr = e; }
     }
+    if (lastJson) return lastJson;
     throw lastErr || new Error("OTP API unreachable");
   }
   if ($("btnSendEmailOtp")) {

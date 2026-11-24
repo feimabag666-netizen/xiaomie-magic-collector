@@ -131,10 +131,13 @@ export async function onRequestPost(context) {
       ? `您好！\n\n您正在登录「小咩魔法采集 (Xiaomie Magic Collector)」，验证码为：\n\n  ${code}\n\n验证码 10 分钟内有效，请勿泄露给他人。\n\n官方客服邮箱：info@xiaomie.tools\n官网：https://xiaomie-magic-collector.pages.dev`
       : `Hello!\n\nYour verification code for Xiaomie Magic Collector is:\n\n  ${code}\n\nThis code expires in 10 minutes. Do not share it with anyone.\n\nSupport: info@xiaomie.tools`;
 
+    const smtpUser = context.env.PURELYMAIL_NOREPLY_PASSWORD
+      ? "noreply@xiaomie.tools"
+      : (context.env.PURELYMAIL_USER || "info@xiaomie.tools");
     await sendSmtpEmail({
       host: "smtp.purelymail.com",
       port: 465,
-      user: "noreply@xiaomie.tools",
+      user: smtpUser,
       pass: smtpPass,
       to: email,
       subject,

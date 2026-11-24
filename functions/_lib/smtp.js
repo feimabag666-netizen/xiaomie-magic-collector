@@ -110,7 +110,11 @@ export async function sendEntitlementEmail(env, { to, plan, quotaLimit, paidAmou
     `Support: info@xiaomie.tools`,
   ].filter(v => v !== null);
 
+  const smtpUser = env.PURELYMAIL_NOREPLY_PASSWORD
+    ? "noreply@xiaomie.tools"
+    : (env.PURELYMAIL_USER || "info@xiaomie.tools");
   await sendSmtpEmail({
+    user: smtpUser,
     pass,
     to,
     subject,
