@@ -3069,14 +3069,12 @@ function buildDefaultCommonFields(mode = "b2b") {
 // 可选参数（参照 1688 页面参数种类，去掉与箱规重复的“包装规格”与无关项；双击可升为常用参数）
 const DEF_SECONDARY = [
   // A. 1688 产品实用属性
-  { n: "详细规格", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["详细规格", "规格", "款式", "型号规格", "规格型号", "技术参数", "variants", "options", "specifications"] },
+  { n: "详细规格", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["详细规格", "规格", "款式", "型号规格", "规格型号", "技术参数", "电压", "额定电压", "功率", "额定功率", "voltage", "power", "wattage", "variants", "options", "specifications"] },
   { n: "颜色", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["颜色", "颜色分类", "花色", "色号", "配色", "color", "colour"] },
   { n: "包装方式", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["包装方式", "包装", "包装类型", "package", "packaging"] },
   { n: "产品尺寸", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["产品尺寸", "尺寸", "单品尺寸", "外形尺寸", "规格尺寸", "size", "dimensions", "product dimensions", "item dimensions"] },
   { n: "单件重量", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["单件重量", "重量", "产品重量", "单品重量", "克重", "单重", "weight", "unit weight", "item weight"] },
   { n: "容量", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["容量", "容积", "capacity", "volume"] },
-  { n: "功率", group: "basic", b2b: true, b2c: true, rec: false, c: false, aliases: ["功率", "额定功率", "power", "wattage"] },
-  { n: "电压", group: "basic", b2b: true, b2c: true, rec: false, c: false, aliases: ["电压", "额定电压", "voltage"] },
   { n: "功能", group: "basic", b2b: true, b2c: true, rec: true, c: true, aliases: ["功能", "产品功能", "特点", "function", "feature", "special feature"] },
   { n: "适用人群", group: "basic", b2b: false, b2c: true, rec: true, c: false, aliases: ["适用人群", "人群", "适用对象", "target audience"] },
   { n: "单位", group: "basic", b2b: true, b2c: false, rec: true, c: true, aliases: ["单位", "计价单位", "计量单位", "unit"] },
@@ -3120,10 +3118,10 @@ async function loadFields(key, defNames, defChecked) {
   if (Array.isArray(o[key]) && o[key].length) {
     let arr = o[key].filter(f => f.n !== "货号");
     if (key === "commonFields") {
-      arr = arr.filter(f => f.n !== "装箱数" && f.n !== "箱子毛重" && f.n !== "箱子净重");
+      arr = arr.filter(f => f.n !== "装箱数" && f.n !== "箱子毛重" && f.n !== "箱子净重" && f.n !== "电压" && f.n !== "功率");
     }
     if (key === "secondaryFields") {
-      const removedNames = new Set(["包装规格", "价格区间", "主要下游平台", "是否进口", "是否一次性", "24h揽收率", "48h揽收率", "代发品质达标率", "近7天代发数量", "近30天代发数量", "下游铺货数", "铺货分销商数", "商家代发热度"]);
+      const removedNames = new Set(["包装规格", "价格区间", "主要下游平台", "是否进口", "是否一次性", "24h揽收率", "48h揽收率", "代发品质达标率", "近7天代发数量", "近30天代发数量", "下游铺货数", "铺货分销商数", "商家代发热度", "电压", "功率"]);
       arr = arr.map(f => (f.n === "规格" ? { ...f, n: "详细规格" } : f)).filter(f => !removedNames.has(f.n));
     }
     for (const d of defaults) if (!arr.some(f => f.n === d.n)) arr.push(d);
@@ -3407,7 +3405,7 @@ async function loadActiveFieldProfile(mode = activeBizMode) {
   const prof = stored?.[key] || stored?.[legacyKey];
   if (prof && Array.isArray(prof.common) && prof.common.length) {
     const filtered = prof.common
-      .filter(f => f && f.n && f.n !== "货号" && f.n !== "包装规格" && f.n !== "产品类别" && f.n !== "产品参数" && f.n !== "专利类型" && f.n !== "版权")
+      .filter(f => f && f.n && f.n !== "货号" && f.n !== "包装规格" && f.n !== "产品类别" && f.n !== "产品参数" && f.n !== "专利类型" && f.n !== "版权" && f.n !== "电压" && f.n !== "功率")
       .map(f => ({ n: f.n === "规格" ? "详细规格" : f.n, c: Boolean(f.c), v: String(f.v || "") }));
     // 保证核心常用字段排在最前面
     const coreOrder = buildDefaultCommonFields(activeBizMode).filter(f => f.c).map(f => f.n);
@@ -3502,7 +3500,7 @@ function renderSecondaryFields() {
         renderSecondaryFields();
       };
       const span = document.createElement("span");
-      span.textContent = f.n === "详细规格" ? "详细规格（设备类）" : f.n;
+      span.textContent = f.n === "详细规格" ? "详细规格（电子类，设备类）" : f.n;
       lbl.append(cb, span);
       grid.appendChild(lbl);
     }
@@ -3592,7 +3590,7 @@ function renderFields(boxId, key, arr, isAi) {
       else saveActiveFieldProfile();
     };
     const nm = document.createElement("span");
-    nm.innerText = f.n === "详细规格" ? "详细规格（设备类）" : f.n;
+    nm.innerText = f.n === "详细规格" ? "详细规格（电子类，设备类）" : f.n;
     nm.style.cssText = "min-width:96px;font-weight:700;font-size:12.5px;color:#4a3563;cursor:default";
     const inp = document.createElement("input");
     if (!isAi && f.n === "型号") {
@@ -3944,7 +3942,7 @@ const FIELD_ALIAS = {
   "起订量": ["起订量", "起批量", "最低起订", "最小起订量", "moq", "minimum order quantity", "min. order", "минимальный заказ", "最小注文数", "최소주문수량"],
   "材质": ["材质", "材料", "面料", "主材质", "内胆材质", "外壳材质", "外壳材料", "材质成分", "刷毛材质", "刷柄材质", "material", "fabric", "material type", "материал", "素材", "材質", "재질", "소재", "matériau", "matière", "werkstoff"],
   "产地": ["产地", "货源地", "生产地", "所在地", "发货地", "origin", "country of origin", "place of origin", "страна производства", "原産国", "生産国", "원산지", "origen", "origem", "origine", "herkunftsland"],
-  "详细规格": ["详细规格", "规格", "款式", "型号规格", "规格型号", "技术参数", "variants", "options", "specifications"],
+  "详细规格": ["详细规格", "规格", "款式", "型号规格", "规格型号", "技术参数", "电压", "额定电压", "功率", "额定功率", "voltage", "power", "wattage", "variants", "options", "specifications"],
   "产品尺寸": ["产品尺寸", "尺寸", "单品尺寸", "外形尺寸", "规格尺寸", "产品规格", "长宽高", "口径", "直径", "size", "dimensions", "product dimensions", "item dimensions", "product size", "measurements"],
   "单件重量": ["单件重量", "重量", "产品重量", "单品重量", "克重", "单重", "净重", "weight", "unit weight", "item weight", "net weight"],
   "容量": ["容量", "容积", "水箱容量", "capacity", "volume"],
@@ -7091,6 +7089,22 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
             } else if (isDefaultPreset && (is1688 || /(?:alibaba\.com|made-in-china\.com|dhgate\.com|globalsources\.com|xiaomie\.tools)/i.test(url))) {
               v = rawPreset;
               srcStage = "";
+            }
+            // 「详细规格（电子类，设备类）」自动汇总归类网页与OCR中的电压、功率等电气参数
+            if (f.n === "详细规格") {
+              const elecParts = [];
+              const voltRes = await findSpecsByFourStageCascade(data, url, stageOcrItems, "电压", cascadeCache, false, false);
+              if (voltRes?.value && !String(v || "").includes(voltRes.value)) {
+                elecParts.push(`${outLang === "en" ? "Voltage" : "电压"}: ${voltRes.value}`);
+              }
+              const powRes = await findSpecsByFourStageCascade(data, url, stageOcrItems, "功率", cascadeCache, false, false);
+              if (powRes?.value && !String(v || "").includes(powRes.value)) {
+                elecParts.push(`${outLang === "en" ? "Power" : "功率"}: ${powRes.value}`);
+              }
+              if (elecParts.length) {
+                v = [v, ...elecParts].filter(Boolean).join("；");
+                if (!srcStage) srcStage = voltRes?.source || powRes?.source || "网页参数";
+              }
             }
           }
           if (isCarton) {
