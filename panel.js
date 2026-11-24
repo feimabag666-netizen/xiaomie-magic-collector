@@ -4404,6 +4404,37 @@ async function syncTrialQuotaWithServer(localUsed = 0, forceNetwork = false) {
   return _initialServerQuotaSyncPromise;
 }
 
+let _initialCloudAcctSyncDone = false;
+async function syncCloudAccountEntitlement(st, forceNetwork = false) {
+  if (!st || !st.loggedIn || !st.accountName || !String(st.accountName).includes("@")) return null;
+  if (typeof fetch !== "function" || typeof window.__captured !== "undefined") return null;
+  if (!forceNetwork && _initialCloudAcctSyncDone) return null;
+  _initialCloudAcctSyncDone = true;
+  const deviceFp = await computeDeviceFingerprint().catch(() => "");
+  for (const base of TRIAL_QUOTA_API_BASES) {
+    try {
+      const r = await fetch(`${base}/api/account-sync`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: String(st.accountName).trim().toLowerCase(),
+          provider: st.provider || "email",
+          plan: st.plan || "trial",
+          usedCount: st.usedCount || 0,
+          quotaLimit: st.quotaLimit || 20,
+          deviceFp,
+        }),
+        signal: AbortSignal.timeout(3500),
+      });
+      if (!r.ok) continue;
+      const j = await r.json().catch(() => null);
+      if (j && j.ok && j.account) return j.account;
+    } catch {}
+  }
+  return null;
+}
+
 async function getAuthState() {
   const s = await chrome.storage.local.get("xmAuthState").catch(() => ({}));
   const syncS = chrome.storage?.sync
@@ -4428,6 +4459,26 @@ async function getAuthState() {
   if (st.plan === "trial" && typeof syncGuard.trialMaxUsedCount === "number" && syncGuard.trialMaxUsedCount > (st.usedCount || 0)) {
     st.usedCount = Math.min(20, syncGuard.trialMaxUsedCount);
   }
+  // 若用户已登录谷歌或邮箱账号，同步云端权益（含管理员指定的终身免费账号 free_vip 及跨设备付费权益）
+  if (st.loggedIn && st.accountName && String(st.accountName).includes("@")) {
+    const cloudAcct = await syncCloudAccountEntitlement(st, false).catch(() => null);
+    if (cloudAcct) {
+      let changed = false;
+      if (cloudAcct.plan && cloudAcct.plan !== st.plan) {
+        st.plan = cloudAcct.plan;
+        changed = true;
+      }
+      if (typeof cloudAcct.usedCount === "number" && cloudAcct.usedCount > (st.usedCount || 0)) {
+        st.usedCount = cloudAcct.usedCount;
+        changed = true;
+      }
+      if (typeof cloudAcct.quotaLimit === "number" && cloudAcct.quotaLimit > (st.quotaLimit || 0)) {
+        st.quotaLimit = cloudAcct.quotaLimit;
+        changed = true;
+      }
+      if (changed) chrome.storage.local.set({ xmAuthState: st }).catch(() => {});
+    }
+  }
   // 首次加载时与服务端同步该电脑历史已用试用次数（卸载重装扩展后依然保留原采集个数）
   if (st.plan === "trial") {
     const serverUsed = await syncTrialQuotaWithServer(st.usedCount || 0, false).catch(() => _serverTrialMaxUsed);
@@ -4437,7 +4488,7 @@ async function getAuthState() {
     }
   }
 
-  if (!st.loggedIn && (st.plan === "pack100" || st.plan === "lifetime")) {
+  if (!st.loggedIn && (st.plan === "pack100" || st.plan === "lifetime" || st.plan === "free_vip")) {
     st.plan = "trial";
     st.quotaLimit = 20;
     st.adminApiDestroyed = false;
@@ -4451,7 +4502,7 @@ async function getAuthState() {
   if (st.plan === "pack100" || st.plan === "lifetime") {
     _adminApiVault.destroy();
     st.adminApiDestroyed = true;
-  } else if (st.plan === "trial" && !st.adminApiDestroyed) {
+  } else if ((st.plan === "trial" || st.plan === "free_vip") && !st.adminApiDestroyed) {
     _adminApiVault.restore();
   }
   return st;
@@ -4463,11 +4514,20 @@ async function saveAuthState(patch) {
   if (next.plan === "pack100" || next.plan === "lifetime") {
     _adminApiVault.destroy();
     next.adminApiDestroyed = true;
-  } else if (next.plan === "trial" && patch && patch.adminApiDestroyed === false) {
+  } else if ((next.plan === "trial" || next.plan === "free_vip") && patch && patch.adminApiDestroyed === false) {
     _adminApiVault.restore();
     next.adminApiDestroyed = false;
   }
   await chrome.storage.local.set({ xmAuthState: next }).catch(() => {});
+  // 已登录账号同步至云端 KV（管理员后台实时可见试用/付款/采集次数）
+  if (next.loggedIn && next.accountName && String(next.accountName).includes("@")) {
+    const cloudAcct = await syncCloudAccountEntitlement(next, true).catch(() => null);
+    if (cloudAcct && cloudAcct.plan && cloudAcct.plan !== next.plan) {
+      next.plan = cloudAcct.plan;
+      if (cloudAcct.quotaLimit) next.quotaLimit = cloudAcct.quotaLimit;
+      await chrome.storage.local.set({ xmAuthState: next }).catch(() => {});
+    }
+  }
   // 同步写入 chrome.storage.sync + 服务端设备指纹/HttpOnly Cookie，防止卸载重装插件重置 20 个免费试用额度
   if (next.plan === "trial") {
     const serverUsed = await syncTrialQuotaWithServer(next.usedCount || 0, true).catch(() => _serverTrialMaxUsed);
@@ -7137,7 +7197,7 @@ async function runSingleQueuedTask(task) {
 
   // 校验额度
   const curAuth = await getAuthState();
-  const maxQuota = curAuth.plan === "lifetime" ? Infinity : (curAuth.plan === "pack100" ? (curAuth.quotaLimit || 100) : 20);
+  const maxQuota = (curAuth.plan === "lifetime" || curAuth.plan === "free_vip") ? Infinity : (curAuth.plan === "pack100" ? (curAuth.quotaLimit || 100) : 20);
   if ((curAuth.usedCount || 0) >= maxQuota) {
     if (curAuth.plan === "trial" && !curAuth.loggedIn) {
       $("status").innerText = "免费试用期 20 个产品额度已用完，请先登录官方账号（支持 Google 官方授权 或 全球官方邮箱登录）！";
@@ -7196,8 +7256,8 @@ async function runSingleQueuedTask(task) {
       await appendBillingLedgerEntry({
         type: "deduct",
         title: r?.folder || u,
-        delta: updatedAuth.plan === "lifetime" ? "0 (SVIP不限量)" : "-1 额度",
-        balance: updatedAuth.plan === "lifetime" ? "∞" : String(Math.max(0, (updatedAuth.quotaLimit || 20) - nextUsed)),
+        delta: updatedAuth.plan === "free_vip" ? "0 (终身免费特权)" : (updatedAuth.plan === "lifetime" ? "0 (SVIP不限量)" : "-1 额度"),
+        balance: (updatedAuth.plan === "lifetime" || updatedAuth.plan === "free_vip") ? "∞" : String(Math.max(0, (updatedAuth.quotaLimit || 20) - nextUsed)),
       });
     }
     if (typeof syncAuthAndApiUI === "function") await syncAuthAndApiUI();
@@ -7503,8 +7563,8 @@ async function renderUserBillingLedger(st) {
   const sumEl = $("userEntitlementSummary");
   const listEl = $("userDeductionLedger");
   if (sumEl) {
-    const planLabel = st.plan === "lifetime" ? "👑 SVIP 终身至尊版（不限量）" : st.plan === "pack100" ? `⭐ VIP 百品采集包（总额度 ${st.quotaLimit || 100}）` : "🎁 免费试用版（20 个产品）";
-    const apiMode = (st.plan === "pack100" || st.plan === "lifetime") ? "✅ 已解锁自有 API Key" : "🔒 试用期内置 API";
+    const planLabel = st.plan === "free_vip" ? "🎁 终身免费特权账号（不限量）" : st.plan === "lifetime" ? "👑 SVIP 终身至尊版（不限量）" : st.plan === "pack100" ? `⭐ VIP 百品采集包（总额度 ${st.quotaLimit || 100}）` : "🎁 免费试用版（20 个产品）";
+    const apiMode = st.plan === "free_vip" ? "✅ 终身免费特权（内置 API 可用）" : (st.plan === "pack100" || st.plan === "lifetime") ? "✅ 已解锁自有 API Key" : "🔒 试用期内置 API";
     sumEl.innerHTML = `当前权益：<strong>${planLabel}</strong> ｜ API 权限：<strong>${apiMode}</strong> ｜ 客服支持：<strong>info@xiaomie.tools</strong>`;
   }
   if (listEl) {
@@ -7543,7 +7603,10 @@ async function syncAuthAndApiUI() {
   const quotaEl = $("quotaStatusText");
   const headerPlan = $("headerPlanPill");
 
-  if (st.plan === "lifetime") {
+  if (st.plan === "free_vip") {
+    if (quotaEl) quotaEl.textContent = `🎁 终身免费特权账号：已采集 ${used} 个产品（全网不限量）`;
+    if (headerPlan) headerPlan.textContent = "🎁 方案：终身免费特权";
+  } else if (st.plan === "lifetime") {
     if (quotaEl) quotaEl.textContent = `👑 SVIP 终身至尊用户：已采集 ${used} 个产品（全网不限量）`;
     if (headerPlan) headerPlan.textContent = "👑 方案：SVIP 终身至尊用户";
   } else if (st.plan === "pack100") {

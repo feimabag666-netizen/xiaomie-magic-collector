@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>小咩魔法采集 · 管理员后台</title>
+  <style>
+    :root { --bg:#f6f5fb; --card:#fff; --ink:#1f1933; --muted:#64748b; --line:#e4dff2; --pri:#5b21b6; --pri2:#7c3aed; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--ink); }
+    .wrap { max-width:1180px; margin:0 auto; padding:24px 18px 60px; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:20px; }
+    .brand { font-size:20px; font-weight:800; color:var(--pri); display:flex; align-items:center; gap:8px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px; margin-bottom:16px; box-shadow:0 4px 18px rgba(91,33,182,.04); }
+    .grid-kpi { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:16px; }
+    .kpi { background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+    .kpi .k-lbl { font-size:12px; color:var(--muted); margin-bottom:6px; }
+    .kpi .k-val { font-size:24px; font-weight:800; color:var(--pri); }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    input, select { padding:8px 11px; border:1px solid #d5cce8; border-radius:8px; font-size:13px; background:#fff; color:var(--ink); }
+    button { padding:8px 14px; border:1px solid transparent; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer; background:var(--pri); color:#fff; }
+    button:hover { opacity:.92; }
+    button.ghost { background:#fff; color:var(--pri); border-color:#d5cce8; }
+    button.green { background:#059669; }
+    button.danger { background:#dc2626; }
+    button.sm { padding:4px 9px; font-size:11.5px; }
+    table { width:100%; border-collapse:collapse; font-size:12.5px; }
+    th, td { text-align:left; padding:10px 8px; border-bottom:1px solid #efeaf8; vertical-align:middle; }
+    th { font-size:12px; color:var(--muted); background:#faf8ff; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; }
+    .b-free_vip { background:#dcfce7; color:#166534; }
+    .b-lifetime { background:#f3e8ff; color:#6b21a8; }
+    .b-pack100 { background:#dbeafe; color:#1d4ed8; }
+    .b-trial { background:#f1f5f9; color:#475569; }
+    .alert { padding:10px 14px; border-radius:9px; font-size:12.5px; margin-bottom:12px; display:none; }
+    .alert.warn { background:#fefce8; border:1px solid #fde047; color:#854d0e; }
+    .alert.err { background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; }
+    .alert.ok { background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">🐑 小咩魔法采集 · 管理员后台</div>
+      <div class="row" id="adminHeaderInfo" style="display:none">
+        <span id="adminWho" style="font-size:12.5px;color:var(--muted)"></span>
+        <button type="button" class="ghost sm" id="btnRefresh">🔄 刷新列表</button>
+        <button type="button" class="ghost sm" id="btnLogout">退出登录</button>
+      </div>
+    </div>
+
+    <div id="msgBox" class="alert"></div>
+
+    <!-- 管理员登录卡片 -->
+    <div class="card" id="loginCard" style="max-width:460px;margin:40px auto">
+      <h3 style="margin:0 0 12px;font-size:16px">🔐 管理员身份验证</h3>
+      <p style="margin:0 0 14px;font-size:12.5px;color:var(--muted);line-height:1.6">
+        请输入管理员谷歌邮箱 / 官方邮箱及管理员密钥进入后台，查看全站账号试用、付款与权益状态，并可指定任意账号终身免费。
+      </p>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <input id="inpAdminEmail" type="email" placeholder="管理员邮箱（如您的谷歌邮箱或 info@xiaomie.tools）" />
+        <input id="inpAdminSecret" type="password" placeholder="管理员密钥（Cloudflare 环境变量 ADMIN_SECRET）" />
+        <button type="button" id="btnAdminLogin">进入管理员后台</button>
+      </div>
+    </div>
+
+    <!-- 管理员主控制台 -->
+    <div id="dashboard" style="display:none">
+      <div class="grid-kpi">
+        <div class="kpi"><div class="k-lbl">总账号数</div><div class="k-val" id="kTotal">0</div></div>
+        <div class="kpi"><div class="k-lbl">🆓 试用中</div><div class="k-val" id="kTrial">0</div></div>
+        <div class="kpi"><div class="k-lbl">⭐ 百品包 VIP</div><div class="k-val" id="kPack100">0</div></div>
+        <div class="kpi"><div class="k-lbl">👑 终身 SVIP</div><div class="k-val" id="kLifetime">0</div></div>
+        <div class="kpi"><div class="k-lbl">🎁 终身免费白名单</div><div class="k-val" style="color:#059669" id="kFreeVip">0</div></div>
+        <div class="kpi"><div class="k-lbl">累计采集次数</div><div class="k-val" id="kUsed">0</div></div>
+      </div>
+
+      <!-- 添加 / 指定终身免费账号或开通套餐 -->
+      <div class="card">
+        <h3 style="margin:0 0 10px;font-size:15px">🎁 指定免费账号 / 手动开通或调整权益</h3>
+        <div class="row">
+          <input id="fEmail" type="email" placeholder="输入谷歌邮箱或普通邮箱（如 friend@gmail.com）" style="flex:1.4;min-width:220px" />
+          <select id="fPlan" style="min-width:170px">
+            <option value="free_vip">🎁 终身免费账号（不限次数）</option>
+            <option value="lifetime">👑 终身 SVIP（¥999 不限次数）</option>
+            <option value="pack100">⭐ 百品包 VIP（100次）</option>
+            <option value="trial">🆓 免费试用版（20次）</option>
+          </select>
+          <input id="fPaid" type="text" placeholder="付款金额/凭证（选填如 ¥500）" style="width:155px" />
+          <input id="fUsed" type="number" min="0" placeholder="已用次数(留空不变)" style="width:135px" />
+          <input id="fNote" type="text" placeholder="备注（如 内部同事 / 合伙人）" style="flex:1;min-width:150px" />
+          <button type="button" class="green" id="btnSaveAccount">✅ 保存并立即生效</button>
+        </div>
+      </div>
+
+      <!-- 账号列表 -->
+      <div class="card">
+        <div class="row" style="justify-content:space-between;margin-bottom:12px">
+          <h3 style="margin:0;font-size:15px">📋 全站账号试用、付款与权益明细</h3>
+          <div class="row">
+            <input id="qSearch" type="text" placeholder="按邮箱或备注搜索…" style="width:200px" />
+            <select id="qFilterPlan">
+              <option value="all">全部套餐</option>
+              <option value="free_vip">🎁 终身免费账号</option>
+              <option value="lifetime">👑 终身 SVIP</option>
+              <option value="pack100">⭐ 百品包 VIP</option>
+              <option value="trial">🆓 试用中</option>
+            </select>
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>账号邮箱</th>
+                <th>登录方式</th>
+                <th>当前权益</th>
+                <th>已用 / 额度</th>
+                <th>付款记录</th>
+                <th>备注</th>
+                <th>最后活跃</th>
+                <th>快捷操作</th>
+              </tr>
+            </thead>
+            <tbody id="acctTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const PLAN_LABELS = {
+      free_vip: "🎁 终身免费",
+      lifetime: "👑 终身 SVIP",
+      pack100: "⭐ 百品包 VIP",
+      trial: "🆓 试用版",
+    };
+    let allAccounts = [];
+
+    function showMsg(text, type = "ok") {
+      const el = $("msgBox");
+      if (!text) { el.style.display = "none"; return; }
+      el.className = "alert " + type;
+      el.textContent = text;
+      el.style.display = "block";
+    }
+
+    function getCreds() {
+      return {
+        email: sessionStorage.getItem("xmAdminEmail") || "",
+        secret: sessionStorage.getItem("xmAdminSecret") || "",
+      };
+    }
+
+    async function callAdminApi(payload) {
+      const { email, secret } = getCreds();
+      const resp = await fetch("/api/admin/accounts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Email": email,
+          "X-Admin-Secret": secret,
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json().catch(() => ({ ok: false, error: "响应解析失败" }));
+      if (!resp.ok || !data.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+      return data;
+    }
+
+    function fmtTime(ts) {
+      if (!ts) return "-";
+      const d = new Date(ts);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    }
+
+    function renderTable() {
+      const q = ($("qSearch").value || "").trim().toLowerCase();
+      const pf = $("qFilterPlan").value;
+      const list = allAccounts.filter(a => {
+        if (pf !== "all" && a.plan !== pf) return false;
+        if (q && !(`${a.email} ${a.note || ""} ${a.paidAmount || ""}`.toLowerCase().includes(q))) return false;
+        return true;
+      });
+      const tb = $("acctTbody");
+      tb.innerHTML = "";
+      if (!list.length) {
+        tb.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:24px">暂无匹配账号记录</td></tr>`;
+        return;
+      }
+      for (const a of list) {
+        const tr = document.createElement("tr");
+        const limStr = (a.plan === "lifetime" || a.plan === "free_vip") ? "∞" : (a.quotaLimit || 20);
+        tr.innerHTML = `
+          <td><strong>${a.email}</strong></td>
+          <td>${a.provider === "google" ? "🔵 Google" : "📧 邮箱"}</td>
+          <td><span class="badge b-${a.plan}">${PLAN_LABELS[a.plan] || a.plan}</span></td>
+          <td><strong>${a.usedCount || 0}</strong> / ${limStr}</td>
+          <td>${a.paidAmount || "-"}</td>
+          <td>${a.note || "-"}</td>
+          <td style="color:#64748b">${fmtTime(a.updatedAt)}</td>
+          <td>
+            <div class="row" style="gap:5px">
+              <button type="button" class="green sm" data-act="free_vip" data-em="${a.email}">设终身免费</button>
+              <button type="button" class="ghost sm" data-act="pack100" data-em="${a.email}">百品包</button>
+              <button type="button" class="ghost sm" data-act="lifetime" data-em="${a.email}">终身SVIP</button>
+              <button type="button" class="ghost sm" data-act="reset" data-em="${a.email}">清零次数</button>
+              <button type="button" class="danger sm" data-act="delete" data-em="${a.email}">删</button>
+            </div>
+          </td>
+        `;
+        tb.appendChild(tr);
+      }
+      tb.querySelectorAll("button[data-act]").forEach(btn => {
+        btn.onclick = async () => {
+          const act = btn.dataset.act;
+          const em = btn.dataset.em;
+          try {
+            if (act === "delete") {
+              if (!confirm(`确定删除 ${em} 的记录？`)) return;
+              await callAdminApi({ action: "delete", email: em });
+              showMsg(`已删除 ${em}`, "ok");
+            } else if (act === "reset") {
+              const cur = allAccounts.find(x => x.email === em);
+              await callAdminApi({ action: "upsert", email: em, plan: cur?.plan || "trial", usedCount: 0 });
+              showMsg(`已将 ${em} 已用次数清零`, "ok");
+            } else {
+              await callAdminApi({
+                action: "upsert",
+                email: em,
+                plan: act,
+                paidAmount: act === "free_vip" ? "管理员免费授权" : (act === "lifetime" ? "¥999" : "¥500"),
+              });
+              showMsg(`已将 ${em} 设置为 ${PLAN_LABELS[act]}`, "ok");
+            }
+            await loadDashboard();
+          } catch (e) {
+            showMsg(e.message, "err");
+          }
+        };
+      });
+    }
+
+    async function loadDashboard() {
+      const data = await callAdminApi({ action: "list" });
+      if (!data.kvBound) {
+        showMsg(data.warning || "尚未绑定 Cloudflare KV（ACCOUNTS_KV），当前为只读提示状态。", "warn");
+      }
+      allAccounts = data.accounts || [];
+      $("kTotal").textContent = data.stats?.total || 0;
+      $("kTrial").textContent = data.stats?.trial || 0;
+      $("kPack100").textContent = data.stats?.pack100 || 0;
+      $("kLifetime").textContent = data.stats?.lifetime || 0;
+      $("kFreeVip").textContent = data.stats?.free_vip || 0;
+      $("kUsed").textContent = data.stats?.totalUsed || 0;
+      renderTable();
+    }
+
+    $("btnAdminLogin").onclick = async () => {
+      const em = ($("inpAdminEmail").value || "").trim().toLowerCase();
+      const sc = ($("inpAdminSecret").value || "").trim();
+      if (!em || !sc) return showMsg("请输入管理员邮箱和密钥", "err");
+      sessionStorage.setItem("xmAdminEmail", em);
+      sessionStorage.setItem("xmAdminSecret", sc);
+      try {
+        showMsg("", "ok");
+        await loadDashboard();
+        $("loginCard").style.display = "none";
+        $("dashboard").style.display = "block";
+        $("adminHeaderInfo").style.display = "flex";
+        $("adminWho").textContent = `管理员：${em}`;
+      } catch (e) {
+        sessionStorage.removeItem("xmAdminSecret");
+        showMsg(e.message, "err");
+      }
+    };
+
+    $("btnSaveAccount").onclick = async () => {
+      const email = ($("fEmail").value || "").trim().toLowerCase();
+      const plan = $("fPlan").value;
+      const paidAmount = ($("fPaid").value || "").trim();
+      const usedCount = $("fUsed").value;
+      const note = ($("fNote").value || "").trim();
+      if (!email) return showMsg("请输入目标谷歌邮箱或电子邮箱", "err");
+      try {
+        await callAdminApi({ action: "upsert", email, plan, paidAmount, usedCount, note });
+        $("fEmail").value = "";
+        $("fPaid").value = "";
+        $("fUsed").value = "";
+        $("fNote").value = "";
+        showMsg(`✅ 已成功为 ${email} 设置为「${PLAN_LABELS[plan]}」，该账号重新打开插件即自动生效！`, "ok");
+        await loadDashboard();
+      } catch (e) {
+        showMsg(e.message, "err");
+      }
+    };
+
+    $("btnRefresh").onclick = () => loadDashboard().catch(e => showMsg(e.message, "err"));
+    $("btnLogout").onclick = () => {
+      sessionStorage.removeItem("xmAdminEmail");
+      sessionStorage.removeItem("xmAdminSecret");
+      location.reload();
+    };
+    $("qSearch").oninput = renderTable;
+    $("qFilterPlan").onchange = renderTable;
+
+    // 自动恢复当前会话
+    const saved = getCreds();
+    if (saved.email && saved.secret) {
+      $("inpAdminEmail").value = saved.email;
+      $("inpAdminSecret").value = saved.secret;
+      $("btnAdminLogin").click();
+    }
+  </script>
+</body>
+</html>
