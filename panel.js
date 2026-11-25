@@ -1587,9 +1587,9 @@ async function extractUniversalPageInTab() {
       }
       if (weights.length) put("单件重量", weights.slice(0, 8).join(" / "));
       if (dims.length && !attrs["产品尺寸"]) put("产品尺寸", dims.slice(0, 8).join(" / "));
-      if (ctnSizes.length && !attrs["箱子尺寸"]) put("箱子尺寸", ctnSizes.slice(0, 3).join(" / "));
-      if (ctnQtys.length && !attrs["每箱多少个"]) put("每箱多少个", ctnQtys.slice(0, 3).join(" / "));
-      if (ctnWeights.length && !attrs["箱子毛净重"]) put("箱子毛净重", ctnWeights.slice(0, 3).join(" / "));
+      if (ctnSizes.length && !attrs["箱子尺寸"]) put("箱子尺寸", ctnSizes.slice(0, 8).join(" / "));
+      if (ctnQtys.length && !attrs["每箱多少个"]) put("每箱多少个", ctnQtys.slice(0, 8).join(" / "));
+      if (ctnWeights.length && !attrs["箱子毛净重"]) put("箱子毛净重", ctnWeights.slice(0, 8).join(" / "));
       if (packSpecs.length) window.__xmTempPackSpecs = packSpecs;
       return true;
     };
@@ -2273,7 +2273,8 @@ async function captureFromTabId(tabId) {
         imageDims: fresh.imageDims || {},
         detailUrl: specialized.detailUrl || fresh.detailUrl || "",
         priceTiers: specialized.priceTiers || fresh.priceTiers || [],
-        variantsData: specialized.variantsData || fresh.variantsData || [],
+        variantsData: (specialized.variantsData && specialized.variantsData.length) ? specialized.variantsData : (fresh.variantsData || []),
+        packSpecs: (specialized.packSpecs && specialized.packSpecs.length) ? specialized.packSpecs : (fresh.packSpecs || []),
       };
     }
   }
@@ -4068,10 +4069,16 @@ function normalizeYesNoFieldValue(rawVal) {
   return "";
 }
 
-// 规范单件重量：确保一定带上明确单位（g / kg 等），支持多规格“/”分隔重量逐个补全单位
+// 规范单件重量：确保一定带上明确单位（g / kg 等），纯数字按页面键名或数值量级自动补全单位
 function normalizeUnitWeight(rawVal, attrs = {}) {
   const s = String(rawVal ?? "").trim();
   if (!s) return "";
+  if (/(?:kg|g|mg|lb|lbs|oz|克|千克|公斤|斤|两)\b/i.test(s) || /(?:克|千克|公斤|斤|两)/.test(s)) {
+    return s;
+  }
+  const numMatch = s.match(/(\d+(?:\.\d+)?)/);
+  if (!numMatch) return s;
+  // 先看网页属性表里对应的键名是否标明了单位（如 重量(kg) / 单位重量(g)）
   let hintedUnit = "";
   for (const k of Object.keys(attrs || {})) {
     if (/(?:重量|单重|净重|克重|weight)/i.test(k)) {
@@ -4079,31 +4086,19 @@ function normalizeUnitWeight(rawVal, attrs = {}) {
       if (/(?:g|克)/i.test(k) && !/kg/i.test(k)) { hintedUnit = "g"; break; }
     }
   }
-  const normOne = (part) => {
-    const p = String(part || "").trim();
-    if (!p) return "";
-    if (/(?:kg|g|mg|lb|lbs|oz|克|千克|公斤|斤|两)\b/i.test(p) || /(?:克|千克|公斤|斤|两)/.test(p)) return p;
-    const numMatch = p.match(/(\d+(?:\.\d+)?)/);
-    if (!numMatch) return p;
-    let u = hintedUnit;
-    if (!u) {
-      const num = parseFloat(numMatch[1]);
-      // 1688/B2B 常见规律：小于 10 的小数（如 0.35 / 1.2）通常为 kg，>= 10 通常为 g（如 280 / 450）
-      u = (num > 0 && num < 10 && (p.includes(".") || num <= 5)) ? "kg" : "g";
-    }
-    return `${p}${u}`;
-  };
-  if (/[/／、]/.test(s)) {
-    return s.split(/\s*[/／、]\s*/).map(normOne).filter(Boolean).join(" / ");
+  if (!hintedUnit) {
+    const num = parseFloat(numMatch[1]);
+    // 1688/B2B 常见规律：小于 10 的小数（如 0.35 / 1.2）通常为 kg，>= 10 通常为 g（如 280 / 450）
+    hintedUnit = (num > 0 && num < 10 && (s.includes(".") || num <= 5)) ? "kg" : "g";
   }
-  return normOne(s);
+  return `${s}${hintedUnit}`;
 }
 
 // 清洗网页属性表：剔除“材质: 预览”等UI噪音词、剔除1688表格倒序重复项（如“否: 是否一次性”、“成人: 适用人群”、“清洁: 功能”）以及 SKU 库存行（如“紫+蓝2支装: 37”）
 function sanitizeProductAttrs(rawAttrs) {
   if (!rawAttrs || typeof rawAttrs !== "object") return {};
   const entries = Object.entries(rawAttrs);
-  const badKeyOrValRe = /^(?:预览|查看|展开|收起|更多|查看详情|详情|商品属性|跨境属性|包装信息|物流参数|数量|客服|评价|收藏|举报|登录|注册|选择|立即购买|加入购物车|全部|操作|图片|大图|视频|说明|参数|无规格|无尺寸|无参数|无型号|暂无|未填写)$/i;
+  const badKeyOrValRe = /^(?:预览|查看|展开|收起|更多|查看详情|详情|商品属性|跨境属性|包装信息|物流参数|数量|客服|评价|收藏|举报|登录|注册|选择|立即购买|加入购物车|全部|操作|图片|大图|视频|说明|参数)$/i;
   const pureValueAsKeyRe = /^(?:是|否|无|有|支持|不支持|可|不可|不限|通用|\d+(?:\.\d+)?%?)$/;
   const skuOptionSet = new Set();
   for (const [k, v] of entries) {
@@ -4141,12 +4136,7 @@ function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function isValidFieldValue(name, val) {
   const v = String(val || "").trim();
   if (!v) return false;
-  if (/^(?:预览|查看|展开|收起|更多|查看详情|详情|图片|大图|视频|暂无|待定|未知|不详|说明|参数|全部|选择|客服|评价|收藏|举报|登录|注册|无规格|无尺寸|无参数|无型号|无重量|无数据|无内容|未填写|未提供|空|默认|通用|其他|其它|n\/a|none|null|unknown|[-—–_/\\]+)$/i.test(v)) return false;
-  if (name === "产品尺寸") {
-    const hasDigit = /\d/.test(v);
-    const hasApparelSize = /(?:大号|中号|小号|特大号|加大号|迷你|mini|均码|\b(?:xs|s|m|l|xl|xxl|2xl|3xl)\b)/i.test(v);
-    if (!hasDigit && !hasApparelSize) return false;
-  }
+  if (/^(?:预览|查看|展开|收起|更多|查看详情|详情|图片|大图|视频|暂无|待定|未知|不详|说明|参数|全部|选择|客服|评价|收藏|举报|登录|注册)$/i.test(v)) return false;
   if (name === "交期") {
     if (/(?:给力|杠杠|很快|超快|神速|好评|满意|态度|服务|物流体验)/.test(v)) return false;
     return /(?:\d|天|日|周|月|小时|时|现货|当天|次日|即发|协商|days?|weeks?|hours?|months?|stock|immediate)/i.test(v);
@@ -4176,39 +4166,19 @@ function matchField(name, attrs, text) {
       }
     }
   }
-  // 针对「产品尺寸」，若属性表里的“规格/产品规格”含真实维度数字（如 27*12*37cm），也直接采信
-  const isDimValRe = /(?:\d+(?:\.\d+)?\s*[×xX*＊]\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?\s*(?:cm|mm|m|寸|英寸|厘米|毫米))/i;
-  if (name === "产品尺寸") {
-    for (const k of keys) {
-      if (/^(?:规格|产品规格|规格尺寸)$/i.test(k.trim())) {
-        const v = String(attrs[k] || "").trim();
-        if (v && isDimValRe.test(v) && isValidFieldValue(name, v)) return v;
-      }
-    }
-  }
   if (text) {
     const BADVAL = new Set(["型号","名称","品牌","产地","尺寸","规格","重量","数量","参数","说明","详情","价格",
       "毛重","净重","装箱数","箱规","交期","起订量","装箱数量","外箱","箱子","包装","单位","备注","材质","颜色",
-      "预览","查看","展开","收起","更多","图片","大图","视频","全部","选择","客服","评价","收藏","举报","无规格","无尺寸"]);
+      "预览","查看","展开","收起","更多","图片","大图","视频","全部","选择","客服","评价","收藏","举报"]);
     const lenRange = isYesNo ? "{1,36}" : "{2,36}";
-    const textCands = name === "产品尺寸" && !cand.includes("规格") ? [...cand, "规格"] : cand;
-    for (const c of textCands) {
+    for (const c of cand) {
       const isAsciiCand = /^[a-z0-9\s._/-]+$/i.test(c);
       const boundaryPrefix = isAsciiCand ? "(?:^|\\b)" : "";
-      // 允许 OCR 图片排版中文字之间带空格（如“规 格：27*12*37CM”、“重 量：0.49KG”、“尺 寸：...”）
-      const keyPat = isAsciiCand ? escRe(c) : c.split("").map(ch => escRe(ch)).join("\\s*");
       const sepPattern = "\\s*[:：]\\s*";
-      const re = new RegExp(boundaryPrefix + keyPat + sepPattern + "([0-9a-zA-Z\\u4e00-\\u9fa5.．/×xX*＊\\- 、，,+]" + lenRange + ")", "ig");
-      for (const m of text.matchAll(re)) {
-        let rawMatched = m && m[1] ? m[1].trim() : "";
-        if (rawMatched && /^\s*[:：]/.test(text.slice((m.index || 0) + m[0].length))) {
-          rawMatched = rawMatched.replace(/\s+(?:[\u4e00-\u9fa5]{1,4}(?:\s+[\u4e00-\u9fa5]{1,4}){0,3}|[a-zA-Z][a-zA-Z\s]{1,16})$/, "").trim();
-        }
-        const v = norm(rawMatched);
-        if (!v || BADVAL.has(v) || !isValidFieldValue(name, v)) continue;
-        if (name === "产品尺寸" && c === "规格" && !isDimValRe.test(v)) continue;
-        return v;
-      }
+      const m = text.match(new RegExp(boundaryPrefix + escRe(c) + sepPattern + "([0-9a-zA-Z一-龥.．/×xX*＊\\- 、，,+]" + lenRange + ")", "i"));
+      const rawMatched = m && m[1] ? m[1].trim() : "";
+      const v = norm(rawMatched);
+      if (v && !BADVAL.has(v) && isValidFieldValue(name, v)) return v;
     }
     // 针对「包装方式」支持详情介绍中的自然语言描述（如 单个OPP袋包装、独立PE袋、彩盒装、牛皮纸盒、吸塑卡装、防尘袋包装 等）
     if (name === "包装方式") {
@@ -5799,161 +5769,156 @@ function formatPriceTiersForOutput(tiers, rawPriceStr, { minQty = 0, priceMode =
   return priceMode === "markup_pct" ? applyPriceMarkupPct(cleanRaw, markupPct) : cleanRaw;
 }
 
-// 识别并提取多规格商品（按 规格1 / 规格2 / 规格3 分别整理 型号、规格、箱规、价格 等差异参数）
-const SPEC_VARYING_FIELDS = new Set(["型号", "详细规格", "容量", "产品尺寸", "单件重量", "每箱多少个", "箱子毛净重", "箱子尺寸", "箱子立方数", "价格"]);
+// 识别并提取多规格商品（产品尺寸、箱规、单件重量、容量、价格严格一一对应，任一项有多个则其余联动适配）
+const SPEC_VARYING_FIELDS = new Set(["型号", "详细规格", "规格", "容量", "产品尺寸", "单件重量", "每箱多少个", "箱子毛净重", "箱子尺寸", "箱子立方数", "价格"]);
 
 // 提取纯物理规格名（剥离颜色词，颜色绝不能单独成为规格；仅容量/尺寸/单件重量/功率/电压/大小号等物理规格可独立成规格）
 const _PHYSICAL_SPEC_RE = /(?:\d+(?:\.\d+)?\s*(?:ml|l|oz|cm|mm|m|g|kg|w|kw|v|mah|ah|寸|英寸|号|升|毫升|克|千克|公斤|瓦|伏|件套|支装|个装|层|格)|大号|中号|小号|特大号|加大号|迷你|mini|\b(?:xs|s|m|l|xl|xxl|2xl|3xl)\b)/i;
 const _COLOR_WORD_RE = /(?:^|[\s\-—_\/／|,+]+)(?:(?:浅|深|亮|暗|哑光|磨砂|香槟|玫瑰|樱花|雾霾|克莱因|天|藏|宝|军|草|橄榄|墨|酒|枣|蜜桃|奶油|象牙|珍珠|星耀|曜石|炫酷|经典|纯)?(?:黑|白|红|粉|蓝|绿|灰|黄|橙|橘|紫|棕|咖|咖啡|金|银|青|茶|米|卡其|杏|驼|透明)色?|(?:black|white|red|pink|blue|green|gray|grey|yellow|orange|purple|brown|gold|silver|beige|khaki|navy|cyan|ivory|transparent|clear))(?=$|[\s\-—_\/／|,+]+)/gi;
-const _SIZE_RANK_MAP = { 迷你: 1, mini: 1, xs: 2, s: 3, 小号: 3, m: 4, 中号: 4, l: 5, 大号: 5, xl: 6, 特大号: 6, 加大号: 6, xxl: 7, "2xl": 7, "3xl": 8 };
 
-function _normSpecUnitText(rawU) {
-  const u = String(rawU || "").trim().toLowerCase();
-  if (!u) return "";
-  if (u === "毫升" || u === "ml") return "ml";
-  if (u === "升" || u === "l") return "L";
-  if (u === "克" || u === "g") return "g";
-  if (u === "千克" || u === "公斤" || u === "kg") return "kg";
-  if (u === "瓦" || u === "w") return "W";
-  if (u === "伏" || u === "v") return "V";
-  return rawU.trim();
-}
-
-function _inferDominantSpecUnit(inputs = []) {
-  const votes = {};
-  for (const src of inputs) {
-    const matches = String(src || "").matchAll(/\d+(?:\.\d+)?\s*(ml|l|oz|cm|mm|m|g|kg|w|kw|v|mah|ah|寸|英寸|升|毫升|克|千克|公斤|瓦|伏)\b/gi);
-    for (const m of matches) {
-      const u = _normSpecUnitText(m[1]);
-      if (u) votes[u] = (votes[u] || 0) + 1;
-    }
-  }
-  return Object.entries(votes).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
-}
-
-function _calcSpecSortKey(rawSpec) {
-  const s = String(rawSpec || "").trim();
-  if (!s) return Number.MAX_SAFE_INTEGER;
-  const dimMatches = [...s.matchAll(/(\d+(?:\.\d+)?)\s*[×xX*]\s*(\d+(?:\.\d+)?)(?:\s*[×xX*]\s*(\d+(?:\.\d+)?))?/g)];
-  if (dimMatches.length) {
-    const m = dimMatches[0];
-    const prod = parseFloat(m[1]) * parseFloat(m[2]) * (m[3] ? parseFloat(m[3]) : 1);
-    if (Number.isFinite(prod) && prod > 0) return prod;
-  }
-  const numUnit = s.match(/(\d+(?:\.\d+)?)\s*(ml|l|升|毫升|g|kg|千克|公斤|cm|mm|m|oz|w|kw|v|寸|英寸|号|mah|ah)?/i);
-  if (numUnit) {
-    let val = parseFloat(numUnit[1]);
-    const u = (numUnit[2] || "").toLowerCase();
-    if (u === "l" || u === "升" || u === "kg" || u === "千克" || u === "公斤" || u === "kw" || u === "ah") val *= 1000;
-    else if (u === "m") val *= 100;
-    else if (u === "cm") val *= 10;
-    if (Number.isFinite(val)) return val;
-  }
-  const low = s.toLowerCase();
-  for (const [k, rank] of Object.entries(_SIZE_RANK_MAP)) {
-    if (low === k || low.includes(k)) return rank;
-  }
-  return Number.MAX_SAFE_INTEGER;
-}
-
-function _splitPhysicalTokens(rawStr, { inferUnit = false, fallbackUnit = "" } = {}) {
-  const raw = stripBracketsAndBoxes(String(rawStr || "").trim());
-  if (!raw) return [];
-  // 单一连续区间（如背包容量“20-35L”）属于单个商品范围，不能拆成多规格
-  if (!/[/／、,，;；]/.test(raw) && /^\d+(?:\.\d+)?\s*[-~—]\s*\d+(?:\.\d+)?\s*[a-zA-Z\u4e00-\u9fa5]+$/.test(raw)) {
-    return [];
-  }
-  const parts = /[/／、,，;；]/.test(raw)
-    ? raw.split(/\s*[/／、,，;；]\s*/)
-    : raw.split(/\s*(?:[-~—])\s*/);
-  const cleaned = parts.map(p => p.replace(_COLOR_WORD_RE, " ").replace(/^[\s\-—_\/／|,+]+|[\s\-—_\/／|,+]+$/g, "").trim()).filter(Boolean);
-  if (cleaned.length < 2) return [];
-  const domUnit = inferUnit ? (_inferDominantSpecUnit(cleaned) || fallbackUnit) : "";
-  const out = [];
-  const seen = new Set();
-  for (const item of cleaned) {
-    let sp = item;
-    if (domUnit && /^\d+(?:\.\d+)?$/.test(sp)) sp = `${sp}${domUnit}`;
-    if (!_PHYSICAL_SPEC_RE.test(sp)) continue;
-    const k = sp.toLowerCase();
-    if (!seen.has(k)) {
-      seen.add(k);
-      out.push(sp);
-    }
-  }
-  return out;
-}
-
-function _splitDimensionTokens(rawDimStr) {
-  const raw = stripBracketsAndBoxes(String(rawDimStr || "").trim());
-  if (!raw) return [];
-  const parts = raw.split(/\s*[/／、,，;；]\s*/).map(s => s.trim()).filter(Boolean);
-  const out = [];
-  const seen = new Set();
-  for (const p of parts) {
-    if (!/\d+(?:\.\d+)?\s*[×xX*]\s*\d+(?:\.\d+)?/.test(p) && !_PHYSICAL_SPEC_RE.test(p)) continue;
-    const k = p.toLowerCase();
-    if (!seen.has(k)) {
-      seen.add(k);
-      out.push(p);
-    }
-  }
-  return out;
-}
-
-const _PHYS_TOKEN_GLOBAL_RE = /\d+(?:\.\d+)?\s*[×xX*＊]\s*\d+(?:\.\d+)?(?:\s*[×xX*＊]\s*\d+(?:\.\d+)?)?\s*(?:cm|mm|m|厘米|毫米)|\d+(?:\.\d+)?\s*(?:ml|l|oz|cm|mm|m|g|kg|w|kw|v|mah|ah|寸|英寸|号|升|毫升|克|千克|公斤|瓦|伏|件套|支装|个装|层|格)\b|\d+(?:\.\d+)?\s*(?:寸|英寸|号|升|毫升|克|千克|公斤|瓦|伏|件套|支装|个装|层|格)|特大号|加大号|大号|中号|小号|迷你|mini|\b(?:xs|s|m|l|xl|xxl|2xl|3xl)\b/gi;
-
-function _formatCanonPhysToken(tok) {
-  const s = String(tok || "").trim();
-  const nu = s.match(/^(\d+(?:\.\d+)?)\s*(ml|l|毫升|升|g|kg|克|千克|公斤|w|v|cm|mm)$/i);
-  if (!nu) return s;
-  const u = nu[2].toLowerCase();
-  if (u === "ml" || u === "毫升") return `${nu[1]}ml`;
-  if (u === "l" || u === "升") return `${nu[1]}L`;
-  if (u === "g" || u === "克") return `${nu[1]}g`;
-  if (u === "kg" || u === "千克" || u === "公斤") return `${nu[1]}kg`;
-  if (u === "w") return `${nu[1]}W`;
-  if (u === "v") return `${nu[1]}V`;
-  return `${nu[1]}${u}`;
-}
-
-function normalizePhysicalSpecName(rawSpec, fallbackUnit = "") {
+function normalizePhysicalSpecName(rawSpec) {
   const s = stripBracketsAndBoxes(String(rawSpec || "").trim());
   if (!s) return "";
   const parts = s.split(/\s*(?:[/／|>]|--+|—+)\s*/).map(p => p.trim()).filter(Boolean);
   const cleanedParts = [];
   for (const part of parts) {
-    const matchedTokens = part.match(_PHYS_TOKEN_GLOBAL_RE);
-    if (matchedTokens && matchedTokens.length) {
-      for (const mt of matchedTokens) {
-        const canon = _formatCanonPhysToken(mt);
-        if (canon && !cleanedParts.some(x => x.toLowerCase() === canon.toLowerCase())) {
-          cleanedParts.push(canon);
-        }
-      }
-      continue;
-    }
-    let noColor = part.replace(_COLOR_WORD_RE, " ").replace(/^[\s\-—_\/／|,+]+|[\s\-—_\/／|,+]+$/g, "").trim();
-    if (fallbackUnit && /^\d+(?:\.\d+)?$/.test(noColor)) noColor = `${noColor}${fallbackUnit}`;
+    const noColor = part.replace(_COLOR_WORD_RE, " ").replace(/^[\s\-—_\/／|,+]+|[\s\-—_\/／|,+]+$/g, "").trim();
     if (noColor && _PHYSICAL_SPEC_RE.test(noColor)) {
-      cleanedParts.push(_formatCanonPhysToken(noColor));
+      cleanedParts.push(noColor);
     }
   }
   const merged = cleanedParts.join(" ").replace(/\s{2,}/g, " ").trim();
   return (merged && _PHYSICAL_SPEC_RE.test(merged)) ? merged : "";
 }
 
-function detectDistinctMultiSpecs(data, attrs = {}) {
-  const rawVariants = Array.isArray(data?.variantsData) ? data.variantsData : [];
-  const capRaw = String(attrs?.["容量"] || attrs?.["详细规格"] || "");
-  const dimRaw = String(attrs?.["产品尺寸"] || "");
-  const wtRaw = String(attrs?.["单件重量"] || "");
-  const skuAttrRaw = [attrs?.["颜色"] || "", attrs?.["规格"] || ""].filter(Boolean).join(" / ");
-  const fallbackUnit = _inferDominantSpecUnit([capRaw, skuAttrRaw, ...rawVariants.map(v => v?.spec || "")]);
+function _capToMl(str) {
+  const m = String(str || "").match(/(\d+(?:\.\d+)?)\s*(ml|l|oz|毫升|升|cl)\b/i);
+  if (!m) return 0;
+  const n = parseFloat(m[1]);
+  if (!(n > 0)) return 0;
+  const u = m[2].toLowerCase();
+  if (u === "l" || u === "升") return n * 1000;
+  if (u === "cl") return n * 10;
+  if (u === "oz") return n * 29.5735;
+  return n;
+}
 
+function _dimToVolCm3(str) {
+  const nums = String(str || "").match(/\d+(?:\.\d+)?/g) || [];
+  if (nums.length < 2) return 0;
+  const vals = nums.slice(0, 3).map(Number).filter(n => n > 0);
+  if (vals.length < 2) return 0;
+  const isMm = /mm|毫米/i.test(String(str || ""));
+  const scale = isMm ? 0.1 : 1;
+  const a = vals[0] * scale, b = vals[1] * scale;
+  if (vals.length === 2) return 0.785 * a * a * b;
+  return a * b * (vals[2] * scale);
+}
+
+function _weightToGrams(str) {
+  const m = String(str || "").match(/(\d+(?:\.\d+)?)\s*(kg|g|千克|公斤|克)?/i);
+  if (!m) return 0;
+  const n = parseFloat(m[1]);
+  if (!(n > 0)) return 0;
+  const u = (m[2] || "").toLowerCase();
+  if (u === "kg" || u === "千克" || u === "公斤") return n * 1000;
+  return n;
+}
+
+function _roundNiceGrams(g) {
+  const v = Math.max(10, Math.round(g));
+  if (v >= 500) return Math.round(v / 10) * 10;
+  if (v >= 100) return Math.round(v / 5) * 5;
+  return v;
+}
+
+function _roundNiceCartonQty(targetQty, minQty = 1) {
+  const steps = [1, 2, 4, 6, 8, 10, 12, 16, 20, 24, 25, 30, 36, 40, 48, 50, 60, 72, 80, 96, 100, 120, 144, 150, 180, 200, 240, 300, 360, 400, 500];
+  let best = steps.find(x => x >= minQty) || Math.max(1, minQty);
+  let bestDiff = Infinity;
+  for (const s of steps) {
+    if (s < minQty) continue;
+    const d = Math.abs(s - targetQty);
+    if (d < bestDiff) { bestDiff = d; best = s; }
+  }
+  return best;
+}
+
+function _parseMultiAttrTokens(rawVal, kind, attrs = {}) {
+  const raw = String(rawVal || "").trim();
+  if (!raw) return [];
+  if (kind === "cartonWeight") {
+    const matches = [...raw.matchAll(/(?:(?:毛重|G\.?W\.?)\s*[:：]?\s*\d+(?:\.\d+)?\s*(?:kg|g|千克|公斤)\s*[/／]\s*(?:净重|N\.?W\.?)\s*[:：]?\s*\d+(?:\.\d+)?\s*(?:kg|g|千克|公斤)|(?:毛重|净重|G\.?W\.?|N\.?W\.?)\s*[:：]?\s*\d+(?:\.\d+)?\s*(?:kg|g|千克|公斤))/gi)]
+      .map(m => m[0].replace(/\s+/g, " ").trim())
+      .filter(v => validCartonValue("箱子毛净重", v));
+    if (matches.length >= 2) return [...new Set(matches)].slice(0, 8);
+    return validCartonValue("箱子毛净重", raw) ? [raw] : [];
+  }
+  if (kind === "cartonQty") {
+    const qtyParts = raw.split(/\s*(?:[|；;、，,]|[/／](?=\s*\d))\s*/).map(p => p.trim()).filter(Boolean);
+    const out = qtyParts.map(p => _normalizeCartonQty(p, "", attrs)).filter(v => validCartonValue("每箱多少个", v));
+    return [...new Set(out)].slice(0, 8);
+  }
+  const parts = raw.split(/\s*[/／|；;、，,]+\s*/).map(p => p.trim()).filter(Boolean);
+  if (!parts.length) return [];
+  if (kind === "cap") {
+    if (parts.length === 1) {
+      return _PHYSICAL_SPEC_RE.test(parts[0]) ? [parts[0]] : [];
+    }
+    const unitMatch = parts.map(p => p.match(/\d\s*(ml|l|oz|cl|毫升|升)(?=$|[^a-zA-Z\u4e00-\u9fa5])/i)).find(Boolean);
+    const sharedUnit = unitMatch ? unitMatch[1] : "";
+    const out = [];
+    for (const p of parts) {
+      if (_PHYSICAL_SPEC_RE.test(p)) {
+        out.push(p.replace(/\s+/g, ""));
+      } else if (sharedUnit && /^\d+(?:\.\d+)?$/.test(p) && Number(p) > 0) {
+        out.push(`${p}${sharedUnit}`);
+      }
+    }
+    return [...new Set(out)].slice(0, 8);
+  }
+  if (kind === "dim") {
+    const unitMatch = parts.map(p => p.match(/(cm|mm|m|厘米|毫米)\s*$/i)).find(Boolean);
+    const sharedUnit = unitMatch ? unitMatch[1] : "cm";
+    const out = [];
+    for (const p of parts) {
+      const m = p.match(/(\d+(?:\.\d+)?\s*[*×xX]\s*\d+(?:\.\d+)?(?:\s*[*×xX]\s*\d+(?:\.\d+)?)?)\s*(cm|mm|m|厘米|毫米)?/i);
+      if (!m) continue;
+      const body = m[1].replace(/[*xX]/g, "×").replace(/\s+/g, "");
+      const u = m[2] || sharedUnit;
+      out.push(`${body}${u}`);
+    }
+    return [...new Set(out)].slice(0, 8);
+  }
+  if (kind === "weight") {
+    const unitMatch = parts.map(p => p.match(/(kg|g|克|千克|公斤)\s*$/i)).find(Boolean);
+    const out = [];
+    for (const p of parts) {
+      if (!/\d/.test(p)) continue;
+      let tok = p;
+      if (unitMatch && /^\d+(?:\.\d+)?$/.test(p)) tok = `${p}${unitMatch[1]}`;
+      tok = normalizeUnitWeight(tok, attrs);
+      if (tok && _weightToGrams(tok) > 0) out.push(tok);
+    }
+    return [...new Set(out)].slice(0, 8);
+  }
+  if (kind === "cartonSize") {
+    const out = parts.map(p => _normalizeCartonDim(p)).filter(v => validCartonValue("箱子尺寸", v));
+    return [...new Set(out)].slice(0, 8);
+  }
+  if (kind === "price") {
+    const rawParts = raw.split(/\s*[/／|；;]+\s*/).map(p => normalizeRawPriceText(p)).filter(p => /\d/.test(p));
+    return [...new Set(rawParts)].slice(0, 8);
+  }
+  return parts.slice(0, 8);
+}
+
+function detectDistinctMultiSpecs(data, attrs = {}, extraText = "") {
+  const a = (attrs && Object.keys(attrs).length) ? attrs : (data?.attrs || {});
+  const rawVariants = Array.isArray(data?.variantsData) ? data.variantsData : [];
   const specMap = new Map();
   for (const v of rawVariants) {
-    const normSpec = normalizePhysicalSpecName(v.spec, fallbackUnit);
+    const normSpec = normalizePhysicalSpecName(v.spec);
     if (!normSpec) continue;
     const key = normSpec.toLowerCase();
     if (!specMap.has(key)) {
@@ -5967,237 +5932,502 @@ function detectDistinctMultiSpecs(data, attrs = {}) {
       specMap.get(key).prices.push(v.price);
     }
   }
-  let baseSpecs = [];
-  if (specMap.size >= 2) {
-    baseSpecs = [...specMap.values()].slice(0, 8).map(item => {
-      const minP = item.prices.length ? Math.min(...item.prices) : 0;
-      const maxP = item.prices.length ? Math.max(...item.prices) : 0;
-      const priceStr = minP > 0 ? (minP === maxP ? `${item.currency}${_formatAdjNum(minP)}` : `${item.currency}${_formatAdjNum(minP)}-${item.currency}${_formatAdjNum(maxP)}`) : "";
-      return { spec: item.spec, model: item.model, price: priceStr, size: "", weight: "" };
+  const variantSpecs = [...specMap.values()].slice(0, 8).map(item => {
+    const minP = item.prices.length ? Math.min(...item.prices) : 0;
+    const maxP = item.prices.length ? Math.max(...item.prices) : 0;
+    const priceStr = minP > 0 ? (minP === maxP ? `${item.currency}${_formatAdjNum(minP)}` : `${item.currency}${_formatAdjNum(minP)}-${item.currency}${_formatAdjNum(maxP)}`) : "";
+    return { spec: item.spec, model: item.model, price: priceStr };
+  });
+
+  const capTokens = _parseMultiAttrTokens(a["容量"] || a["容积"] || a["详细规格"] || a["规格"], "cap", a);
+  const dimTokens = _parseMultiAttrTokens(a["产品尺寸"] || a["尺寸"] || a["规格尺寸"], "dim", a);
+  const weightTokens = _parseMultiAttrTokens(a["单件重量"] || a["重量"] || a["单品重量"], "weight", a);
+  const ctnQtyTokens = _parseMultiAttrTokens(a["每箱多少个"], "cartonQty", a);
+  const ctnSizeTokens = _parseMultiAttrTokens(a["箱子尺寸"], "cartonSize", a);
+  const ctnWeightTokens = _parseMultiAttrTokens(a["箱子毛净重"], "cartonWeight", a);
+  const priceTokens = _parseMultiAttrTokens(a["价格"], "price", a);
+
+  // 从包装件重尺行识别去重后的物理规格行
+  const packList = Array.isArray(data?.packSpecs) ? data.packSpecs : [];
+  const packMap = new Map();
+  for (const row of packList) {
+    const pSpec = normalizePhysicalSpecName(row.label);
+    const sig = (pSpec || `${row.size || ""}|${row.weight || ""}|${row.cartonSize || ""}`).toLowerCase();
+    if (!sig || sig === "||") continue;
+    if (!packMap.has(sig)) {
+      packMap.set(sig, {
+        spec: pSpec || row.size || row.weight || "",
+        size: row.size || "",
+        weight: row.weight ? normalizeUnitWeight(row.weight, a) : "",
+        cartonQty: row.cartonQty || "",
+        cartonWeight: row.cartonWeight || "",
+        cartonSize: row.cartonSize || "",
+      });
+    }
+  }
+  const packRows = [...packMap.values()].slice(0, 8);
+
+  const maxDimCount = Math.min(8, Math.max(
+    variantSpecs.length,
+    packRows.length,
+    capTokens.length,
+    dimTokens.length,
+    weightTokens.length,
+    ctnSizeTokens.length,
+    ctnQtyTokens.length,
+    ctnWeightTokens.length,
+    priceTokens.length
+  ));
+  if (maxDimCount < 2) return [];
+
+  // 辅助排序：若维度数量>=2，按数值量级升序排列（小->大），确保尺寸、容量、单重自然对齐
+  const sortCaps = [...capTokens];
+  if (sortCaps.every(c => _capToMl(c) > 0)) sortCaps.sort((x, y) => _capToMl(x) - _capToMl(y));
+  const sortDims = [...dimTokens].sort((x, y) => _dimToVolCm3(x) - _dimToVolCm3(y));
+  const sortWeights = [...weightTokens].sort((x, y) => _weightToGrams(x) - _weightToGrams(y));
+
+  // 若尺寸有4个而容量仅写3个（如 500ml/750/350），尝试从网页正文/OCR补充同单位缺失容量
+  if (sortCaps.length >= 2 && sortDims.length > sortCaps.length) {
+    const uM = sortCaps[0].match(/(ml|l|oz|毫升|升)/i);
+    const unit = uM ? uM[1] : "ml";
+    const corpus = `${data?.title || ""} ${data?.pageText || ""} ${extraText || ""}`;
+    const candCaps = new Set(sortCaps.map(c => _capToMl(c)));
+    const foundExtra = [];
+    for (const m of corpus.matchAll(new RegExp(`(\\d{2,4})\\s*${unit}(?=$|[^a-zA-Z0-9\\u4e00-\\u9fa5])`, "gi"))) {
+      const tok = `${m[1]}${unit}`;
+      const ml = _capToMl(tok);
+      if (ml > 0 && !candCaps.has(ml) && ml >= 50 && ml <= 5000) {
+        candCaps.add(ml);
+        foundExtra.push(tok);
+      }
+    }
+    if (foundExtra.length) {
+      // 取最大合理衔接容量补齐（如 350/500/750 + 1000ml）
+      const maxExisting = Math.max(...sortCaps.map(_capToMl));
+      const larger = foundExtra.filter(t => _capToMl(t) > maxExisting).sort((x, y) => _capToMl(x) - _capToMl(y));
+      for (const t of larger) {
+        if (sortCaps.length < sortDims.length) sortCaps.push(t);
+      }
+      sortCaps.sort((x, y) => _capToMl(x) - _capToMl(y));
+    }
+  }
+
+  if (variantSpecs.length >= 2 && variantSpecs.length >= maxDimCount) {
+    const sortedVars = [...variantSpecs];
+    if (sortedVars.every(v => _capToMl(v.spec) > 0)) sortedVars.sort((x, y) => _capToMl(x.spec) - _capToMl(y.spec));
+    return sortedVars.map((v, i) => ({
+      spec: v.spec,
+      model: v.model || "",
+      size: sortDims.length === sortedVars.length ? sortDims[i] : "",
+      weight: sortWeights.length === sortedVars.length ? sortWeights[i] : "",
+      cartonQty: ctnQtyTokens.length === sortedVars.length ? ctnQtyTokens[i] : "",
+      cartonWeight: ctnWeightTokens.length === sortedVars.length ? ctnWeightTokens[i] : "",
+      cartonSize: ctnSizeTokens.length === sortedVars.length ? ctnSizeTokens[i] : "",
+      price: v.price || (priceTokens.length === sortedVars.length ? priceTokens[i] : ""),
+    }));
+  }
+
+  if (packRows.length >= 2 && packRows.length >= maxDimCount) {
+    return packRows.map((p, i) => ({
+      spec: sortCaps[i] || p.spec || p.size || p.weight,
+      model: "",
+      size: p.size || sortDims[i] || "",
+      weight: p.weight || sortWeights[i] || "",
+      cartonQty: p.cartonQty || ctnQtyTokens[i] || "",
+      cartonWeight: p.cartonWeight || ctnWeightTokens[i] || "",
+      cartonSize: p.cartonSize || ctnSizeTokens[i] || "",
+      price: priceTokens[i] || "",
+    }));
+  }
+
+  // 根据各维度的对应下标构造完整 N 条规格骨架
+  const out = [];
+  for (let i = 0; i < maxDimCount; i++) {
+    const cap = sortCaps[i] || "";
+    const dim = sortDims[i] || "";
+    const wt = sortWeights[i] || "";
+    const pr = variantSpecs[i]?.price || priceTokens[i] || "";
+    const specLabel = cap || dim || wt || ctnSizeTokens[i] || ctnQtyTokens[i] || `规格${i + 1}`;
+    out.push({
+      spec: specLabel,
+      model: variantSpecs[i]?.model || "",
+      size: dim,
+      weight: wt,
+      cartonQty: ctnQtyTokens[i] || "",
+      cartonWeight: ctnWeightTokens[i] || "",
+      cartonSize: ctnSizeTokens[i] || "",
+      price: pr,
     });
+  }
+  return out;
+}
+
+// 五维参数严格一一对应与联动适配：产品尺寸、箱规、单件重量、容量、价格
+function adaptMultiSpecCorrespondence(items, data, { minQty = 0, priceMode = "raw", markupPct = 0, baseCode = "", useSubModel = false } = {}) {
+  if (!Array.isArray(items) || items.length < 2) return [];
+  const attrs = data?.attrs || {};
+  const title = data?.title || "";
+  const catProfile = _getCategoryCartonProfile(title, "", attrs);
+  const cleanStr = v => {
+    const s = stripBracketsAndBoxes(String(v ?? "").trim());
+    return (!s || /^[-—–_/\\]+$/.test(s) || /^(?:未查到|未提供|未知|不详|暂无|待定|无|n\/a|none|null)$/i.test(s)) ? "" : s;
+  };
+  const cleanCartonVal = (field, raw) => {
+    const s = cleanStr(raw);
+    if (!s) return "";
+    if (field === "每箱多少个") {
+      const norm = _normalizeCartonQty(s, title, attrs);
+      if (!validCartonValue("每箱多少个", norm)) return "";
+      const qn = parseInt((norm.match(/\d+/) || ["0"])[0], 10);
+      return qn >= (catProfile?.minValidQty || 6) ? norm : "";
+    }
+    if (field === "箱子尺寸") {
+      const norm = _normalizeCartonDim(s);
+      return validCartonValue("箱子尺寸", norm) ? norm : "";
+    }
+    if (field === "箱子立方数") {
+      const m = s.match(/\d+(?:\.\d+)?/);
+      const norm = m ? `${Number(m[0])} m³` : "";
+      return (norm && validCartonValue("箱子立方数", norm)) ? norm : "";
+    }
+    if (field === "箱子毛净重") return validCartonValue("箱子毛净重", s) ? s : "";
+    return s;
+  };
+
+  // 1) 按容量或尺寸从小到大稳定排序（保持对应下标同步）
+  const list = items.map(it => ({ ...it }));
+  const getMetric = (it) => _capToMl(it.spec) || _dimToVolCm3(it.size) || _weightToGrams(it.weight) || 0;
+  if (list.every(it => getMetric(it) > 0)) {
+    list.sort((x, y) => getMetric(x) - getMetric(y));
+  }
+
+  // 2) 计算每个规格的一致性物理量级 mags[i]（优先容量ml；若仅部分有容量则按尺寸体积等比外推量级）
+  const caps = list.map(it => _capToMl(it.spec));
+  const vols = list.map(it => _dimToVolCm3(it.size));
+  const mags = [];
+  let capAnchorIdx = caps.findIndex(c => c > 0 && vols[caps.indexOf(c)] > 0);
+  if (capAnchorIdx < 0) capAnchorIdx = caps.findIndex(c => c > 0);
+  for (let i = 0; i < list.length; i++) {
+    if (caps[i] > 0) {
+      mags.push(caps[i]);
+    } else if (vols[i] > 0 && capAnchorIdx >= 0 && vols[capAnchorIdx] > 0) {
+      mags.push((vols[i] / vols[capAnchorIdx]) * caps[capAnchorIdx]);
+    } else if (vols[i] > 0) {
+      mags.push(vols[i]);
+    } else if (_weightToGrams(list[i].weight) > 0) {
+      mags.push(_weightToGrams(list[i].weight));
+    } else {
+      mags.push(i + 1);
+    }
+  }
+  const minMag = Math.min(...mags), maxMag = Math.max(...mags);
+  const hasSignificantDiff = minMag > 0 && (maxMag / minMag) >= 1.18;
+
+  // 若标题明确写了某个主推容量（如“保温杯 500ml”），优先将该规格作为网页单值的基准锚点
+  let anchorIdx = Math.floor((list.length - 1) / 2);
+  const titleCapMl = _capToMl(title);
+  if (titleCapMl > 0) {
+    let bestD = Infinity;
+    caps.forEach((c, idx) => {
+      if (c > 0 && Math.abs(c - titleCapMl) < bestD) { bestD = Math.abs(c - titleCapMl); anchorIdx = idx; }
+    });
+  }
+
+  // 3) 对齐「产品尺寸」：若有单边缺失而同组已有尺寸，按立方根等比推算或补全
+  const sizedIdxs = list.map((it, idx) => (_dimToVolCm3(it.size) > 0 ? idx : -1)).filter(x => x >= 0);
+  if (sizedIdxs.length >= 1 && sizedIdxs.length < list.length) {
+    for (let i = 0; i < list.length; i++) {
+      if (_dimToVolCm3(list[i].size) > 0) continue;
+      const refIdx = sizedIdxs.reduce((best, idx) => Math.abs(mags[idx] - mags[i]) < Math.abs(mags[best] - mags[i]) ? idx : best, sizedIdxs[0]);
+      const refDims = String(list[refIdx].size).match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number) || [];
+      if (refDims.length >= 2) {
+        const unit = (String(list[refIdx].size).match(/(cm|mm|m)\s*$/i) || ["", "cm"])[1];
+        const f = Math.pow(Math.max(0.4, Math.min(2.5, mags[i] / (mags[refIdx] || 1))), 1 / 3);
+        list[i].size = `${refDims.map(n => Number((n * f).toFixed(1))).join("×")}${unit}`;
+      }
+    }
+  }
+
+  // 4) 对齐「单件重量」：多真实单重保留原值，单一全局重量或缺失项按物理量级等比适配
+  const multiAttrWeights = _parseMultiAttrTokens(attrs["单件重量"] || attrs["重量"], "weight", attrs);
+  const itemWeightGrams = list.map(it => _weightToGrams(it.weight));
+  const distinctWeightSet = new Set(itemWeightGrams.filter(g => g > 0).map(g => Math.round(g)));
+  const globalWeightG = _weightToGrams(attrs["单件重量"] || attrs["重量"] || "") || ((catProfile?.unitKg || 0.25) * 1000);
+  if (distinctWeightSet.size <= 1 && hasSignificantDiff && multiAttrWeights.length <= 1) {
+    const anchorW = itemWeightGrams[anchorIdx] || itemWeightGrams.find(g => g > 0) || globalWeightG;
+    const useKg = /kg|千克|公斤/i.test(String(list[anchorIdx]?.weight || attrs["单件重量"] || "")) && anchorW >= 1000;
+    for (let i = 0; i < list.length; i++) {
+      const scaledG = i === anchorIdx ? Math.round(anchorW) : _roundNiceGrams(anchorW * Math.pow(mags[i] / (mags[anchorIdx] || 1), 0.72));
+      list[i].weight = useKg ? `${Number((scaledG / 1000).toFixed(2))}kg` : `${scaledG}g`;
+    }
   } else {
-    const capTokens = _splitPhysicalTokens(capRaw, { inferUnit: true, fallbackUnit });
-    const skuOptionTokens = [];
-    const seenOpt = new Set();
-    for (const seg of skuAttrRaw.split(/\s*[,，/／、;；]\s*/)) {
-      const sp = normalizePhysicalSpecName(seg, fallbackUnit);
-      if (sp && !seenOpt.has(sp.toLowerCase())) {
-        seenOpt.add(sp.toLowerCase());
-        skuOptionTokens.push(sp);
+    const validWIdxs = itemWeightGrams.map((g, idx) => (g > 0 ? idx : -1)).filter(x => x >= 0);
+    for (let i = 0; i < list.length; i++) {
+      if (itemWeightGrams[i] > 0) continue;
+      if (validWIdxs.length) {
+        const refIdx = validWIdxs.reduce((best, idx) => Math.abs(mags[idx] - mags[i]) < Math.abs(mags[best] - mags[i]) ? idx : best, validWIdxs[0]);
+        const scaledG = _roundNiceGrams(itemWeightGrams[refIdx] * Math.pow(mags[i] / (mags[refIdx] || 1), 0.72));
+        list[i].weight = `${scaledG}g`;
+      } else {
+        const scaledG = _roundNiceGrams(globalWeightG * Math.pow(mags[i] / (mags[anchorIdx] || 1), 0.72));
+        list[i].weight = `${scaledG}g`;
       }
-    }
-    const dimTokens = _splitDimensionTokens(dimRaw);
-    if (capTokens.length >= 2) {
-      baseSpecs = capTokens.slice(0, 8).map(sp => ({ spec: sp, model: "", price: "", size: "", weight: "" }));
-    } else if (skuOptionTokens.length >= 2) {
-      baseSpecs = skuOptionTokens.slice(0, 8).map(sp => ({ spec: sp, model: "", price: "", size: "", weight: "" }));
-    } else if (dimTokens.length >= 2) {
-      baseSpecs = dimTokens.slice(0, 8).map(d => ({ spec: d, model: "", price: "", size: d, weight: "" }));
     }
   }
 
-  if (baseSpecs.length >= 2) {
-    // 按物理量级（从小容量到大容量 / 从小尺寸到大尺寸）稳定排序，并与产品尺寸列表/单件重量列表一一对应
-    const dimTokens = _splitDimensionTokens(dimRaw);
-    const wtTokens = _splitPhysicalTokens(normalizeUnitWeight(wtRaw, attrs), { inferUnit: true });
-    baseSpecs.sort((a, b) => _calcSpecSortKey(a.spec) - _calcSpecSortKey(b.spec));
-    const sortedDims = dimTokens.length >= 2 ? [...dimTokens].sort((a, b) => _calcSpecSortKey(a) - _calcSpecSortKey(b)) : [];
-    const sortedWts = wtTokens.length >= 2 ? [...wtTokens].sort((a, b) => _calcSpecSortKey(a) - _calcSpecSortKey(b)) : [];
+  // 5) 对齐「箱规四项」（每箱多少个、箱子毛净重、箱子尺寸、箱子立方数）
+  const rawCtnSigs = new Set(list.map(it => `${it.cartonQty || ""}|${it.cartonSize || ""}|${it.cartonWeight || ""}`).filter(s => s !== "||"));
+  const globalCtnQty = cleanCartonVal("每箱多少个", attrs["每箱多少个"] || extractCartonValue("每箱多少个", attrs, data?.pageText || ""));
+  const globalCtnSize = cleanCartonVal("箱子尺寸", attrs["箱子尺寸"] || extractCartonValue("箱子尺寸", attrs, data?.pageText || ""));
+  const globalCtnWt = cleanCartonVal("箱子毛净重", attrs["箱子毛净重"] || extractCartonValue("箱子毛净重", attrs, data?.pageText || ""));
 
-    // 若容量只有 3 个（如 350ml/500ml/750ml）而产品尺寸明确列了 4 个尺寸，补充第4个尺寸防漏
-    if (sortedDims.length > baseSpecs.length && sortedDims.length <= 8 && !baseSpecs.every(x => x.size)) {
-      for (let ei = baseSpecs.length; ei < sortedDims.length; ei++) {
-        baseSpecs.push({ spec: sortedDims[ei], model: "", price: "", size: sortedDims[ei], weight: "" });
+  const anchorCtnQtyStr = list[anchorIdx].cartonQty || list.find(x => x.cartonQty)?.cartonQty || globalCtnQty || catProfile.defaultQty;
+  const anchorCtnSizeStr = list[anchorIdx].cartonSize || list.find(x => x.cartonSize)?.cartonSize || globalCtnSize || catProfile.defaultSize;
+  const anchorCtnWtStr = list[anchorIdx].cartonWeight || list.find(x => x.cartonWeight)?.cartonWeight || globalCtnWt || "";
+  const qtyUnitM = String(anchorCtnQtyStr).match(/\d+\s*([^\d\s/／]+(?:\/[^\s]+)?)/);
+  const qtySuffix = qtyUnitM ? qtyUnitM[1] : "个/箱";
+  const anchorQtyNum = parseInt((String(anchorCtnQtyStr).match(/\d+/) || [String(catProfile.defaultQtyNum)])[0], 10) || catProfile.defaultQtyNum;
+  const anchorDimNums = (String(anchorCtnSizeStr).match(/\d+(?:\.\d+)?/g) || []).slice(0, 3).map(Number);
+  let anchorNwKg = 0, anchorGwKg = 0;
+  if (anchorCtnWtStr) {
+    const gm = anchorCtnWtStr.match(/(?:毛重|G\.?W\.?)\s*[:：]?\s*(\d+(?:\.\d+)?)/i);
+    const nm = anchorCtnWtStr.match(/(?:净重|N\.?W\.?)\s*[:：]?\s*(\d+(?:\.\d+)?)/i);
+    anchorGwKg = gm ? parseFloat(gm[1]) : 0;
+    anchorNwKg = nm ? parseFloat(nm[1]) : 0;
+  }
+  const anchorUnitKg = (_weightToGrams(list[anchorIdx].weight) || globalWeightG) / 1000;
+  const anchorTareKg = (anchorGwKg > anchorNwKg && anchorNwKg > 0) ? Math.min(3.5, Math.max(0.6, Number((anchorGwKg - anchorNwKg).toFixed(1)))) : (catProfile.tareKg || 1.2);
+
+  for (let i = 0; i < list.length; i++) {
+    const it = list[i];
+    const hasOwnDistinctCarton = rawCtnSigs.size >= 2 && (it.cartonQty || it.cartonSize || it.cartonWeight);
+    const ratio = mags[i] / (mags[anchorIdx] || 1);
+    const unitKg = (_weightToGrams(it.weight) || globalWeightG) / 1000;
+
+    if (!hasOwnDistinctCarton && hasSignificantDiff) {
+      if (i === anchorIdx && (globalCtnQty || list[anchorIdx].cartonQty) && (globalCtnSize || list[anchorIdx].cartonSize)) {
+        it.cartonQty = it.cartonQty || anchorCtnQtyStr;
+        it.cartonSize = it.cartonSize || anchorCtnSizeStr;
+        it.cartonCbm = it.cartonCbm || _calcCbmFromDim(it.cartonSize);
+        if (!it.cartonWeight) {
+          const nw = anchorNwKg > 0 ? anchorNwKg : Math.max(2, Number((anchorQtyNum * unitKg).toFixed(1)));
+          const gw = anchorGwKg > nw ? anchorGwKg : Number((nw + anchorTareKg).toFixed(1));
+          it.cartonWeight = `毛重 ${gw}kg / 净重 ${nw}kg`;
+        }
+      } else {
+        const qNum = i === anchorIdx
+          ? anchorQtyNum
+          : _roundNiceCartonQty(anchorQtyNum / Math.pow(Math.max(0.4, Math.min(2.5, ratio)), 0.35), catProfile.minValidQty || 6);
+        it.cartonQty = `${qNum}${qtySuffix}`;
+        if (anchorDimNums.length === 3) {
+          const volRatio = (qNum * Math.pow(Math.max(0.4, Math.min(2.5, ratio)), 0.85)) / (anchorQtyNum || 1);
+          const sideF = Math.pow(Math.max(0.55, Math.min(1.65, volRatio)), 1 / 3);
+          const scaledDims = anchorDimNums.map(d => Math.min(200, Math.max(12, Number((Math.round(d * sideF * 2) / 2).toFixed(1)))));
+          it.cartonSize = `${scaledDims.join("×")}cm`;
+        } else {
+          it.cartonSize = anchorCtnSizeStr;
+        }
+        it.cartonCbm = _calcCbmFromDim(it.cartonSize);
+        const nw = Math.max(1.5, Number((qNum * unitKg).toFixed(1)));
+        const gw = Number((nw + anchorTareKg).toFixed(1));
+        it.cartonWeight = `毛重 ${gw}kg / 净重 ${nw}kg`;
+      }
+    } else {
+      if (!it.cartonQty) it.cartonQty = anchorCtnQtyStr;
+      if (!it.cartonSize) it.cartonSize = anchorCtnSizeStr;
+      it.cartonCbm = it.cartonCbm || _calcCbmFromDim(it.cartonSize);
+      if (!it.cartonWeight) {
+        const qn = parseInt((String(it.cartonQty).match(/\d+/) || [String(anchorQtyNum)])[0], 10) || anchorQtyNum;
+        const nw = Math.max(1.5, Number((qn * (unitKg || anchorUnitKg)).toFixed(1)));
+        const gw = Number((nw + anchorTareKg).toFixed(1));
+        it.cartonWeight = `毛重 ${gw}kg / 净重 ${nw}kg`;
       }
     }
-    baseSpecs.forEach((item, idx) => {
-      if (!item.size && sortedDims[idx]) item.size = sortedDims[idx];
-      if (!item.weight && sortedWts[idx]) item.weight = sortedWts[idx];
-    });
-    return baseSpecs;
   }
-  return [];
+
+  // 6) 对齐「价格」：若多规格已有独立SKU价格则保留；若仅有单一均价则按物理量级递增适配
+  const parseFirstPrice = (pStr) => {
+    const s = String(pStr || "");
+    const curM = s.match(/([¥￥$€£])\s*(\d+(?:\.\d+)?)/);
+    if (curM) return { cur: curM[1], val: parseFloat(curM[2]) };
+    const bare = s.replace(/\d+(?:\s*[-~—至]\s*\d+)?\s*(?:件|个|只|套|支|盒|箱|双|pcs)(?:以上|及以上|起)?/gi, "");
+    const bm = bare.match(/(\d+(?:\.\d+)?)/);
+    return bm ? { cur: "¥", val: parseFloat(bm[1]) } : null;
+  };
+  const priceObjs = list.map(it => parseFirstPrice(it.price));
+  const distinctPrices = new Set(priceObjs.filter(Boolean).map(p => p.val.toFixed(2)));
+  const rawPagePriceStr = formatPriceTiersForOutput(data?.priceTiers, attrs["价格"] || "", { minQty, priceMode: "raw", markupPct: 0 });
+  const globalPriceObj = priceObjs[anchorIdx] || priceObjs.find(Boolean) || parseFirstPrice(rawPagePriceStr);
+
+  if (distinctPrices.size <= 1 && globalPriceObj && globalPriceObj.val > 0 && hasSignificantDiff) {
+    // 若 list 中已有价格是经过 markup_pct 加价的，先还原或基于全局价格统一处理
+    const anchorHadPrice = Boolean(priceObjs[anchorIdx] || priceObjs.find(Boolean));
+    const anchorP = globalPriceObj.val;
+    for (let i = 0; i < list.length; i++) {
+      let scaledP = i === anchorIdx ? anchorP : Number((anchorP * Math.pow(mags[i] / (mags[anchorIdx] || 1), 0.42)).toFixed(2));
+      if (!anchorHadPrice && priceMode === "markup_pct") {
+        scaledP = Number((scaledP * (1 + (Number(markupPct) || 0) / 100)).toFixed(2));
+      }
+      list[i].price = `${globalPriceObj.cur}${_formatAdjNum(scaledP)}`;
+    }
+  } else if (globalPriceObj && priceObjs.some(p => !p)) {
+    const validPIdxs = priceObjs.map((p, idx) => (p ? idx : -1)).filter(x => x >= 0);
+    for (let i = 0; i < list.length; i++) {
+      if (priceObjs[i]) continue;
+      const refIdx = validPIdxs.length
+        ? validPIdxs.reduce((best, idx) => Math.abs(mags[idx] - mags[i]) < Math.abs(mags[best] - mags[i]) ? idx : best, validPIdxs[0])
+        : anchorIdx;
+      const refP = (validPIdxs.length ? priceObjs[refIdx] : globalPriceObj);
+      let scaledP = Number((refP.val * Math.pow(mags[i] / (mags[refIdx] || mags[anchorIdx] || 1), 0.42)).toFixed(2));
+      if (!validPIdxs.length && priceMode === "markup_pct") {
+        scaledP = Number((scaledP * (1 + (Number(markupPct) || 0) / 100)).toFixed(2));
+      }
+      list[i].price = `${refP.cur}${_formatAdjNum(scaledP)}`;
+    }
+  }
+
+  return list.map((item, idx) => ({
+    ...item,
+    model: useSubModel ? (baseCode ? `${baseCode}-${idx + 1}` : (item.rawModel || item.model || "")) : (item.rawModel || item.model || ""),
+  }));
 }
 
 async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMode, markupPct, baseCode, useSubModel = false, outLang, allowRemoteAi = true }, cache = {}) {
-  const attrs = data?.attrs || {};
-  const detected = detectDistinctMultiSpecs(data, attrs);
-  const capVal = String(attrs?.["容量"] || attrs?.["详细规格"] || "");
-  const dimVal = String(attrs?.["产品尺寸"] || "");
-  const wtVal = String(attrs?.["单件重量"] || "");
+  const detected = detectDistinctMultiSpecs(data, data?.attrs || {}, stageOcrText || "");
+  if (detected.length < 2) return [];
+
   const packList = Array.isArray(data?.packSpecs) ? data.packSpecs : [];
-  const hasMultiCapHint = detected.length >= 2
-    || _splitPhysicalTokens(capVal, { inferUnit: true }).length >= 2
-    || _splitDimensionTokens(dimVal).length >= 2
-    || _splitPhysicalTokens(wtVal, { inferUnit: true }).length >= 2
-    || packList.filter(p => p && (p.size || p.weight)).length >= 2;
-  if (!hasMultiCapHint) return [];
+  const matchPackRow = (specName, sizeVal = "") => {
+    if (!packList.length) return null;
+    const low = String(specName || "").toLowerCase();
+    const numTok = (low.match(/\d+(?:\.\d+)?/) || [])[0] || "";
+    return packList.find(r => {
+      const rl = String(r.label || "").toLowerCase();
+      if (low && rl.includes(low)) return true;
+      if (numTok && rl.includes(numTok)) return true;
+      if (sizeVal && r.size && r.size === sizeVal) return true;
+      return false;
+    }) || null;
+  };
 
-  const cacheKey = allowRemoteAi ? "aiMultiSpecs" : "localMultiSpecs";
-  if (!cache[cacheKey]) {
-    cache[cacheKey] = (async () => {
-      const catProfile = _getCategoryCartonProfile(data?.title || "", "", attrs);
-      const cleanStr = v => {
-        const s = stripBracketsAndBoxes(String(v ?? "").trim());
-        return (!s || /^[-—–_/\\]+$/.test(s) || /^(?:未查到|未提供|未知|不详|暂无|待定|无|n\/a|none|null)$/i.test(s)) ? "" : s;
+  const buildLocalFallback = () => {
+    const rawItems = detected.map(d => {
+      const prRow = matchPackRow(d.spec, d.size);
+      const rawPrice = d.price || "";
+      return {
+        spec: d.spec,
+        rawModel: d.model || "",
+        size: d.size || prRow?.size || "",
+        weight: d.weight || (prRow?.weight ? normalizeUnitWeight(prRow.weight, data?.attrs || {}) : ""),
+        cartonQty: d.cartonQty || prRow?.cartonQty || "",
+        cartonWeight: d.cartonWeight || prRow?.cartonWeight || "",
+        cartonSize: d.cartonSize || prRow?.cartonSize || "",
+        cartonCbm: (d.cartonSize || prRow?.cartonSize) ? _calcCbmFromDim(d.cartonSize || prRow?.cartonSize) : "",
+        price: rawPrice ? (priceMode === "markup_pct" ? applyPriceMarkupPct(rawPrice, markupPct) : rawPrice) : "",
       };
-      const cleanCartonVal = (field, raw) => {
-        const s = cleanStr(raw);
-        if (!s) return "";
-        if (field === "每箱多少个") {
-          const norm = _normalizeCartonQty(s, data?.title || "", attrs);
-          if (!validCartonValue("每箱多少个", norm)) return "";
-          const qn = parseInt((norm.match(/\d+/) || ["0"])[0], 10);
-          if (qn < (catProfile?.minValidQty || 6)) return "";
-          return norm;
-        }
-        if (field === "箱子尺寸") {
-          const norm = _normalizeCartonDim(s);
-          return validCartonValue("箱子尺寸", norm) ? norm : "";
-        }
-        if (field === "箱子立方数") {
-          const m = s.match(/\d+(?:\.\d+)?/);
-          const norm = m ? `${Number(m[0])} m³` : "";
-          return (norm && validCartonValue("箱子立方数", norm)) ? norm : "";
-        }
-        if (field === "箱子毛净重") {
-          return validCartonValue("箱子毛净重", s) ? s : "";
-        }
-        return s;
-      };
+    });
+    return adaptMultiSpecCorrespondence(rawItems, data, { minQty, priceMode, markupPct, baseCode, useSubModel });
+  };
 
-      const matchPackRow = (specName) => {
-        if (!packList.length || !specName) return null;
-        const low = specName.toLowerCase();
-        const numTok = (low.match(/\d+(?:\.\d+)?/) || [])[0] || "";
-        return packList.find(r => {
-          const rl = String(r.label || "").toLowerCase();
-          const rs = String(r.size || "").toLowerCase();
-          return rl.includes(low) || (numTok && rl.includes(numTok)) || (rs && low.includes(rs));
-        }) || null;
-      };
+  if (!allowRemoteAi) {
+    return buildLocalFallback();
+  }
 
-      const fallbackUnit = _inferDominantSpecUnit([capVal, ...(data?.variantsData || []).map(v => v?.spec || "")]);
-      const baseFallback = detected.map((d, idx) => {
-        const prRow = matchPackRow(d.spec);
-        const cs = prRow?.cartonSize ? cleanCartonVal("箱子尺寸", prRow.cartonSize) : "";
-        const sz = d.size || prRow?.size || "";
-        const wtRaw = d.weight || prRow?.weight || "";
-        return {
-          spec: d.spec,
-          model: useSubModel ? (baseCode ? `${baseCode}-${idx + 1}` : (d.model || "")) : (d.model || ""),
-          size: sz,
-          weight: wtRaw ? normalizeUnitWeight(wtRaw, attrs) : "",
-          cartonQty: prRow?.cartonQty ? cleanCartonVal("每箱多少个", prRow.cartonQty) : "",
-          cartonWeight: prRow?.cartonWeight ? cleanCartonVal("箱子毛净重", prRow.cartonWeight) : "",
-          cartonSize: cs,
-          cartonCbm: cs ? _calcCbmFromDim(cs) : "",
-          price: d.price ? (priceMode === "markup_pct" ? applyPriceMarkupPct(d.price, markupPct) : d.price) : "",
-        };
-      });
-      const findFallbackItem = (normSp, normSize, idx) => {
-        const low = normSp.toLowerCase();
-        const exact = baseFallback.find(b => b.spec.toLowerCase() === low);
-        if (exact) return exact;
-        const numTok = (low.match(/\d+(?:\.\d+)?/) || [])[0];
-        if (numTok) {
-          const byNum = baseFallback.find(b => b.spec.toLowerCase().includes(numTok));
-          if (byNum) return byNum;
-        }
-        if (normSize) {
-          const bySize = baseFallback.find(b => b.size && b.size.toLowerCase() === normSize.toLowerCase());
-          if (bySize) return bySize;
-        }
-        return baseFallback[idx] || null;
-      };
-      const distinctFbPrices = new Set(baseFallback.map(b => b.price).filter(Boolean));
-      if (!allowRemoteAi) return baseFallback;
+  if (!cache.aiMultiSpecs) {
+    cache.aiMultiSpecs = (async () => {
       try {
         const providers = await getAiProviders();
-        if (!providers.length) return baseFallback;
+        if (!providers.length) return buildLocalFallback();
         const pageSlice = extractRelevantSpecWindow(data?.pageText || "", 3200);
         const ocrSlice = extractRelevantSpecWindow(stageOcrText || "", 2400);
         const packHint = packList.slice(0, 12).map(p => `${p.label}: 尺寸=${p.size || ""} 重量=${p.weight || ""} 箱规=${p.cartonSize || ""} ${p.cartonQty || ""} ${p.cartonWeight || ""}`).join("\n");
-        const variantsHint = detected.map(d => `${d.spec}${d.model ? ` 型号:${d.model}` : ""}${d.size ? ` 对应尺寸:${d.size}` : ""}${d.weight ? ` 对应单重:${d.weight}` : ""}${d.price ? ` 价格:${d.price}` : ""}`).join("\n");
-        const tiersHint = [
-          (data?.priceTiers || []).map(t => `${t.qtyLabel} ${t.currency}${t.price}`).join("，"),
-          attrs?.["价格"] ? `参考报价:${attrs["价格"]}` : "",
-        ].filter(Boolean).join("；");
+        const variantsHint = detected.map((d, i) => `${i + 1}. 规格:${d.spec}${d.size ? ` 尺寸:${d.size}` : ""}${d.weight ? ` 单重:${d.weight}` : ""}${d.cartonQty ? ` 箱规:${d.cartonQty} ${d.cartonSize} ${d.cartonWeight}` : ""}${d.model ? ` 型号:${d.model}` : ""}${d.price ? ` 价格:${d.price}` : ""}`).join("\n");
+        const multiAttrsHint = ["容量", "产品尺寸", "单件重量", "每箱多少个", "箱子毛净重", "箱子尺寸", "价格"]
+          .map(k => data?.attrs?.[k] ? `${k}：${data.attrs[k]}` : "")
+          .filter(Boolean).join("\n");
+        const tiersHint = (data?.priceTiers || []).map(t => `${t.qtyLabel} ${t.currency}${t.price}`).join("，");
         const messages = [
           {
             role: "system",
             content: [
-              "你是电商多规格参数结构化整理助手。该商品存在多个不同物理规格（如容量、产品尺寸、单件重量、功率、电压、大小号），请严格依据提供的网页文本、产品尺寸列表、包装件重尺表、SKU列表和OCR文字，按每个独立物理规格从小到大顺序分别整理其对应的差异参数。",
+              "你是电商多规格参数结构化整理专家。该商品在容量、产品尺寸、单件重量、箱规或价格中存在多个规格，请严格依据网页文本、属性表、包装件重尺表、SKU列表和OCR文字，按从小到大顺序输出所有规格，保证五项核心参数一一对应、彼此适配。",
               "严格输出纯 JSON 数组，每个元素格式：",
-              `{"spec":"纯物理规格名如350ml或500ml或750ml或迷你(严禁带颜色词)","model":"该规格型号(无则留空)","size":"该规格对应的产品尺寸","weight":"该规格对应的单件重量(带单位)","cartonQty":"每箱多少个(必须带/箱如60个/箱，未找到必须留空字符串)","cartonWeight":"箱子毛净重(如毛重12kg/净重10kg，未找到必须留空字符串)","cartonSize":"箱子尺寸(长×宽×高cm，未找到必须留空字符串)","cartonCbm":"箱子立方数(如0.085 m³，未找到必须留空字符串)","price":"该规格价格(如有阶梯写清XXX件多少钱，过滤低于${minQty}件的价格)"}`,
-              "铁律1：颜色绝对不能单独成为规格！同一规格的不同颜色（如“孔雀蓝 500ml”“白色 500ml”）必须合并为同一个规格“500ml”；若实际只有 1 个物理规格返回空数组 []。",
-              "铁律2：严禁编造、严禁输出 \"-\" 占位符、严禁把规格数量(如3种容量)当成每箱多少个！找不到的箱规字段一律返回空字符串 \"\"。",
-              "铁律3：每个规格的「产品尺寸」「单件重量」「价格」「箱规」必须一一严格对齐（小容量对应小尺寸、轻重量、低价格，大容量对应大尺寸、重重量、高价格），绝不能张冠李戴，也不能把同一个价格或重量复制到所有规格！若有4个产品尺寸（如7.20×7.20×18cm到8.20×8.20×29cm）而容量标签只写了部分，需从详情页/OCR补全对应的所有规格（如350ml/500ml/750ml/1000ml）确保数量一致。",
+              `{"spec":"纯物理规格名如350ml或500ml或750ml或1000ml(严禁带颜色词，若尺寸4个容量缺第4个请从详情页或OCR补全真实容量，实在无文字标注才填对应尺寸)","model":"该规格型号(无则留空)","size":"该规格对应的产品尺寸(带cm/mm)","weight":"该规格对应的单件重量(带g/kg)","cartonQty":"每箱多少个(必须带/箱或pcs/ctn)","cartonWeight":"箱子毛净重(如毛重18.5kg/净重17.2kg)","cartonSize":"箱子尺寸(长×宽×高cm)","cartonCbm":"箱子立方数(如0.0889 m³)","price":"该规格对应价格(如有阶梯写清XXX件多少钱，过滤低于${minQty}件的价格)"}`,
+              "铁律1：颜色绝对不能单独成为规格！同一物理规格的不同颜色必须合并；若实际只有 1 个物理规格返回空数组 []。",
+              "铁律2：严禁漏掉任何尺寸或规格！比如页面有4个尺寸但属性栏容量只写了3个时，必须对照网页正文与OCR找出第4个规格，输出完整4组一一对应的数据，绝不允许4个尺寸配3个容量、1个单重、1个箱规、1个价格的不对齐现象！",
+              "铁律3：网页未单独列出某规格的单件重量/箱规/价格时，请结合其尺寸与容量变化做外贸B2B物理适配（净重≈单件重量×装箱数，毛重>净重，立方数=箱规体积），绝不输出“-”或机械把完全相同的单个重量与价格硬复制到明显一大一小的规格里。",
             ].join("\n"),
           },
           {
             role: "user",
-            content: `商品标题：${String(data?.title || "").slice(0, 120)}\n容量/规格属性：${capVal || "无"}\n产品尺寸列表：${dimVal || "无"}\n单件重量参考：${wtVal || "无"}\n识别到的物理规格列表：\n${variantsHint || capVal || dimVal}\n网页阶梯价：${tiersHint || "无"}\n包装件重尺明细：\n${packHint || "无"}\n网页详情文本：\n${pageSlice || "无"}\n图片OCR识别文字：\n${ocrSlice || "无"}\n请输出纯JSON数组：`,
+            content: `商品标题：${String(data?.title || "").slice(0, 120)}\n属性汇总：\n${multiAttrsHint || "无"}\n初步配对规格(${detected.length}组)：\n${variantsHint}\n网页阶梯价：${tiersHint || "无"}\n包装件重尺明细：\n${packHint || "无"}\n网页详情文本：\n${pageSlice || "无"}\n图片OCR识别文字：\n${ocrSlice || "无"}\n请输出纯JSON数组（共 ${detected.length} 组）：`,
           },
         ];
         for (const p of providers) {
           if (p.isAdminTrial && Date.now() < llmCooldownUntil) continue;
           try {
-            const r = await aiAgentRun(p, messages, { maxSteps: 1, webSearch: false, maxTokens: 950 });
+            const r = await aiAgentRun(p, messages, { maxSteps: 1, webSearch: false, maxTokens: 1100 });
             const m = String(r?.text || "").match(/\[[\s\S]*\]/);
             if (!m) continue;
             const arr = JSON.parse(m[0]);
             if (Array.isArray(arr) && arr.length >= 2) {
               const dedup = new Map();
-              for (const it of arr) {
-                const normSp = normalizePhysicalSpecName(it.spec, fallbackUnit);
+              for (let idx = 0; idx < arr.length; idx++) {
+                const it = arr[idx];
+                const rawSp = cleanStr(it.spec);
+                const normSp = normalizePhysicalSpecName(rawSp) || cleanStr(it.size) || detected[idx]?.spec || "";
                 if (!normSp) continue;
                 const k = normSp.toLowerCase();
                 if (dedup.has(k)) continue;
-                const prRow = matchPackRow(normSp);
-                const fbItem = findFallbackItem(normSp, cleanStr(it.size), dedup.size);
+                const prRow = matchPackRow(normSp, cleanStr(it.size));
                 let pr = normalizeRawPriceText(it.price || "");
                 if (pr && priceMode === "markup_pct") pr = applyPriceMarkupPct(pr, markupPct);
-                if (!pr && fbItem?.price) pr = fbItem.price;
-                const cSize = cleanCartonVal("箱子尺寸", it.cartonSize) || cleanCartonVal("箱子尺寸", prRow?.cartonSize);
-                const cCbm = cleanCartonVal("箱子立方数", it.cartonCbm) || (cSize ? _calcCbmFromDim(cSize) : "");
-                const rawW = cleanStr(it.weight) || fbItem?.weight || prRow?.weight || "";
                 dedup.set(k, {
                   spec: normSp,
-                  rawModel: cleanStr(it.model) || fbItem?.model || "",
-                  size: cleanStr(it.size) || fbItem?.size || prRow?.size || "",
-                  weight: rawW ? normalizeUnitWeight(rawW, attrs) : "",
-                  cartonQty: cleanCartonVal("每箱多少个", it.cartonQty) || cleanCartonVal("每箱多少个", prRow?.cartonQty),
-                  cartonWeight: cleanCartonVal("箱子毛净重", it.cartonWeight) || cleanCartonVal("箱子毛净重", prRow?.cartonWeight),
-                  cartonSize: cSize,
-                  cartonCbm: cCbm,
-                  price: pr,
+                  rawModel: cleanStr(it.model) || detected[idx]?.model || "",
+                  size: cleanStr(it.size) || prRow?.size || detected[idx]?.size || "",
+                  weight: (cleanStr(it.weight) || prRow?.weight || detected[idx]?.weight)
+                    ? normalizeUnitWeight(cleanStr(it.weight) || prRow?.weight || detected[idx]?.weight, data?.attrs || {})
+                    : "",
+                  cartonQty: cleanStr(it.cartonQty) || prRow?.cartonQty || detected[idx]?.cartonQty || "",
+                  cartonWeight: cleanStr(it.cartonWeight) || prRow?.cartonWeight || detected[idx]?.cartonWeight || "",
+                  cartonSize: cleanStr(it.cartonSize) || prRow?.cartonSize || detected[idx]?.cartonSize || "",
+                  cartonCbm: cleanStr(it.cartonCbm) || "",
+                  price: pr || (detected[idx]?.price ? (priceMode === "markup_pct" ? applyPriceMarkupPct(detected[idx].price, markupPct) : detected[idx].price) : ""),
                 });
                 if (dedup.size >= 8) break;
               }
               let list = [...dedup.values()];
-              // 若 AI 偷懒把所有规格写成了同一价格，而本地 SKU 实际抓到了不同的多规格价格，则用 SKU 对齐价格纠偏
-              const distinctAiPrices = new Set(list.map(x => x.price).filter(Boolean));
-              if (distinctFbPrices.size >= 2 && distinctAiPrices.size <= 1) {
-                list = list.map((item, idx) => {
-                  const fb = findFallbackItem(item.spec, item.size, idx);
-                  return (fb && fb.price) ? { ...item, price: fb.price } : item;
-                });
+              // 若 AI 漏返回了个别已识别规格（例如4个尺寸只输出了3条），补回缺失规格再走全维对应适配
+              if (list.length < detected.length) {
+                for (const d of detected) {
+                  const exist = list.some(x => x.spec.toLowerCase() === d.spec.toLowerCase() || (d.size && x.size === d.size));
+                  if (!exist && list.length < 8) {
+                    list.push({
+                      spec: d.spec,
+                      rawModel: d.model || "",
+                      size: d.size || "",
+                      weight: d.weight || "",
+                      cartonQty: d.cartonQty || "",
+                      cartonWeight: d.cartonWeight || "",
+                      cartonSize: d.cartonSize || "",
+                      cartonCbm: d.cartonSize ? _calcCbmFromDim(d.cartonSize) : "",
+                      price: d.price ? (priceMode === "markup_pct" ? applyPriceMarkupPct(d.price, markupPct) : d.price) : "",
+                    });
+                  }
+                }
               }
-              list.sort((a, b) => _calcSpecSortKey(a.spec) - _calcSpecSortKey(b.spec));
-              list = list.map((item, idx) => ({
-                ...item,
-                model: useSubModel ? (baseCode ? `${baseCode}-${idx + 1}` : item.rawModel) : item.rawModel,
-              }));
-              if (list.length >= 2) return list;
+              if (list.length >= 2) {
+                return adaptMultiSpecCorrespondence(list, data, { minQty, priceMode, markupPct, baseCode, useSubModel });
+              }
             }
           } catch {}
         }
       } catch {}
-      return baseFallback;
+      return buildLocalFallback();
     })();
   }
-  return cache[cacheKey];
+  return cache.aiMultiSpecs;
 }
 
 // 插件 AI 依据市场价格指数自动给出预估报价（支持 B2B 批发 / B2C 零售）
@@ -6919,10 +7149,8 @@ async function inspectImageVisualNoise(im, label = "") {
     cv.height = 0;
 
     const total = cw * ch;
-    let pureWhite = 0, pureBlack = 0, transparent = 0, strongContrast = 0, darkOrMid = 0;
+    let pureWhite = 0, transparent = 0, strongContrast = 0;
     const buckets = new Map();
-    const nonWhiteBuckets = new Map();
-    let nonWhiteCount = 0;
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
       if (a < 28) {
@@ -6930,97 +7158,25 @@ async function inspectImageVisualNoise(im, label = "") {
         buckets.set(-1, (buckets.get(-1) || 0) + 1);
         continue;
       }
-      const isPureW = r >= 245 && g >= 245 && b >= 245;
-      if (isPureW) pureWhite++;
-      if (r <= 24 && g <= 24 && b <= 24) pureBlack++;
+      if (r >= 242 && g >= 242 && b >= 242) pureWhite++;
       const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
       if (minC < 200 || (maxC - minC) > 38) strongContrast++;
-      if (minC < 180 && maxC < 215) darkOrMid++;
       const bk = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
       buckets.set(bk, (buckets.get(bk) || 0) + 1);
-      if (!isPureW) {
-        nonWhiteCount++;
-        nonWhiteBuckets.set(bk, (nonWhiteBuckets.get(bk) || 0) + 1);
-      }
     }
 
     const whiteOrTransRatio = (pureWhite + transparent) / total;
     const strongRatio = strongContrast / total;
-    const darkOrMidRatio = darkOrMid / total;
-    // 1) 空白占位图 / 极淡线框占位图（如 1688 定制模板白底淡蓝圆圈+浅灰轮廓图）
+    // 1) 空白占位图 / 极淡线框图（如 1688 定制模板白底淡蓝圆圈占位图）
     if (whiteOrTransRatio >= 0.965) return { isJunk: true, reason: "nearly_blank" };
     if (whiteOrTransRatio >= 0.88 && strongRatio < 0.025) return { isJunk: true, reason: "faint_wireframe_placeholder" };
-    if (whiteOrTransRatio >= 0.72 && darkOrMidRatio < 0.012) return { isJunk: true, reason: "pale_outline_placeholder" };
 
-    // 2) 纯平矢量 UI 图标 / 黑白图形 Logo（如店铺门头、三角 A 标、无摄影明暗过渡的单/双色徽标）
+    // 2) 纯平矢量 UI 图标（背景纯白/透明 > 45%，且全图颜色几乎集中在 2~4 个色块内，无摄影光影过渡）
     const counts = [...buckets.values()].sort((a, b) => b - a);
     const top3Ratio = ((counts[0] || 0) + (counts[1] || 0) + (counts[2] || 0)) / total;
     const significantBuckets = counts.filter(c => c >= 3).length;
     if (whiteOrTransRatio >= 0.48 && top3Ratio >= 0.89 && significantBuckets <= 8) {
       return { isJunk: true, reason: "flat_vector_icon" };
-    }
-    if (whiteOrTransRatio >= 0.35 && nonWhiteCount >= 24) {
-      const nwCounts = [...nonWhiteBuckets.values()].filter(c => c >= 2).sort((a, b) => b - a);
-      const top2NwRatio = ((nwCounts[0] || 0) + (nwCounts[1] || 0)) / nonWhiteCount;
-      if (nwCounts.length <= 10 && top2NwRatio >= 0.78) {
-        return { isJunk: true, reason: "flat_two_tone_icon" };
-      }
-    }
-    const pureWOnlyRatio = pureWhite / total;
-    const pureBOnlyRatio = pureBlack / total;
-    if (pureWOnlyRatio >= 0.35 && pureBOnlyRatio >= 0.14 && (pureWOnlyRatio + pureBOnlyRatio) >= 0.72) {
-      return { isJunk: true, reason: "bimodal_black_white_logo" };
-    }
-
-    // 3) 蓝天绿山湖水默认破损/占位插画图标（无真实商品纹理，横扫相邻像素极平滑且呈现上蓝天+中绿山+下蓝水色带）
-    let cTop = cw, cBot = -1, cLeft = ch, cRight = -1;
-    for (let y = 0; y < ch; y++) {
-      for (let x = 0; x < cw; x++) {
-        const idx = (y * cw + x) * 4;
-        const r = data[idx], g = data[idx + 1], b = data[idx + 2], a = data[idx + 3];
-        if (a >= 28 && !(r >= 242 && g >= 242 && b >= 242)) {
-          if (y < cTop) cTop = y;
-          if (y > cBot) cBot = y;
-          if (x < cLeft) cLeft = x;
-          if (x > cRight) cRight = x;
-        }
-      }
-    }
-    const cH = cBot - cTop + 1, cW = cRight - cLeft + 1;
-    if (cH >= 16 && cW >= 16) {
-      let flatPairs = 0, totalPairs = 0;
-      let skyPx = 0, skyTotal = 0, midGreenPx = 0, midTotal = 0, waterBluePx = 0, waterTotal = 0;
-      for (let y = cTop; y <= cBot; y++) {
-        const relY = (y - cTop) / Math.max(1, cH - 1);
-        for (let x = cLeft; x <= cRight; x++) {
-          const idx = (y * cw + x) * 4;
-          const r = data[idx], g = data[idx + 1], b = data[idx + 2], a = data[idx + 3];
-          if (a < 28) continue;
-          if (x < cRight) {
-            const nIdx = idx + 4;
-            const diff = Math.abs(r - data[nIdx]) + Math.abs(g - data[nIdx + 1]) + Math.abs(b - data[nIdx + 2]);
-            totalPairs++;
-            if (diff <= 14) flatPairs++;
-          }
-          if (relY <= 0.38) {
-            skyTotal++;
-            if (b > r + 16 && b >= 155) skyPx++;
-          } else if (relY <= 0.74) {
-            midTotal++;
-            if (g > r + 6 && g >= b * 0.85) midGreenPx++;
-          } else {
-            waterTotal++;
-            if (b > r + 12 && b >= g * 0.92) waterBluePx++;
-          }
-        }
-      }
-      const flatRatio = totalPairs ? flatPairs / totalPairs : 0;
-      const skyR = skyTotal ? skyPx / skyTotal : 0;
-      const midR = midTotal ? midGreenPx / midTotal : 0;
-      const waterR = waterTotal ? waterBluePx / waterTotal : 0;
-      if (flatRatio >= 0.62 && skyR >= 0.38 && midR >= 0.18 && waterR >= 0.38) {
-        return { isJunk: true, reason: "landscape_placeholder_clipart" };
-      }
     }
   } catch {} finally {
     if (bm && typeof bm.close === "function") {
@@ -7039,8 +7195,8 @@ function classifyImageForFilterMode(url, label, w, h, meta, imgFilterMode = "ai"
   const ratio = h > 0 ? w / h : 1;
   const tallRatio = w > 0 ? h / w : 1;
 
-  // 1) 无论何种模式都剔除明显的 1x1 像素、追踪器、空白占位符、/tfs/ 与 /tps/ 平台 UI 图标及矢量 .svg 图标
-  if (/(?:spacer|blank\.gif|1x1|pixel|track|beacon|lazyload\.gif|wait[-_]?load|default[-_]?pic|loading\.(?:gif|png)|\/(?:tfs|tps)\/|dianguanjia|puhuo|daifa|superboss|no[-_]?image|default[-_]?img|placeholder)/i.test(u) || /\.svg(?:$|\?)/i.test(u)) {
+  // 1) 无论何种模式都剔除明显的 1x1 像素、追踪器、空白占位符、/tfs/ 与 /tps/ 平台 UI 图标
+  if (/(?:spacer|blank\.gif|1x1|pixel|track|beacon|lazyload\.gif|\/(?:tfs|tps)\/|dianguanjia|puhuo|daifa|superboss|no[-_]?image|default[-_]?img|placeholder)/i.test(u)) {
     return { keepSave: false, keepOcr: false, category: "noise" };
   }
 
@@ -7065,7 +7221,7 @@ function classifyImageForFilterMode(url, label, w, h, meta, imgFilterMode = "ai"
 
   // 5) 判断是否为规格参数表/尺码表/箱规包装图 vs 品牌工厂证书等其他图 vs 纯商品展示图
   const isSpecChart = /(?:尺码|尺寸|规格|参数|装箱|外箱|包装|检测|报告|证书|size\s*chart|spec|parameter|dimension|packing|carton|certificate)/i.test(ctx + " " + u) || tallRatio >= 1.65;
-  const isOtherSceneOrFactory = /(?:工厂|车间|仓库|展会|公司介绍|企业简介|品牌故事|营业执照|物流|团队|实力厂家|源头工厂|研发生产|潜心制作|好评如潮|品牌保障|售后无忧|订购须知|定制流程|factory|workshop|warehouse|exhibition|company\s*profile|brand\s*story|ordering\s*notice|rave\s*reviews|after\s*sales)/i.test(ctx + " " + u);
+  const isOtherSceneOrFactory = /(?:工厂|车间|仓库|展会|公司介绍|品牌故事|营业执照|物流|团队|factory|workshop|warehouse|exhibition|company\s*profile|brand\s*story)/i.test(ctx + " " + u);
 
   if (imgFilterMode === "all") {
     // 「其他图也要（全部图片）」：商品图、参数表图、场景图、工厂图、包装图全部保存
@@ -7260,7 +7416,8 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
             samePlatformLinks: uni.samePlatformLinks || [],
             detailUrl: specialized.detailUrl || uni.detailUrl || "",
             priceTiers: specialized.priceTiers || uni.priceTiers || [],
-            variantsData: specialized.variantsData || uni.variantsData || [],
+            variantsData: (specialized.variantsData && specialized.variantsData.length) ? specialized.variantsData : (uni.variantsData || []),
+            packSpecs: (specialized.packSpecs && specialized.packSpecs.length) ? specialized.packSpecs : (uni.packSpecs || []),
           };
         } else {
           data = specialized || uni || null;
@@ -7535,7 +7692,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         const minQty = Math.max(0, parseInt($("priceMinQty")?.value, 10) || 0);
         const checkedNameSet = new Set(checkedCommonAll.map(x => x.n));
 
-        // 0) 若检测到多规格商品（如多个容量/尺寸对应不同型号、价格、箱规），按 规格1 / 规格2 / 规格3 分组列清差异参数，下面再列通用参数
+        // 0) 若检测到多规格商品（容量、尺寸、单件重量、箱规、价格中任一项存在多个不同值），按 规格1..N 分组整理并保持五维参数一一对应适配
         const useSubModel = Boolean($("optSpecSubModel")?.checked ?? optSpecSubModelEnabled);
         const multiSpecs = doParams
           ? await aiExtractMultiSpecVariants(data, ocrAll, { minQty, priceMode, markupPct, baseCode: slot.hasUserNo ? code : "", useSubModel, outLang, allowRemoteAi }, cascadeCache)
@@ -7545,6 +7702,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         if (hasMultiSpecLayout) {
           specFieldsCovered.add("详细规格");
           specFieldsCovered.add("容量");
+          specFieldsCovered.add("规格");
           let qtyHitN = 0, wtHitN = 0, szHitN = 0, cbmHitN = 0;
           for (let si = 0; si < multiSpecs.length; si++) {
             const sp = multiSpecs[si];
@@ -7710,8 +7868,12 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
 
         // 2) 将网页中识别出的其他有价值参数（如颜色、规格、容量、尺寸、单重、包装方式等）去重后按「字段名：字段内容」一行一个并入
         if (doParams) {
-          const excludedNames = new Set(["货号", "产品参数", "毛净重", "产品名称", "商品标题", ...CARTON_FIELDS.map(x => x.toLowerCase()), ...uncheckedNames]);
+          const excludedNames = new Set(["货号", "产品参数", "毛净重", "产品名称", "商品标题", ...(hasMultiSpecLayout ? ["规格"] : []), ...CARTON_FIELDS.map(x => x.toLowerCase()), ...uncheckedNames]);
           const existingKeys = new Set(["商品标题", "产品名称", (langPack.lblTitle || "").toLowerCase()]);
+          for (const cov of specFieldsCovered) {
+            existingKeys.add(cov.toLowerCase());
+            (FIELD_ALIAS[cov] || []).forEach(a => existingKeys.add(a.toLowerCase()));
+          }
           for (const f of checkedCommonAll) {
             existingKeys.add(f.n.toLowerCase());
             (FIELD_ALIAS[f.n] || []).forEach(a => existingKeys.add(a.toLowerCase()));
@@ -7865,28 +8027,19 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
     }
 
     // 2) 若为商品页或开启参数/AI：双线程 Web Worker OCR -> 三步检索 -> AI并发生成
-    const HARD_JUNK_OCR_RE = /(?:源头工厂|实力厂家|实力工厂|工厂直营|工厂直销|厂家直销|研发生产|年专注|专注.*?生产|潜心制作|精益求精|品质值得信赖|产能与质量|Factory\s*Direct|Direct\s*Factory|Ordering\s*Notice|Rave\s*Reviews|好评如潮|客户评价|买家评价|买家秀|口碑见证|品牌保障|售后无忧|关于色差|物流运费|关于售后|关于物流|关于发货|订购须知|定制须知|定制流程|选好款式|确认样品|确认大货|购买须知|买家须知|购物须知|温馨提示|铺货|已铺货|立即铺货|铺货下单|一件代发|传淘宝|店管家|超级店长|一键下单|采源宝|企业简介|公司介绍|资质证书|营业执照|诚招代理)/i;
-    const JUNK_OCR_TEXT_RE = /(?:淘宝|天猫|抖音|拼多多|快手|小红书|京东|微信号|扫码加|加微信|二维码|代发|微店|发货说明|物流说明|退换货|售后说明|售后服务|关注店铺|收藏店铺|店铺首页|联系客服|掌柜推荐|跨店满减|直播间专享)/i;
-    const SPEC_OCR_GUARD_RE = /(?:箱规|装箱数|外箱尺寸|毛重.*净重|产品尺寸\s*[:：]\s*\d)/i;
-    const isJunkOcrText = txt => {
-      const s = String(txt || "");
-      const compact = s.replace(/[\s·•.,，。!！?？:：\-—_|/\\]+/g, "");
-      if (/(?:箱规|装箱数|外箱尺寸)/.test(compact)) return false;
-      if (HARD_JUNK_OCR_RE.test(s) || HARD_JUNK_OCR_RE.test(compact)) return true;
-      return (JUNK_OCR_TEXT_RE.test(s) || JUNK_OCR_TEXT_RE.test(compact)) && !SPEC_OCR_GUARD_RE.test(s) && !SPEC_OCR_GUARD_RE.test(compact);
-    };
+    const JUNK_OCR_TEXT_RE = /(?:淘宝|天猫|抖音|拼多多|快手|小红书|京东|微信号|扫码加|加微信|二维码|铺货|代发|店管家|一键下单|采源宝|微店|买家须知|购物须知|发货说明|物流说明|退换货说明|售后说明|诚招代理|关注店铺|收藏店铺|店铺首页|联系客服|掌柜推荐|跨店满减|直播间专享)/i;
+    const SPEC_OCR_GUARD_RE = /(?:箱规|装箱数|外箱尺寸|毛重|净重|产品尺寸|外形尺寸|规格参数|材质|容量)/i;
     if (!(isNonEcom && !doParams && !doAi)) {
       try {
         const ocrTexts = [];
         const ocrItems = [];
         const ocrCheckedAssets = new Set();
         const stage1HasAllChecked = !(finalBundle.missingRequired && finalBundle.missingRequired.length);
-        const hasUnresolvedMultiSpec = detectDistinctMultiSpecs(data, data.attrs || {}).some(s => !s.size || !s.weight || !s.price);
-        if (needOcr && ocrCandidatePool.length && (!stage1HasAllChecked || hasUnresolvedMultiSpec)) {
+        if (needOcr && ocrCandidatePool.length && !stage1HasAllChecked) {
           const sortedPool = [...ocrCandidatePool]
             .filter(b => b.w >= 200 && b.h >= 100 && (b.w / Math.max(1, b.h)) < 8)
             .sort((a, b) => (b.isSpecChart ? 1 : 0) - (a.isSpecChart ? 1 : 0));
-          const candidates = sortedPool.slice(0, 14);
+          const candidates = sortedPool.slice(0, 8);
           const stillMissing = Array.isArray(finalBundle.missingRequired) ? finalBundle.missingRequired : [];
           let ocrDoneCount = 0;
           let allFoundEarly = false;
@@ -7903,7 +8056,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
             $("status").innerText = `双线程识别图片文字 (${ocrDoneCount}/${candidates.length})…`;
             const labelTag = `详情图${String(i + 1).padStart(3, "0")}`;
             if (t) {
-              if (isJunkOcrText(t) && cand.assetRef) {
+              if (JUNK_OCR_TEXT_RE.test(t) && !SPEC_OCR_GUARD_RE.test(t) && cand.assetRef) {
                 cand.assetRef.__dropJunkByOcr = true;
                 aiFilteredCount++;
               }
@@ -7918,24 +8071,22 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
           });
         }
 
-        // 2b) 对详情图全量（尾部优先，精准命中底部工厂实力/订购流程/好评截图/售后保障等杂图）及主图/SKU角标徽章做OCR排查，绝不放行落盘
+        // 2b) 对尚未扫描到的详情图/主图/SKU图标徽章（如店管家/铺货代发/铺货下单方形标或横幅）做OCR杂图排查，绝不放行落盘
         if (imgFilterMode !== "all" && typeof ocrImg === "function") {
-          const isBadgeShape = a => {
+          const suspectJunkAssets = [...detailAssets, ...mainAssets, ...skuAssets].filter(a => {
+            if (!a || !a.image || a.__dropJunkByOcr || ocrCheckedAssets.has(a)) return false;
             const w = a.origW || a.image.w || 0, h = a.origH || a.image.h || 0;
             if (!w || !h) return false;
-            const isSquareBadge = Math.abs(w - h) <= Math.max(w, h) * 0.35 && Math.max(w, h) <= 1200;
-            const isWideBanner = h > 0 && (w / h) >= 1.8 && h <= 520;
+            const isSquareBadge = Math.abs(w - h) <= Math.max(w, h) * 0.35 && Math.max(w, h) <= 850;
+            const isWideBanner = h > 0 && (w / h) >= 1.8 && h <= 450;
             return isSquareBadge || isWideBanner;
-          };
-          const tailDetails = [...detailAssets].reverse().filter(a => a && a.image && !a.__dropJunkByOcr && !ocrCheckedAssets.has(a));
-          const otherBadges = [...mainAssets, ...skuAssets].filter(a => a && a.image && !a.__dropJunkByOcr && !ocrCheckedAssets.has(a) && isBadgeShape(a));
-          const suspectJunkAssets = [...tailDetails, ...otherBadges].slice(0, 48);
+          }).slice(0, 14);
           if (suspectJunkAssets.length) {
             await mapPool(suspectJunkAssets, OCR_POOL_SIZE, async (asset) => {
               await checkTaskControl(taskCtx);
               if (stopRequested) return;
               const t = await ocrImg(asset.image);
-              if (t && isJunkOcrText(t)) {
+              if (t && JUNK_OCR_TEXT_RE.test(t) && !SPEC_OCR_GUARD_RE.test(t)) {
                 asset.__dropJunkByOcr = true;
                 aiFilteredCount++;
               }
