@@ -4151,6 +4151,11 @@ function isValidFieldValue(name, val) {
     if (/(?:给力|杠杠|很快|超快|神速|好评|满意|态度|服务|物流体验)/.test(v)) return false;
     return /(?:\d|天|日|周|月|小时|时|现货|当天|次日|即发|协商|days?|weeks?|hours?|months?|stock|immediate)/i.test(v);
   }
+  if (/^(?:价格|单价|批发价|参考价|零售价|售价|price)$/i.test(name)) {
+    if (/(?:指商家|专柜价|吊牌价|正品零售价|指导价|曾经展示|划线价格|未划线价格|自营销活动|平台.*优惠|实时标价|具体成交价格|价格说明|仅供参考)/i.test(v)) return false;
+    if (!/\d/.test(v)) return false;
+    if (v.length > 60 && !/[¥￥$€£]/.test(v)) return false;
+  }
   return true;
 }
 function matchField(name, attrs, text) {
@@ -4185,10 +4190,12 @@ function matchField(name, attrs, text) {
       const isAsciiCand = /^[a-z0-9\s._/-]+$/i.test(c);
       const boundaryPrefix = isAsciiCand ? "(?:^|\\b)" : "";
       const sepPattern = "\\s*[:：]\\s*";
-      const m = text.match(new RegExp(boundaryPrefix + escRe(c) + sepPattern + "([0-9a-zA-Z一-龥.．/×xX*＊\\- 、，,+]" + lenRange + ")", "i"));
-      const rawMatched = m && m[1] ? m[1].trim() : "";
-      const v = norm(rawMatched);
-      if (v && !BADVAL.has(v) && isValidFieldValue(name, v)) return v;
+      const re = new RegExp(boundaryPrefix + escRe(c) + sepPattern + "([¥￥$€£0-9a-zA-Z一-龥.．/×xX*＊\\- 、，,+]" + lenRange + ")", "gi");
+      for (const m of text.matchAll(re)) {
+        const rawMatched = m && m[1] ? m[1].trim() : "";
+        const v = norm(rawMatched);
+        if (v && !BADVAL.has(v) && isValidFieldValue(name, v)) return v;
+      }
     }
     // 针对「包装方式」支持详情介绍中的自然语言描述（如 单个OPP袋包装、独立PE袋、彩盒装、牛皮纸盒、吸塑卡装、防尘袋包装 等）
     if (name === "包装方式") {
@@ -5737,13 +5744,18 @@ async function aiSummarizeProductTitle(rawTitle, attrs = {}, outLang = "zh", cac
   return cache.aiTitle;
 }
 
-// 彻底清洗价格字符串（合并 1688 拆分小数点 ¥ 4 . 20 -> ¥4.20，避免数字碎裂错乱）
+// 彻底清洗价格字符串（合并 1688 拆分小数点 ¥ 4 . 20 -> ¥4.20，同时拦截平台“价格说明”免责文案）
 function normalizeRawPriceText(raw) {
-  return stripBracketsAndBoxes(String(raw || ""))
+  const s = stripBracketsAndBoxes(String(raw || ""))
     .replace(/(\d)\s*\.\s*(\d)/g, "$1.$2")
     .replace(/([¥￥$€£])\s+(\d)/g, "$1$2")
     .replace(/\s+/g, " ")
     .trim();
+  if (!s || !/\d/.test(s)) return "";
+  if (/(?:指商家|专柜价|吊牌价|正品零售价|指导价|曾经展示|划线价格|未划线价格|自营销活动|平台.*优惠|实时标价|具体成交价格|价格说明|仅供参考)/i.test(s)) {
+    return "";
+  }
+  return s;
 }
 
 function _formatAdjNum(adj) {

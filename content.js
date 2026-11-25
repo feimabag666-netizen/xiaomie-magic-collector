@@ -406,16 +406,27 @@
       }
     } catch {}
 
-    // C) 兜底单价提取（确保修复拆分小数点，绝不输出 ¥ 5.20 . 26）
+    // C) 兜底单价提取（跳过价格说明等免责文案，优先匹配带¥/数字的真实价格元素，再退回 SKU 价格区间）
     if (priceTiers.length) {
       priceTiers.sort((a, b) => a.minQty - b.minQty);
       putAttr("价格", priceTiers.map(t => `${t.qtyLabel} ${t.currency}${t.price.toFixed(2).replace(/\.00$/, "")}`).join("，"));
     } else {
-      const priceEl = document.querySelector(".price-text, .od-pc-offer-price-contain, [class*='price-num'], [class*='price-info']");
-      if (priceEl && priceEl.innerText) {
-        const pTxt = cleanPriceText(priceEl.innerText).slice(0, 80);
-        if (/\d/.test(pTxt)) putAttr("价格", pTxt);
+      const badPriceTextRe = /指商家|专柜价|吊牌价|指导价|自营销活动|平台.*优惠|划线价格|未划线价格|实时标价|具体成交价格|价格说明/;
+      let pickedPrice = "";
+      document.querySelectorAll(".price-text, .od-pc-offer-price-contain, [class*='price-num'], [class*='price-info'], [class*='price-content'], [class*='offer-price'], .price-comp").forEach(el => {
+        if (pickedPrice) return;
+        const pTxt = cleanPriceText(el.innerText || "").slice(0, 80);
+        if (!pTxt || badPriceTextRe.test(pTxt)) return;
+        if (/(?:[¥￥$€£]\s*\d|\d+(?:\.\d{1,2})?\s*(?:元|起|[-~—]\s*[¥￥$€£]?\d))/.test(pTxt) || /^\d+(?:\.\d{1,2})?$/.test(pTxt)) {
+          pickedPrice = pTxt;
+        }
+      });
+      if (!pickedPrice && variantsData.some(v => v.price > 0)) {
+        const ps = variantsData.map(v => v.price).filter(p => p > 0);
+        const minP = Math.min(...ps), maxP = Math.max(...ps);
+        pickedPrice = minP === maxP ? `¥${minP.toFixed(2).replace(/\.00$/, "")}` : `¥${minP.toFixed(2).replace(/\.00$/, "")}-¥${maxP.toFixed(2).replace(/\.00$/, "")}`;
       }
+      if (pickedPrice) putAttr("价格", pickedPrice);
     }
 
     // 1) 经典属性项与表格行（含跨境属性/包装信息表格）
