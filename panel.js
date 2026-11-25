@@ -4170,7 +4170,7 @@ function matchField(name, attrs, text) {
     const BADVAL = new Set(["型号","名称","品牌","产地","尺寸","规格","重量","数量","参数","说明","详情","价格",
       "毛重","净重","装箱数","箱规","交期","起订量","装箱数量","外箱","箱子","包装","单位","备注","材质","颜色",
       "预览","查看","展开","收起","更多","图片","大图","视频","全部","选择","客服","评价","收藏","举报"]);
-    const lenRange = isYesNo ? "{1,36}" : "{2,36}";
+    const lenRange = isYesNo ? "{1,36}" : "{2,96}";
     for (const c of cand) {
       const isAsciiCand = /^[a-z0-9\s._/-]+$/i.test(c);
       const boundaryPrefix = isAsciiCand ? "(?:^|\\b)" : "";
@@ -5915,6 +5915,21 @@ function _parseMultiAttrTokens(rawVal, kind, attrs = {}) {
 
 function detectDistinctMultiSpecs(data, attrs = {}, extraText = "") {
   const a = (attrs && Object.keys(attrs).length) ? attrs : (data?.attrs || {});
+  const corpus = `${data?.pageText || ""}\n${data?.copyText || ""}\n${extraText || ""}`;
+  const pickMultiRaw = (stdName, fallbackKeys = [], isCarton = false) => {
+    for (const k of [stdName, ...fallbackKeys]) {
+      const v = String(a[k] || "").trim();
+      if (v && /[/／|；;、，,]/.test(v)) return v;
+    }
+    if (isCarton) {
+      for (const k of [stdName, ...fallbackKeys]) {
+        if (a[k]) return String(a[k]).trim();
+      }
+      return extractCartonValue(stdName, a, corpus) || "";
+    }
+    return matchField(stdName, a, corpus) || fallbackKeys.map(k => a[k]).find(Boolean) || "";
+  };
+
   const rawVariants = Array.isArray(data?.variantsData) ? data.variantsData : [];
   const specMap = new Map();
   for (const v of rawVariants) {
@@ -5939,13 +5954,13 @@ function detectDistinctMultiSpecs(data, attrs = {}, extraText = "") {
     return { spec: item.spec, model: item.model, price: priceStr };
   });
 
-  const capTokens = _parseMultiAttrTokens(a["容量"] || a["容积"] || a["详细规格"] || a["规格"], "cap", a);
-  const dimTokens = _parseMultiAttrTokens(a["产品尺寸"] || a["尺寸"] || a["规格尺寸"], "dim", a);
-  const weightTokens = _parseMultiAttrTokens(a["单件重量"] || a["重量"] || a["单品重量"], "weight", a);
-  const ctnQtyTokens = _parseMultiAttrTokens(a["每箱多少个"], "cartonQty", a);
-  const ctnSizeTokens = _parseMultiAttrTokens(a["箱子尺寸"], "cartonSize", a);
-  const ctnWeightTokens = _parseMultiAttrTokens(a["箱子毛净重"], "cartonWeight", a);
-  const priceTokens = _parseMultiAttrTokens(a["价格"], "price", a);
+  const capTokens = _parseMultiAttrTokens(pickMultiRaw("容量", ["容积", "详细规格", "规格"]), "cap", a);
+  const dimTokens = _parseMultiAttrTokens(pickMultiRaw("产品尺寸", ["尺寸", "单品尺寸", "外形尺寸", "规格尺寸", "产品规格"]), "dim", a);
+  const weightTokens = _parseMultiAttrTokens(pickMultiRaw("单件重量", ["重量", "产品重量", "单品重量"]), "weight", a);
+  const ctnQtyTokens = _parseMultiAttrTokens(pickMultiRaw("每箱多少个", ["装箱数"], true), "cartonQty", a);
+  const ctnSizeTokens = _parseMultiAttrTokens(pickMultiRaw("箱子尺寸", ["外箱尺寸"], true), "cartonSize", a);
+  const ctnWeightTokens = _parseMultiAttrTokens(pickMultiRaw("箱子毛净重", ["毛净重"], true), "cartonWeight", a);
+  const priceTokens = _parseMultiAttrTokens(pickMultiRaw("价格", ["单价", "批发价"]), "price", a);
 
   // 从包装件重尺行识别去重后的物理规格行
   const packList = Array.isArray(data?.packSpecs) ? data.packSpecs : [];
@@ -6018,12 +6033,12 @@ function detectDistinctMultiSpecs(data, attrs = {}, extraText = "") {
     return sortedVars.map((v, i) => ({
       spec: v.spec,
       model: v.model || "",
-      size: sortDims.length === sortedVars.length ? sortDims[i] : "",
-      weight: sortWeights.length === sortedVars.length ? sortWeights[i] : "",
-      cartonQty: ctnQtyTokens.length === sortedVars.length ? ctnQtyTokens[i] : "",
-      cartonWeight: ctnWeightTokens.length === sortedVars.length ? ctnWeightTokens[i] : "",
-      cartonSize: ctnSizeTokens.length === sortedVars.length ? ctnSizeTokens[i] : "",
-      price: v.price || (priceTokens.length === sortedVars.length ? priceTokens[i] : ""),
+      size: sortDims.length >= 2 ? (sortDims[i] || "") : "",
+      weight: sortWeights.length >= 2 ? (sortWeights[i] || "") : "",
+      cartonQty: ctnQtyTokens.length >= 2 ? (ctnQtyTokens[i] || "") : "",
+      cartonWeight: ctnWeightTokens.length >= 2 ? (ctnWeightTokens[i] || "") : "",
+      cartonSize: ctnSizeTokens.length >= 2 ? (ctnSizeTokens[i] || "") : "",
+      price: v.price || (priceTokens.length >= 2 ? (priceTokens[i] || "") : ""),
     }));
   }
 
@@ -6133,7 +6148,16 @@ function adaptMultiSpecCorrespondence(items, data, { minQty = 0, priceMode = "ra
     });
   }
 
-  // 3) 对齐「产品尺寸」：若有单边缺失而同组已有尺寸，按立方根等比推算或补全
+  // 3) 对齐「产品尺寸」：先从属性/正文补全已识别到的尺寸列表，再对单边缺失项按立方根等比推算
+  const attrMultiDims = _parseMultiAttrTokens(matchField("产品尺寸", attrs, data?.pageText || "") || attrs["产品尺寸"] || attrs["尺寸"] || "", "dim", attrs)
+    .sort((x, y) => _dimToVolCm3(x) - _dimToVolCm3(y));
+  if (attrMultiDims.length >= 2) {
+    for (let i = 0; i < list.length; i++) {
+      if (_dimToVolCm3(list[i].size) <= 0 && attrMultiDims[i]) list[i].size = attrMultiDims[i];
+    }
+  } else if (attrMultiDims.length === 1 && list.every(it => _dimToVolCm3(it.size) <= 0)) {
+    list[anchorIdx].size = attrMultiDims[0];
+  }
   const sizedIdxs = list.map((it, idx) => (_dimToVolCm3(it.size) > 0 ? idx : -1)).filter(x => x >= 0);
   if (sizedIdxs.length >= 1 && sizedIdxs.length < list.length) {
     for (let i = 0; i < list.length; i++) {
@@ -7692,10 +7716,25 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         const minQty = Math.max(0, parseInt($("priceMinQty")?.value, 10) || 0);
         const checkedNameSet = new Set(checkedCommonAll.map(x => x.n));
 
-        // 0) 若检测到多规格商品（容量、尺寸、单件重量、箱规、价格中任一项存在多个不同值），按 规格1..N 分组整理并保持五维参数一一对应适配
+        // 0) 预先收集联动核心字段（网页+OCR+缓存步骤），确保多规格分组把产品尺寸/重量/容量/箱规/价格全部收到一起适配，不在通用参数重复输出
         const useSubModel = Boolean($("optSpecSubModel")?.checked ?? optSpecSubModelEnabled);
+        let specData = data;
+        if (doParams) {
+          const preAttrs = { ...(data.attrs || {}) };
+          for (const fn of ["产品尺寸", "容量", "单件重量", "价格"]) {
+            if (!matchField(fn, preAttrs, "")) {
+              const localPre = await findSpecsByFourStageCascade(data, url, stageOcrItems, fn, cascadeCache, false, false);
+              if (localPre?.value) preAttrs[fn] = localPre.value;
+            }
+          }
+          if (allowNetworkCascade && checkedNameSet.has("产品尺寸") && !matchField("产品尺寸", preAttrs, "") && detectDistinctMultiSpecs(data, preAttrs, ocrAll).length >= 2) {
+            const netDim = await findSpecsByFourStageCascade(data, url, stageOcrItems, "产品尺寸", cascadeCache, true, false);
+            if (netDim?.value) preAttrs["产品尺寸"] = netDim.value;
+          }
+          specData = { ...data, attrs: preAttrs };
+        }
         const multiSpecs = doParams
-          ? await aiExtractMultiSpecVariants(data, ocrAll, { minQty, priceMode, markupPct, baseCode: slot.hasUserNo ? code : "", useSubModel, outLang, allowRemoteAi }, cascadeCache)
+          ? await aiExtractMultiSpecVariants(specData, ocrAll, { minQty, priceMode, markupPct, baseCode: slot.hasUserNo ? code : "", useSubModel, outLang, allowRemoteAi }, cascadeCache)
           : [];
         const hasMultiSpecLayout = multiSpecs.length >= 2;
         const specFieldsCovered = new Set();
