@@ -4103,7 +4103,7 @@ function normalizeUnitWeight(rawVal, attrs = {}) {
 function sanitizeProductAttrs(rawAttrs) {
   if (!rawAttrs || typeof rawAttrs !== "object") return {};
   const entries = Object.entries(rawAttrs);
-  const badKeyOrValRe = /^(?:预览|查看|展开|收起|更多|查看详情|详情|商品属性|跨境属性|包装信息|物流参数|数量|客服|评价|收藏|举报|登录|注册|选择|立即购买|加入购物车|全部|操作|图片|大图|视频|说明|参数)$/i;
+  const badKeyOrValRe = /^(?:预览|查看|展开|收起|更多|查看详情|详情|商品属性|跨境属性|包装信息|物流参数|数量|客服|评价|收藏|举报|登录|注册|选择|立即购买|加入购物车|全部|操作|图片|大图|视频|说明|参数|无规格|无尺寸|无参数|无型号|暂无|未填写)$/i;
   const pureValueAsKeyRe = /^(?:是|否|无|有|支持|不支持|可|不可|不限|通用|\d+(?:\.\d+)?%?)$/;
   const skuOptionSet = new Set();
   for (const [k, v] of entries) {
@@ -4141,7 +4141,12 @@ function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function isValidFieldValue(name, val) {
   const v = String(val || "").trim();
   if (!v) return false;
-  if (/^(?:预览|查看|展开|收起|更多|查看详情|详情|图片|大图|视频|暂无|待定|未知|不详|说明|参数|全部|选择|客服|评价|收藏|举报|登录|注册)$/i.test(v)) return false;
+  if (/^(?:预览|查看|展开|收起|更多|查看详情|详情|图片|大图|视频|暂无|待定|未知|不详|说明|参数|全部|选择|客服|评价|收藏|举报|登录|注册|无规格|无尺寸|无参数|无型号|无重量|无数据|无内容|未填写|未提供|空|默认|通用|其他|其它|n\/a|none|null|unknown|[-—–_/\\]+)$/i.test(v)) return false;
+  if (name === "产品尺寸") {
+    const hasDigit = /\d/.test(v);
+    const hasApparelSize = /(?:大号|中号|小号|特大号|加大号|迷你|mini|均码|\b(?:xs|s|m|l|xl|xxl|2xl|3xl)\b)/i.test(v);
+    if (!hasDigit && !hasApparelSize) return false;
+  }
   if (name === "交期") {
     if (/(?:给力|杠杠|很快|超快|神速|好评|满意|态度|服务|物流体验)/.test(v)) return false;
     return /(?:\d|天|日|周|月|小时|时|现货|当天|次日|即发|协商|days?|weeks?|hours?|months?|stock|immediate)/i.test(v);
@@ -4171,19 +4176,39 @@ function matchField(name, attrs, text) {
       }
     }
   }
+  // 针对「产品尺寸」，若属性表里的“规格/产品规格”含真实维度数字（如 27*12*37cm），也直接采信
+  const isDimValRe = /(?:\d+(?:\.\d+)?\s*[×xX*＊]\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?\s*(?:cm|mm|m|寸|英寸|厘米|毫米))/i;
+  if (name === "产品尺寸") {
+    for (const k of keys) {
+      if (/^(?:规格|产品规格|规格尺寸)$/i.test(k.trim())) {
+        const v = String(attrs[k] || "").trim();
+        if (v && isDimValRe.test(v) && isValidFieldValue(name, v)) return v;
+      }
+    }
+  }
   if (text) {
     const BADVAL = new Set(["型号","名称","品牌","产地","尺寸","规格","重量","数量","参数","说明","详情","价格",
       "毛重","净重","装箱数","箱规","交期","起订量","装箱数量","外箱","箱子","包装","单位","备注","材质","颜色",
-      "预览","查看","展开","收起","更多","图片","大图","视频","全部","选择","客服","评价","收藏","举报"]);
+      "预览","查看","展开","收起","更多","图片","大图","视频","全部","选择","客服","评价","收藏","举报","无规格","无尺寸"]);
     const lenRange = isYesNo ? "{1,36}" : "{2,36}";
-    for (const c of cand) {
+    const textCands = name === "产品尺寸" && !cand.includes("规格") ? [...cand, "规格"] : cand;
+    for (const c of textCands) {
       const isAsciiCand = /^[a-z0-9\s._/-]+$/i.test(c);
       const boundaryPrefix = isAsciiCand ? "(?:^|\\b)" : "";
+      // 允许 OCR 图片排版中文字之间带空格（如“规 格：27*12*37CM”、“重 量：0.49KG”、“尺 寸：...”）
+      const keyPat = isAsciiCand ? escRe(c) : c.split("").map(ch => escRe(ch)).join("\\s*");
       const sepPattern = "\\s*[:：]\\s*";
-      const m = text.match(new RegExp(boundaryPrefix + escRe(c) + sepPattern + "([0-9a-zA-Z一-龥.．/×xX*＊\\- 、，,+]" + lenRange + ")", "i"));
-      const rawMatched = m && m[1] ? m[1].trim() : "";
-      const v = norm(rawMatched);
-      if (v && !BADVAL.has(v) && isValidFieldValue(name, v)) return v;
+      const re = new RegExp(boundaryPrefix + keyPat + sepPattern + "([0-9a-zA-Z\\u4e00-\\u9fa5.．/×xX*＊\\- 、，,+]" + lenRange + ")", "ig");
+      for (const m of text.matchAll(re)) {
+        let rawMatched = m && m[1] ? m[1].trim() : "";
+        if (rawMatched && /^\s*[:：]/.test(text.slice((m.index || 0) + m[0].length))) {
+          rawMatched = rawMatched.replace(/\s+(?:[\u4e00-\u9fa5]{1,4}(?:\s+[\u4e00-\u9fa5]{1,4}){0,3}|[a-zA-Z][a-zA-Z\s]{1,16})$/, "").trim();
+        }
+        const v = norm(rawMatched);
+        if (!v || BADVAL.has(v) || !isValidFieldValue(name, v)) continue;
+        if (name === "产品尺寸" && c === "规格" && !isDimValRe.test(v)) continue;
+        return v;
+      }
     }
     // 针对「包装方式」支持详情介绍中的自然语言描述（如 单个OPP袋包装、独立PE袋、彩盒装、牛皮纸盒、吸塑卡装、防尘袋包装 等）
     if (name === "包装方式") {
@@ -7766,7 +7791,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
           const sortedPool = [...ocrCandidatePool]
             .filter(b => b.w >= 200 && b.h >= 100 && (b.w / Math.max(1, b.h)) < 8)
             .sort((a, b) => (b.isSpecChart ? 1 : 0) - (a.isSpecChart ? 1 : 0));
-          const candidates = sortedPool.slice(0, 8);
+          const candidates = sortedPool.slice(0, 14);
           const stillMissing = Array.isArray(finalBundle.missingRequired) ? finalBundle.missingRequired : [];
           let ocrDoneCount = 0;
           let allFoundEarly = false;
