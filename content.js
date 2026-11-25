@@ -211,67 +211,72 @@
       if (!attrs[k]) attrs[k] = v;
     };
 
-    // 1) 从 1688 内嵌 JSON skuProps 提取高清原图 imageUrl 与规格名称
-    let searchFrom = 0;
-    while (searchFrom < html.length) {
-      const skuIdx = html.indexOf('"skuProps"', searchFrom);
-      if (skuIdx < 0) break;
-      searchFrom = skuIdx + 10;
-      const arrStart = html.indexOf("[", skuIdx);
-      if (arrStart > 0 && arrStart - skuIdx < 40) {
-        let depth = 0, inStr = false, esc = false, arrEnd = -1;
-        for (let i = arrStart; i < Math.min(html.length, arrStart + 80000); i++) {
-          const ch = html[i];
-          if (esc) { esc = false; continue; }
-          if (ch === "\\") { esc = true; continue; }
-          if (ch === '"') { inStr = !inStr; continue; }
-          if (!inStr) {
-            if (ch === "[") depth++;
-            else if (ch === "]") {
-              depth--;
-              if (depth === 0) { arrEnd = i + 1; break; }
+    // 1) 从 1688 内嵌 JSON skuProps 提取高清原图 imageUrl 与规格名称（同时兼容转义 \"skuProps\"）
+    const skuPropSources = [html];
+    if (html.includes('\\"skuProps\\"')) skuPropSources.push(html.replace(/\\"/g, '"'));
+    for (const spSrc of skuPropSources) {
+      let searchFrom = 0;
+      while (searchFrom < spSrc.length) {
+        const skuIdx = spSrc.indexOf('"skuProps"', searchFrom);
+        if (skuIdx < 0) break;
+        searchFrom = skuIdx + 10;
+        const arrStart = spSrc.indexOf("[", skuIdx);
+        if (arrStart > 0 && arrStart - skuIdx < 40) {
+          let depth = 0, inStr = false, esc = false, arrEnd = -1;
+          for (let i = arrStart; i < Math.min(spSrc.length, arrStart + 80000); i++) {
+            const ch = spSrc[i];
+            if (esc) { esc = false; continue; }
+            if (ch === "\\") { esc = true; continue; }
+            if (ch === '"') { inStr = !inStr; continue; }
+            if (!inStr) {
+              if (ch === "[") depth++;
+              else if (ch === "]") {
+                depth--;
+                if (depth === 0) { arrEnd = i + 1; break; }
+              }
             }
           }
-        }
-        if (arrEnd > arrStart) {
-          try {
-            JSON.parse(html.slice(arrStart, arrEnd)).forEach(o => {
-              if (o && Array.isArray(o.value)) {
-                const vals = [];
-                o.value.forEach(v => {
-                  if (!v) return;
-                  const nm = String(v.name || "").trim();
-                  if (nm) {
-                    vals.push(nm);
-                    if (!skuNames.includes(nm)) skuNames.push(nm);
-                  }
-                  const hiRes = v.imageUrl || v.imgUrl || v.image || v.propImage || "";
-                  if (hiRes) push(sku, hiRes);
-                });
-                if (o.prop && vals.length) {
-                  let outVals = vals;
-                  if (/容量|尺寸|尺码|重量|克重|净重|功率|电压|size|capacity|weight/i.test(String(o.prop))) {
-                    const unitVotes = {};
-                    vals.forEach(s => {
-                      const um = s.match(/^\d+(?:\.\d+)?\s*(ml|l|oz|g|kg|cm|mm|m|w|kw|v|寸|英寸|毫升|升|克|千克|公斤)$/i);
-                      if (um) {
-                        const u = um[1].toLowerCase() === "毫升" ? "ml" : (um[1].toLowerCase() === "升" ? "L" : um[1]);
-                        unitVotes[u] = (unitVotes[u] || 0) + 1;
-                      }
-                    });
-                    const domUnit = Object.entries(unitVotes).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
-                    if (domUnit) {
-                      outVals = vals.map(s => /^\d+(?:\.\d+)?$/.test(s) ? `${s}${domUnit}` : s);
+          if (arrEnd > arrStart) {
+            try {
+              JSON.parse(spSrc.slice(arrStart, arrEnd)).forEach(o => {
+                if (o && Array.isArray(o.value)) {
+                  const vals = [];
+                  o.value.forEach(v => {
+                    if (!v) return;
+                    const nm = String(v.name || "").trim();
+                    if (nm) {
+                      vals.push(nm);
+                      if (!skuNames.includes(nm)) skuNames.push(nm);
                     }
+                    const hiRes = v.imageUrl || v.imgUrl || v.image || v.propImage || "";
+                    if (hiRes) push(sku, hiRes);
+                  });
+                  if (o.prop && vals.length) {
+                    let outVals = vals;
+                    if (/容量|尺寸|尺码|重量|克重|净重|功率|电压|size|capacity|weight/i.test(String(o.prop))) {
+                      const unitVotes = {};
+                      vals.forEach(s => {
+                        const um = s.match(/^\d+(?:\.\d+)?\s*(ml|l|oz|g|kg|cm|mm|m|w|kw|v|寸|英寸|毫升|升|克|千克|公斤)$/i);
+                        if (um) {
+                          const u = um[1].toLowerCase() === "毫升" ? "ml" : (um[1].toLowerCase() === "升" ? "L" : um[1]);
+                          unitVotes[u] = (unitVotes[u] || 0) + 1;
+                        }
+                      });
+                      const domUnit = Object.entries(unitVotes).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+                      if (domUnit) {
+                        outVals = vals.map(s => /^\d+(?:\.\d+)?$/.test(s) ? `${s}${domUnit}` : s);
+                      }
+                    }
+                    putAttr(o.prop, outVals.join(" / "));
+                    if (!attrs["规格"]) putAttr("规格", outVals.join(" / "));
                   }
-                  putAttr(o.prop, outVals.join(" / "));
-                  if (!attrs["规格"]) putAttr("规格", outVals.join(" / "));
                 }
-              }
-            });
-          } catch (e) {}
+              });
+            } catch (e) {}
+          }
         }
       }
+      if (skuNames.length) break;
     }
 
     // 2) 仅从明确包含规格属性的 JSON 对象提取高清 SKU 图（绝不全文乱扫无关角标/店铺图标 imageUrl）
@@ -426,6 +431,47 @@
         }
         if (variantsData.length) break;
       }
+
+      // B2) DOM 下单规格区与第二规格行列表兜底（直接读取下单区“颜色 / 容量 / 尺码 / 规格”分组与行内价格）
+      const propLabelRe = /^(颜色|颜色分类|容量|尺寸|尺码|规格|款式|型号|组合|套餐|厚度|材质|功率|电压|重量)$/;
+      document.querySelectorAll("[class*='sku-prop'], [class*='od-sku'], [class*='prop-item'], [class*='sku-module'], [class*='purchasing'], [class*='sku-wrapper']").forEach(grp => {
+        if (grp.querySelectorAll("[class*='sku-prop'], [class*='od-sku-property']").length >= 2) return;
+        const titleEl = grp.querySelector(":scope > [class*='title'], :scope > [class*='label'], :scope > [class*='name'], :scope > h3, :scope > h4, :scope > span")
+          || grp.querySelector("[class*='title'], [class*='label'], [class*='name'], h3, h4, span");
+        const propName = (titleEl?.innerText || "").replace(/[:：\s]/g, "").trim();
+        if (!propLabelRe.test(propName)) return;
+        const itemTexts = [];
+        grp.querySelectorAll("[class*='sku-item'], [class*='item-name'], [class*='prop-value'], [class*='chip'], [class*='option'], button, tr, [class*='row']").forEach(it => {
+          const raw = (it.getAttribute("title") || it.querySelector("[class*='name'], [class*='text'], span")?.innerText || it.innerText || "").replace(/\s+/g, " ").trim();
+          const line = raw.split(/\n+/)[0]?.trim() || "";
+          if (!line || line === propName || line.length > 48 || /^(?:请输入|库存|起批|价格|数量|可售)/.test(line)) return;
+          if (!itemTexts.includes(line)) itemTexts.push(line);
+          const rowTxt = cleanPriceText(it.innerText || "");
+          const pm = rowTxt.match(/(?:[¥￥]\s*(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s*元)/);
+          if (pm && !seenSpec.has(line)) {
+            const pVal = parseFloat(pm[1] || pm[2]);
+            if (Number.isFinite(pVal) && pVal > 0 && variantsData.length < 200) {
+              seenSpec.add(line);
+              variantsData.push({ spec: line, model: "", price: pVal, currency: "¥" });
+            }
+          }
+        });
+        if (itemTexts.length >= 2) {
+          putAttr(propName, itemTexts.slice(0, 30).join(" / "));
+        }
+      });
+      // 独立扫描下单表格行（如“容量”行含 规格 + 单价）
+      document.querySelectorAll("[class*='sku-table'] tr, [class*='sku'] [class*='table-row'], [class*='sku-item-wrapper'], [class*='sku-list'] [class*='item']").forEach(rowEl => {
+        const rowTxt = cleanPriceText(rowEl.innerText || "");
+        const pm = rowTxt.match(/(?:[¥￥]\s*(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s*元)/);
+        if (!pm) return;
+        const pVal = parseFloat(pm[1] || pm[2]);
+        const line = (rowEl.getAttribute("title") || rowEl.querySelector("[class*='name'], [class*='text'], [class*='spec'], td, span")?.innerText || "").replace(/\s+/g, " ").trim();
+        if (line && line.length <= 48 && !seenSpec.has(line) && Number.isFinite(pVal) && pVal > 0 && variantsData.length < 200) {
+          seenSpec.add(line);
+          variantsData.push({ spec: line, model: "", price: pVal, currency: "¥" });
+        }
+      });
     } catch {}
 
     // C) 兜底单价提取（确保修复拆分小数点，绝不输出 ¥ 5.20 . 26）

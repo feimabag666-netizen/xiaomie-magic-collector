@@ -6119,7 +6119,10 @@ async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMod
         const ocrSlice = extractRelevantSpecWindow(stageOcrText || "", 2400);
         const packHint = packList.slice(0, 12).map(p => `${p.label}: 尺寸=${p.size || ""} 重量=${p.weight || ""} 箱规=${p.cartonSize || ""} ${p.cartonQty || ""} ${p.cartonWeight || ""}`).join("\n");
         const variantsHint = detected.map(d => `${d.spec}${d.model ? ` 型号:${d.model}` : ""}${d.size ? ` 对应尺寸:${d.size}` : ""}${d.weight ? ` 对应单重:${d.weight}` : ""}${d.price ? ` 价格:${d.price}` : ""}`).join("\n");
-        const tiersHint = (data?.priceTiers || []).map(t => `${t.qtyLabel} ${t.currency}${t.price}`).join("，");
+        const tiersHint = [
+          (data?.priceTiers || []).map(t => `${t.qtyLabel} ${t.currency}${t.price}`).join("，"),
+          attrs?.["价格"] ? `参考报价:${attrs["价格"]}` : "",
+        ].filter(Boolean).join("；");
         const messages = [
           {
             role: "system",
