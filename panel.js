@@ -2280,6 +2280,7 @@ async function captureFromTabId(tabId) {
           : { ...(fresh.attrs || {}), ...(specialized.attrs || {}) },
         imageDims: fresh.imageDims || {},
         detailUrl: specialized.detailUrl || fresh.detailUrl || "",
+        supplierName: specialized.supplierName || fresh.supplierName || "",
         priceTiers: specialized.priceTiers || fresh.priceTiers || [],
         variantsData: (specialized.variantsData && specialized.variantsData.length) ? specialized.variantsData : (fresh.variantsData || []),
         packSpecs: (specialized.packSpecs && specialized.packSpecs.length) ? specialized.packSpecs : (fresh.packSpecs || []),
@@ -5629,10 +5630,15 @@ async function aiExtractStageFields(stageKey, targetFields, data, sourceUrl, con
 
 // 从商品标题中剥离工厂名、店铺名、公司名与品牌/商标词，仅保留中性品类、材质与卖点描述
 const _TECH_TOKEN_KEEP_RE = /^(?:304|316|316L|410|430|201|PC|PP|PE|PET|PETG|PBT|ABS|TPR|TPE|TPU|PVC|PU|PA|PS|AS|PTFE|EVA|PLA|LDPE|HDPE|SUS|BPA|FDA|CE|ROHS|ISO|USB|TYPE-C|LED|LCD|OLED|RGB|UV|HD|2D|3D|4D|5D|DIY|OEM|ODM|IPX\d+|MINI|PRO|MAX|PLUS|LITE|ULTRA|WIFI|BT|NFC|DC|AC)$/i;
-function stripBrandAndFactoryFromTitle(rawTitle, attrs = {}) {
+function stripBrandAndFactoryFromTitle(rawTitle, attrs = {}, extraSupplier = "") {
   let s = stripBracketsAndBoxes(String(rawTitle || "").trim());
   if (!s) return "";
   const brandCandidates = [];
+  if (extraSupplier) {
+    brandCandidates.push(extraSupplier);
+    const coreSup = String(extraSupplier).replace(/^(?:[\u4e00-\u9fa5]{1,5}[省市县区])+/, "").replace(/(?:有限责任公司|股份有限公司|有限公司|制造厂|加工厂|用品厂|制品厂|旗舰店|专营店|官方店|工贸|商贸|科技|实业|日用品|家居|塑胶|五金|杯业|箱包|电商|商行)/g, "").trim();
+    if (coreSup.length >= 2) brandCandidates.push(coreSup);
+  }
   for (const [k, v] of Object.entries(attrs || {})) {
     if (/^(?:品牌|商标|工厂|厂家|供应商|店铺|公司|brand|manufacturer|supplier|store|shop|company)$/i.test(String(k || "").trim())) {
       const val = String(v || "").trim();
@@ -5662,16 +5668,16 @@ function stripBrandAndFactoryFromTitle(rawTitle, attrs = {}) {
 }
 
 // 精简提炼商品核心标题（去除工厂/品牌名称、冗长SEO堆砌词与括号符号，只留最突出商品内容的精炼标题）
-function buildConciseProductTitle(rawTitle, attrs = {}, outLang = "zh") {
-  let s = stripBrandAndFactoryFromTitle(rawTitle, attrs);
+function buildConciseProductTitle(rawTitle, attrs = {}, outLang = "zh", extraSupplier = "") {
+  let s = stripBrandAndFactoryFromTitle(rawTitle, attrs, extraSupplier);
   if (!s) return "";
   s = s
     .replace(/(?:202\d\s*年?|新款|新品|爆款|热卖|热销|跨境|外贸|出口|专供|工厂直销|厂家直销|源头厂家|源头工厂|批发|一件代发|代发|现货|特价|包邮|秒杀|抖音同款|小红书同款|网红|ins风|高颜值|亚马逊|amazon|temu|shein|tiktok|支持定制|可定制|定制logo|印logo|加印logo|礼盒装|批發|熱銷)/gi, " ")
     .replace(/(?<!\d)[/／](?!\d)|[|｜\\,，、;；!！?？~～]+/g, " ")
     .replace(/\s{2,}/g, " ")
     .trim();
-  if (!s) s = stripBrandAndFactoryFromTitle(rawTitle, attrs) || stripBracketsAndBoxes(String(rawTitle || "").trim());
-  s = stripBrandAndFactoryFromTitle(s, attrs) || s;
+  if (!s) s = stripBrandAndFactoryFromTitle(rawTitle, attrs, extraSupplier) || stripBracketsAndBoxes(String(rawTitle || "").trim());
+  s = stripBrandAndFactoryFromTitle(s, attrs, extraSupplier) || s;
   if (outLang === "zh") {
     // 仅折叠与中文相邻的空白，保留英文/数字之间的分隔，绝不把 350/550/750ml 或 350 550ml 粘连成 350550750ml
     const compact = s
@@ -5685,8 +5691,8 @@ function buildConciseProductTitle(rawTitle, attrs = {}, outLang = "zh") {
   return words.length > 10 ? words.slice(0, 10).join(" ") : s.slice(0, 68).trim();
 }
 
-async function aiSummarizeProductTitle(rawTitle, attrs = {}, outLang = "zh", cache = {}) {
-  const fallback = buildConciseProductTitle(rawTitle, attrs, outLang);
+async function aiSummarizeProductTitle(rawTitle, attrs = {}, outLang = "zh", cache = {}, extraSupplier = "") {
+  const fallback = buildConciseProductTitle(rawTitle, attrs, outLang, extraSupplier);
   if (!rawTitle) return fallback;
   if (!cache.aiTitle) {
     cache.aiTitle = (async () => {
@@ -5704,7 +5710,7 @@ async function aiSummarizeProductTitle(rawTitle, attrs = {}, outLang = "zh", cac
           .slice(0, 8)
           .map(([k, v]) => `${k}:${v}`)
           .join("，");
-        const cleanInputTitle = stripBrandAndFactoryFromTitle(rawTitle, attrs) || String(rawTitle || "");
+        const cleanInputTitle = stripBrandAndFactoryFromTitle(rawTitle, attrs, extraSupplier) || String(rawTitle || "");
         const messages = [
           {
             role: "system",
@@ -5730,7 +5736,7 @@ async function aiSummarizeProductTitle(rawTitle, attrs = {}, outLang = "zh", cac
               .replace(/^(?:商品标题|标题|title)\s*[:：]\s*/i, "")
               .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
               .trim();
-            t = stripBrandAndFactoryFromTitle(t, attrs) || t;
+            t = stripBrandAndFactoryFromTitle(t, attrs, extraSupplier) || t;
             if (outLang === "zh") t = t.replace(/\s+/g, "");
             if (t && t.length >= 4 && t.length <= (outLang === "zh" ? 28 : 80)) {
               return t;
@@ -7286,6 +7292,9 @@ async function inspectImageVisualNoise(im, label = "") {
     if (whiteOrTransRatio >= 0.48 && top3Ratio >= 0.89 && significantBuckets <= 8) {
       return { isJunk: true, reason: "flat_vector_icon", isSuspectBadge: true };
     }
+    if (whiteOrTransRatio >= 0.58 && strongRatio < 0.12 && top3Ratio >= 0.85 && significantBuckets <= 12) {
+      return { isJunk: true, reason: "faint_wireframe_badge", isSuspectBadge: true };
+    }
     const botVividRatio = botTotalPx > 0 ? (botVividPx / botTotalPx) : 0;
     const isSuspectBadge = botVividRatio >= 0.45 || top4Ratio >= 0.65 || (im.blob.size || 0) <= 50000;
     return { isJunk: false, reason: "", isSuspectBadge };
@@ -7305,7 +7314,7 @@ async function _makeBannerOcrImage(im) {
     bm = await createImageBitmap(im.blob);
     const w = bm.width || im.w || 0, h = bm.height || im.h || 0;
     if (w < 40 || h < 40) return null;
-    const stripH = Math.max(24, Math.round(h * 0.44));
+    const stripH = Math.max(24, Math.round(h * 0.40));
     const scale = w < 320 ? 2 : 1;
     const outW = Math.round(w * scale), outH = Math.round(stripH * scale);
     const cv = document.createElement("canvas");
@@ -7317,11 +7326,12 @@ async function _makeBannerOcrImage(im) {
     ctx.drawImage(bm, 0, Math.max(0, h - stripH), w, stripH, 0, 0, outW, outH);
     const imgData = ctx.getImageData(0, 0, outW, outH);
     const d = imgData.data;
-    // 按感知亮度提取彩底（红/蓝/橙）上的白字（兼容有损JPEG彩边渗色，底色亮度~70-115，白字>=165），反色成白底黑字
+    // 提取彩底上的无色相/低色差白字（同时剔除金黄皇冠/橙色图标的高饱和亮点），反色成白底黑字
     for (let i = 0; i < d.length; i += 4) {
       const r = d[i], g = d[i + 1], b = d[i + 2];
+      const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
       const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-      const val = lum >= 165 ? 0 : 255;
+      const val = (lum >= 165 && (maxC - minC) <= 75) ? 0 : 255;
       d[i] = val; d[i + 1] = val; d[i + 2] = val; d[i + 3] = 255;
     }
     ctx.putImageData(imgData, 0, 0);
@@ -7563,6 +7573,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
             imageMeta: uni.imageMeta || {},
             samePlatformLinks: uni.samePlatformLinks || [],
             detailUrl: specialized.detailUrl || uni.detailUrl || "",
+            supplierName: specialized.supplierName || uni.supplierName || "",
             priceTiers: specialized.priceTiers || uni.priceTiers || [],
             variantsData: (specialized.variantsData && specialized.variantsData.length) ? specialized.variantsData : (uni.variantsData || []),
             packSpecs: (specialized.packSpecs && specialized.packSpecs.length) ? specialized.packSpecs : (uni.packSpecs || []),
@@ -7710,7 +7721,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
     const titleFieldDef = COMMON_FIELDS.find(f => f.n === "商品标题");
     const customTitleInput = isNonEcom ? getNonEcomCoreVal("网页/视频标题") : (titleFieldDef?.v || "").trim();
     const effectiveRawTitle = customTitleInput
-      || (isNonEcom ? data.title : stripBrandAndFactoryFromTitle(data.title || "", data.attrs || {}))
+      || (isNonEcom ? data.title : stripBrandAndFactoryFromTitle(data.title || "", data.attrs || {}, data.supplierName || ""))
       || data.title
       || (isNonEcom ? "未命名网页" : "未命名商品");
     const title = effectiveRawTitle
@@ -7828,8 +7839,8 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       const effectiveTitle = customTitleVal
         ? customTitleVal
         : (allowRemoteAi
-            ? await aiSummarizeProductTitle(rawSourceTitle, data.attrs || {}, outLang, cascadeCache)
-            : buildConciseProductTitle(rawSourceTitle, data.attrs || {}, outLang));
+            ? await aiSummarizeProductTitle(rawSourceTitle, data.attrs || {}, outLang, cascadeCache, data.supplierName || "")
+            : buildConciseProductTitle(rawSourceTitle, data.attrs || {}, outLang, data.supplierName || ""));
       const isTitleChecked = !titleFieldDef || Boolean(titleFieldDef.c);
 
       if (doParams) {

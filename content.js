@@ -426,6 +426,10 @@
         const minP = Math.min(...ps), maxP = Math.max(...ps);
         pickedPrice = minP === maxP ? `¥${minP.toFixed(2).replace(/\.00$/, "")}` : `¥${minP.toFixed(2).replace(/\.00$/, "")}-¥${maxP.toFixed(2).replace(/\.00$/, "")}`;
       }
+      if (!pickedPrice) {
+        const dpM = htmlRaw.match(/"(?:discountPrice|refPrice|consignPrice)"\s*:\s*"?(\d+(?:\.\d{1,2})?)"?/);
+        if (dpM && parseFloat(dpM[1]) > 0) pickedPrice = `¥${parseFloat(dpM[1]).toFixed(2).replace(/\.00$/, "")}`;
+      }
       if (pickedPrice) putAttr("价格", pickedPrice);
     }
 
@@ -725,7 +729,8 @@
         || searchScope.match(/((?:单个|独立|透明|加厚|定制)?(?:OPP袋|PE袋|CPE袋|自封袋|磨砂袋|气泡袋|防尘袋|无纺布袋|绒布袋|编织袋|彩盒|白盒|牛皮纸盒|瓦楞盒|天地盖盒|礼盒|纸盒|吸塑卡|吸塑盒|吊卡|纸箱|袋装|盒装|散装)(?:独立)?(?:包装|装)?)/i);
       if (packMatch && packMatch[1] && !attrs["包装方式"]) putAttr("包装方式", packMatch[1].trim());
     }
-    return { url: location.href, title, pageLang: document.documentElement?.lang || "", isEcommerce: true, main, detail, sku, videos, attrs, pageText, priceTiers, variantsData, packSpecs };
+    const supplierName = (document.querySelector(".shop-company-name, [class*='company-name'], [class*='companyName'], [class*='shop-name']")?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 60);
+    return { url: location.href, title, supplierName, pageLang: document.documentElement?.lang || "", isEcommerce: true, main, detail, sku, videos, attrs, pageText, priceTiers, variantsData, packSpecs };
   }
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
