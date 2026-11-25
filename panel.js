@@ -1527,30 +1527,30 @@ async function extractUniversalPageInTab() {
       }
     }
 
-    // 优先解析列式「商品件重尺 / 包装信息」表格（如：颜色 | 长(cm) | 宽(cm) | 高(cm) | 体积(cm³) | 重量(g)）
+    // 优先解析列式「商品件重尺 / 包装信息」表格（兼容单 table 与固定表头双 table，严禁把箱规列混入单件重量或产品尺寸）
     const columnarTables = new Set();
-    queryAllDeep("table, [role='table']").forEach(tbl => {
-      if (isInNoise(tbl)) return;
-      const rows = [...tbl.querySelectorAll("tr, [role='row']")]
-        .map(r => [...r.querySelectorAll("th, td, [role='columnheader'], [role='cell']")].map(x => (x.innerText || "").replace(/[\u200e\u200f]/g, "").replace(/\s+/g, " ").trim()))
-        .filter(cells => cells.some(Boolean));
-      if (rows.length < 2) return;
+    const readTblRows = el => [...el.querySelectorAll("tr, [role='row']")]
+      .map(r => [...r.querySelectorAll("th, td, [role='columnheader'], [role='cell']")].map(x => (x.innerText || "").replace(/[\u200e\u200f]/g, "").replace(/\s+/g, " ").trim()))
+      .filter(cells => cells.some(Boolean));
+    const parseColPackRows = (rows, markEls = []) => {
+      if (rows.length < 2) return false;
       const hdr = rows[0];
-      const weightCol = hdr.findIndex(h => /^(?:重量|单件重量|单品重量|产品重量|毛重|净重|克重|weight)(?:\s*[\(（]\s*(?:kg|g|克|千克|公斤|lb|oz)\s*[\)）])?$/i.test(h));
+      const weightCol = hdr.findIndex(h => /^(?:重量|单件重量|单品重量|产品重量|克重|weight)(?:\s*[\(（]\s*(?:kg|g|克|千克|公斤|lb|oz)\s*[\)）])?$/i.test(h));
       const lenCol = hdr.findIndex(h => /^长(?:度)?(?:\s*[\(（]\s*(?:cm|mm|m)\s*[\)）])?$/i.test(h));
       const widCol = hdr.findIndex(h => /^宽(?:度)?(?:\s*[\(（]\s*(?:cm|mm|m)\s*[\)）])?$/i.test(h));
       const heiCol = hdr.findIndex(h => /^高(?:度)?(?:\s*[\(（]\s*(?:cm|mm|m)\s*[\)）])?$/i.test(h));
-      if (weightCol < 0 && !(lenCol >= 0 && widCol >= 0 && heiCol >= 0)) return;
-      columnarTables.add(tbl);
+      const cartonCol = hdr.findIndex(h => /^(?:箱规|外箱|装箱规格|外箱信息)$/i.test(h));
+      if (weightCol < 0 && !(lenCol >= 0 && widCol >= 0 && heiCol >= 0)) return false;
+      markEls.forEach(el => { if (el) columnarTables.add(el); });
       const wUnitM = weightCol >= 0 ? hdr[weightCol].match(/[\(（]\s*(kg|g|克|千克|公斤|lb|oz)\s*[\)）]/i) : null;
       const wUnit = wUnitM ? wUnitM[1] : "g";
       const dUnitM = lenCol >= 0 ? hdr[lenCol].match(/[\(（]\s*(cm|mm|m)\s*[\)）]/i) : null;
       const dUnit = dUnitM ? dUnitM[1] : "cm";
-      const weights = [], dims = [];
+      const weights = [], dims = [], ctnSizes = [], ctnQtys = [], ctnWeights = [];
       for (let ri = 1; ri < rows.length; ri++) {
         const r = rows[ri];
-        if (weightCol >= 0 && r[weightCol] && /\d/.test(r[weightCol])) {
-          const wStr = /[a-zA-Z克斤两]/.test(r[weightCol]) ? r[weightCol] : `${r[weightCol]}${wUnit}`;
+        if (weightCol >= 0 && r[weightCol] && /^\d+(?:\.\d+)?(?:\s*(?:g|kg|克|千克|公斤|lb|oz))?$/i.test(r[weightCol].trim()) && parseFloat(r[weightCol]) > 0) {
+          const wStr = /[a-zA-Z克斤两]/.test(r[weightCol]) ? r[weightCol].trim() : `${r[weightCol].trim()}${wUnit}`;
           if (!weights.includes(wStr)) weights.push(wStr);
         }
         if (lenCol >= 0 && widCol >= 0 && heiCol >= 0 && r[lenCol] && r[widCol] && r[heiCol]) {
@@ -1560,9 +1560,34 @@ async function extractUniversalPageInTab() {
             if (!dims.includes(dStr)) dims.push(dStr);
           }
         }
+        if (cartonCol >= 0 && r[cartonCol]) {
+          const cTxt = r[cartonCol];
+          const cm = cTxt.match(/外箱\s*[:：]\s*(\d+(?:\.\d+)?\s*[*×xX]\s*\d+(?:\.\d+)?\s*[*×xX]\s*\d+(?:\.\d+)?\s*(?:cm|mm|m)?)/i);
+          if (cm) { const cs = cm[1].replace(/[*xX]/g, "×").trim(); if (!ctnSizes.includes(cs)) ctnSizes.push(cs); }
+          const qm = cTxt.match(/数量\s*[:：]\s*(\d+\s*[件个只套支双条袋盒]?\/箱)/i);
+          if (qm && !ctnQtys.includes(qm[1].trim())) ctnQtys.push(qm[1].trim());
+          const wm = cTxt.match(/(?:毛重|净重)\s*[:：]\s*(\d+(?:\.\d+)?\s*(?:kg|g|千克|公斤))/i);
+          if (wm && !ctnWeights.includes(wm[0].replace(/\s+/g, ""))) ctnWeights.push(wm[0].replace(/\s+/g, ""));
+        }
       }
-      if (weights.length && !attrs["单件重量"]) put("单件重量", weights.slice(0, 4).join(" / "));
+      if (weights.length) put("单件重量", weights.slice(0, 4).join(" / "));
       if (dims.length && !attrs["产品尺寸"]) put("产品尺寸", dims.slice(0, 4).join(" / "));
+      if (ctnSizes.length && !attrs["箱子尺寸"]) put("箱子尺寸", ctnSizes.slice(0, 3).join(" / "));
+      if (ctnQtys.length && !attrs["每箱多少个"]) put("每箱多少个", ctnQtys.slice(0, 3).join(" / "));
+      if (ctnWeights.length && !attrs["箱子毛净重"]) put("箱子毛净重", ctnWeights.slice(0, 3).join(" / "));
+      return true;
+    };
+    queryAllDeep(".ant-table, .next-table, [class*='table-wrapper'], [class*='table-container'], [class*='pack']").forEach(wrap => {
+      if (isInNoise(wrap)) return;
+      const tbls = [...wrap.querySelectorAll("table")];
+      if (tbls.length >= 2) {
+        const hdrRows = readTblRows(tbls[0]), bodyRows = readTblRows(tbls[1]);
+        if (hdrRows.length >= 1 && bodyRows.length >= 1) parseColPackRows([hdrRows[0], ...bodyRows], tbls);
+      }
+    });
+    queryAllDeep("table, [role='table']").forEach(tbl => {
+      if (isInNoise(tbl) || columnarTables.has(tbl)) return;
+      parseColPackRows(readTblRows(tbl), [tbl]);
     });
 
     queryAllDeep("table tr").forEach(row => {
@@ -2046,9 +2071,14 @@ async function extractUniversalPageInTab() {
     if (matMatch && !attrs["材质"]) put("材质", matMatch[1]);
     const capMatch = title.match(/\b(\d+(?:\.\d+)?\s*(?:ml|l|oz|毫升|升|加仑))\b/i);
     if (capMatch && !attrs["容量"]) put("容量", capMatch[1]);
-    const dimMatch = (title + " " + pageText.slice(0, 4000)).match(/\b(\d+(?:\.\d+)?\s*[×xX*]\s*\d+(?:\.\d+)?(?:\s*[×xX*]\s*\d+(?:\.\d+)?)?\s*(?:cm|mm|厘米|毫米))\b/i);
+    // 剔除箱规区块文本（外箱尺寸/件每箱/整箱毛净重），绝不把箱规重量和外箱尺寸误当成单件重量和产品尺寸
+    const noCartonText = pageText.slice(0, 4000)
+      .replace(/(?:外箱|纸箱|箱规|整箱)\s*[:：]?[^\n]{0,80}/g, " ")
+      .replace(/数量\s*[:：]?\s*\d+\s*[件个只套支双条袋盒]?\/箱[^\n]{0,80}/g, " ")
+      .replace(/(?:毛重|净重)\s*[:：]?\s*\d+(?:\.\d+)?\s*(?:kg|g|千克|公斤)/gi, " ");
+    const dimMatch = (title + " " + noCartonText).match(/\b(\d+(?:\.\d+)?\s*[×xX*]\s*\d+(?:\.\d+)?(?:\s*[×xX*]\s*\d+(?:\.\d+)?)?\s*(?:cm|mm|厘米|毫米))\b/i);
     if (dimMatch && !attrs["产品尺寸"]) put("产品尺寸", dimMatch[1]);
-    const wtMatch = pageText.slice(0, 4000).match(/(?:重量|净重|克重|单重)\s*[:：]?\s*(\d+(?:\.\d+)?\s*(?:g|kg|克|千克|公斤))\b/i);
+    const wtMatch = noCartonText.match(/(?:单件重量|单品重量|产品重量|单重|克重)\s*[:：]?\s*(\d+(?:\.\d+)?\s*(?:g|kg|克|千克|公斤))\b/i);
     if (wtMatch && !attrs["单件重量"]) put("单件重量", wtMatch[1]);
   }
   return {
@@ -6848,12 +6878,16 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         const mCap = fallbackCorpus.match(/\b(\d{2,5}\s*(?:ml|mL|ML|升|毫升|L|oz|OZ))\b/);
         if (mCap) data.attrs[outLang === "zh" ? "容量" : "Capacity"] = mCap[1].trim();
       }
+      const noCartonFallback = fallbackCorpus
+        .replace(/(?:外箱|纸箱|箱规|整箱)\s*[:：]?[^\n]{0,80}/g, " ")
+        .replace(/数量\s*[:：]?\s*\d+\s*[件个只套支双条袋盒]?\/箱[^\n]{0,80}/g, " ")
+        .replace(/(?:毛重|净重)\s*[:：]?\s*\d+(?:\.\d+)?\s*(?:kg|g|千克|公斤)/gi, " ");
       if (!hasAttrAlias("产品尺寸", "尺寸", "product dimensions", "item dimensions", "dimensions", "size")) {
-        const mDim = fallbackCorpus.match(/\b(\d{1,3}(?:\.\d+)?\s*[×xX*]\s*\d{1,3}(?:\.\d+)?(?:\s*[×xX*]\s*\d{1,3}(?:\.\d+)?)?\s*(?:cm|mm|厘米|毫米))\b/i);
+        const mDim = noCartonFallback.match(/\b(\d{1,3}(?:\.\d+)?\s*[×xX*]\s*\d{1,3}(?:\.\d+)?(?:\s*[×xX*]\s*\d{1,3}(?:\.\d+)?)?\s*(?:cm|mm|厘米|毫米))\b/i);
         if (mDim) data.attrs[outLang === "zh" ? "产品尺寸" : "Product Dimensions"] = mDim[1].trim();
       }
       if (!hasAttrAlias("单件重量", "产品重量", "重量", "item weight", "unit weight", "weight")) {
-        const mWt = fallbackCorpus.match(/(?:单重|净重|克重|约重|重量)\s*[:：]?\s*(\d{2,4}(?:\.\d+)?\s*(?:g|kg|克|千克|公斤))/i);
+        const mWt = noCartonFallback.match(/(?:单件重量|单品重量|产品重量|单重|克重|约重)\s*[:：]?\s*(\d{1,5}(?:\.\d+)?\s*(?:g|kg|克|千克|公斤))/i);
         if (mWt) data.attrs[outLang === "zh" ? "单件重量" : "Item Weight"] = mWt[1].trim();
       }
     }

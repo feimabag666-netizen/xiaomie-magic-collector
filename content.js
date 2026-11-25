@@ -395,70 +395,104 @@
       }
     });
 
-    // 1b) 优先解析 1688「包装信息 / 商品件重尺」列式表格（如：颜色 | 长(cm) | 宽(cm) | 高(cm) | 体积(cm³) | 重量(g)）
+    // 1b) 优先解析 1688「包装信息 / 商品件重尺」列式表格（同时支持单 table 与 Ant/Next 拆分布局的固定表头双 table）
     const columnarTables = new Set();
-    document.querySelectorAll("table, [role='table']").forEach(tbl => {
-      const rows = [...tbl.querySelectorAll("tr, [role='row']")]
-        .map(r => [...r.querySelectorAll("th, td, [role='columnheader'], [role='cell']")].map(x => (x.innerText || "").replace(/\s+/g, " ").trim()))
-        .filter(cells => cells.some(Boolean));
-      if (rows.length < 2) return;
+    const parseColumnarRows = (rows, markEls = []) => {
+      if (rows.length < 2) return false;
       const hdr = rows[0];
-      const weightCol = hdr.findIndex(h => /^(?:重量|单件重量|单品重量|产品重量|毛重|净重|克重|weight)(?:\s*[\(（]\s*(?:kg|g|克|千克|公斤|lb|oz)\s*[\)）])?$/i.test(h));
+      const weightCol = hdr.findIndex(h => /^(?:重量|单件重量|单品重量|产品重量|克重|weight)(?:\s*[\(（]\s*(?:kg|g|克|千克|公斤|lb|oz)\s*[\)）])?$/i.test(h));
       const lenCol = hdr.findIndex(h => /^长(?:度)?(?:\s*[\(（]\s*(?:cm|mm|m)\s*[\)）])?$/i.test(h));
       const widCol = hdr.findIndex(h => /^宽(?:度)?(?:\s*[\(（]\s*(?:cm|mm|m)\s*[\)）])?$/i.test(h));
       const heiCol = hdr.findIndex(h => /^高(?:度)?(?:\s*[\(（]\s*(?:cm|mm|m)\s*[\)）])?$/i.test(h));
-      if (weightCol < 0 && !(lenCol >= 0 && widCol >= 0 && heiCol >= 0)) return;
-      columnarTables.add(tbl);
+      const cartonCol = hdr.findIndex(h => /^(?:箱规|外箱|装箱规格|外箱信息)$/i.test(h));
+      if (weightCol < 0 && !(lenCol >= 0 && widCol >= 0 && heiCol >= 0)) return false;
+      markEls.forEach(el => { if (el) columnarTables.add(el); });
       const wUnitM = weightCol >= 0 ? hdr[weightCol].match(/[\(（]\s*(kg|g|克|千克|公斤|lb|oz)\s*[\)）]/i) : null;
       const wUnit = wUnitM ? wUnitM[1] : "g";
-      const dUnitM = lenCol >= 0 ? hdr[lenCol].match(/[\(（]\s*(cm|mm|m)\s*[\)）]/i) : null;
+      const dUnitM = lenCol >= 0 ? hdr[lenCol].match(/[\(（]\s*(cm|mm|m)\s*[\)）]/i) : (widCol >= 0 ? hdr[widCol].match(/[\(（]\s*(cm|mm|m)\s*[\)）]/i) : null);
       const dUnit = dUnitM ? dUnitM[1] : "cm";
-      const weights = [];
-      const dims = [];
+      const weights = [], dims = [], ctnSizes = [], ctnQtys = [], ctnWeights = [];
       for (let ri = 1; ri < rows.length; ri++) {
         const r = rows[ri];
         if (weightCol >= 0 && r[weightCol]) {
           const rawW = r[weightCol].trim();
-          if (/\d/.test(rawW)) {
+          if (/^\d+(?:\.\d+)?(?:\s*(?:g|kg|克|千克|公斤|lb|oz))?$/i.test(rawW) && parseFloat(rawW) > 0) {
             const wStr = /[a-zA-Z克斤两]/.test(rawW) ? rawW : `${rawW}${wUnit}`;
             if (!weights.includes(wStr)) weights.push(wStr);
           }
         }
         if (lenCol >= 0 && widCol >= 0 && heiCol >= 0 && r[lenCol] && r[widCol] && r[heiCol]) {
-          const l = r[lenCol].replace(/[^\d.]/g, "");
-          const w = r[widCol].replace(/[^\d.]/g, "");
-          const h = r[heiCol].replace(/[^\d.]/g, "");
+          const l = r[lenCol].replace(/[^\d.]/g, ""), w = r[widCol].replace(/[^\d.]/g, ""), h = r[heiCol].replace(/[^\d.]/g, "");
           if (l && w && h) {
             const dStr = `${l}×${w}×${h}${dUnit}`;
             if (!dims.includes(dStr)) dims.push(dStr);
           }
         }
+        if (cartonCol >= 0 && r[cartonCol]) {
+          const cTxt = r[cartonCol];
+          const cm = cTxt.match(/外箱\s*[:：]\s*(\d+(?:\.\d+)?\s*[*×xX]\s*\d+(?:\.\d+)?\s*[*×xX]\s*\d+(?:\.\d+)?\s*(?:cm|mm|m)?)/i);
+          if (cm) {
+            const cs = cm[1].replace(/[*xX]/g, "×").trim();
+            if (!ctnSizes.includes(cs)) ctnSizes.push(cs);
+          }
+          const qm = cTxt.match(/数量\s*[:：]\s*(\d+\s*[件个只套支双条袋盒]?\/箱)/i);
+          if (qm && !ctnQtys.includes(qm[1].trim())) ctnQtys.push(qm[1].trim());
+          const wm = cTxt.match(/(?:毛重|净重)\s*[:：]\s*(\d+(?:\.\d+)?\s*(?:kg|g|千克|公斤))/i);
+          if (wm && !ctnWeights.includes(wm[0].replace(/\s+/g, ""))) ctnWeights.push(wm[0].replace(/\s+/g, ""));
+        }
       }
-      if (weights.length && !attrs["单件重量"]) putAttr("单件重量", weights.slice(0, 4).join(" / "));
-      if (dims.length) {
-        if (!attrs["包装尺寸"]) putAttr("包装尺寸", dims.slice(0, 4).join(" / "));
-        if (!attrs["产品尺寸"]) putAttr("产品尺寸", dims.slice(0, 4).join(" / "));
+      if (weights.length) putAttr("单件重量", weights.slice(0, 4).join(" / "));
+      if (dims.length && !attrs["产品尺寸"]) putAttr("产品尺寸", dims.slice(0, 4).join(" / "));
+      if (ctnSizes.length && !attrs["箱子尺寸"]) putAttr("箱子尺寸", ctnSizes.slice(0, 3).join(" / "));
+      if (ctnQtys.length && !attrs["每箱多少个"]) putAttr("每箱多少个", ctnQtys.slice(0, 3).join(" / "));
+      if (ctnWeights.length && !attrs["箱子毛净重"]) putAttr("箱子毛净重", ctnWeights.slice(0, 3).join(" / "));
+      return true;
+    };
+
+    const readRowsFromEl = el => [...el.querySelectorAll("tr, [role='row']")]
+      .map(r => [...r.querySelectorAll("th, td, [role='columnheader'], [role='cell']")].map(x => (x.innerText || "").replace(/\s+/g, " ").trim()))
+      .filter(cells => cells.some(Boolean));
+
+    // 1b-1) 先查拆分布局的固定表头容器（.ant-table / .next-table / 含多个 table 的包裹容器）
+    document.querySelectorAll(".ant-table, .next-table, [class*='table-wrapper'], [class*='table-container'], [class*='pack']").forEach(wrap => {
+      const tbls = [...wrap.querySelectorAll("table")];
+      if (tbls.length >= 2) {
+        const hdrRows = readRowsFromEl(tbls[0]);
+        const bodyRows = readRowsFromEl(tbls[1]);
+        if (hdrRows.length >= 1 && bodyRows.length >= 1) {
+          parseColumnarRows([hdrRows[0], ...bodyRows], tbls);
+        }
       }
     });
 
-    // 1c) 兜底：若 1688「商品件重尺」采用 div 布局而非 <table>，从可见正文按表头列数提取单件重量与尺寸
+    // 1b-2) 再查单 table / [role='table']
+    document.querySelectorAll("table, [role='table']").forEach(tbl => {
+      if (columnarTables.has(tbl)) return;
+      parseColumnarRows(readRowsFromEl(tbl), [tbl]);
+    });
+
+    // 1c) 兜底：若 1688「商品件重尺」采用 div/非标准表格布局，先剔除箱规内容再按表头提取单件重量
     if (!attrs["单件重量"]) {
       const bodyTxt = (document.body?.innerText || "");
       const packSecIdx = bodyTxt.indexOf("商品件重尺");
       if (packSecIdx >= 0) {
-        const chunk = bodyTxt.slice(packSecIdx, packSecIdx + 800);
-        const lines = chunk.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+        const rawChunk = bodyTxt.slice(packSecIdx, packSecIdx + 1200);
+        // 严禁把箱规里的「外箱:60*60*50cm / 数量:80 件/箱 / 净重:51.4 kg」当成单件重量
+        const cleanChunk = rawChunk
+          .replace(/外箱\s*[:：][^\n]{0,60}/g, "")
+          .replace(/数量\s*[:：]\s*\d+[^\n]{0,30}/g, "")
+          .replace(/(?:毛重|净重)\s*[:：]\s*\d+(?:\.\d+)?\s*(?:kg|g|千克|公斤)/gi, "");
+        const lines = cleanChunk.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
         const wHdrIdx = lines.findIndex(x => /^重量(?:\s*[\(（]\s*(?:kg|g|克|千克|公斤)\s*[\)）])?$/i.test(x));
-        if (wHdrIdx > 0) {
+        if (wHdrIdx >= 0) {
           const wUnitM = lines[wHdrIdx].match(/[\(（]\s*(kg|g|克|千克|公斤)\s*[\)）]/i);
           const wUnit = wUnitM ? wUnitM[1] : "g";
-          // 从表头结束后的第一组数据行取最后一个数字（对应 重量 列）
-          const afterHdr = lines.slice(wHdrIdx + 1, wHdrIdx + 12);
-          const numTokens = afterHdr.filter(t => /^\d+(?:\.\d+)?$/.test(t));
-          if (numTokens.length >= 1) {
-            const wNum = numTokens[numTokens.length - 1];
-            if (parseFloat(wNum) > 0) putAttr("单件重量", `${wNum}${wUnit}`);
-          }
+          let startIdx = wHdrIdx + 1;
+          if (lines[startIdx] && /^(?:箱规|外箱|装箱规格)$/i.test(lines[startIdx])) startIdx++;
+          const rowNums = lines.slice(startIdx, startIdx + 10).filter(t => /^\d+(?:\.\d+)?$/.test(t));
+          // 通常数据行数字为：长、宽、高、体积、重量（重量是第5个或最后一个数字）
+          const wNum = rowNums.length >= 5 ? rowNums[4] : rowNums[rowNums.length - 1];
+          if (wNum && parseFloat(wNum) > 0) putAttr("单件重量", `${wNum}${wUnit}`);
         }
       }
     }
