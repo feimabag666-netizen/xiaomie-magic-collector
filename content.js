@@ -397,9 +397,11 @@
 
     // 1b) 优先解析 1688「包装信息 / 商品件重尺」列式表格（同时支持单 table 与 Ant/Next 拆分布局的固定表头双 table）
     const columnarTables = new Set();
+    const packSpecs = [];
     const parseColumnarRows = (rows, markEls = []) => {
       if (rows.length < 2) return false;
       const hdr = rows[0];
+      const labelCol = hdr.findIndex(h => /^(?:颜色|规格|款式|型号|名称|品类|尺码|color|spec|size|model)/i.test(h));
       const weightCol = hdr.findIndex(h => /^(?:重量|单件重量|单品重量|产品重量|克重|weight)(?:\s*[\(（]\s*(?:kg|g|克|千克|公斤|lb|oz)\s*[\)）])?$/i.test(h));
       const lenCol = hdr.findIndex(h => /^长(?:度)?(?:\s*[\(（]\s*(?:cm|mm|m)\s*[\)）])?$/i.test(h));
       const widCol = hdr.findIndex(h => /^宽(?:度)?(?:\s*[\(（]\s*(?:cm|mm|m)\s*[\)）])?$/i.test(h));
@@ -414,31 +416,50 @@
       const weights = [], dims = [], ctnSizes = [], ctnQtys = [], ctnWeights = [];
       for (let ri = 1; ri < rows.length; ri++) {
         const r = rows[ri];
+        let rowW = "", rowDim = "", rowCtnSize = "", rowCtnQty = "", rowCtnWeight = "";
         if (weightCol >= 0 && r[weightCol]) {
           const rawW = r[weightCol].trim();
           if (/^\d+(?:\.\d+)?(?:\s*(?:g|kg|克|千克|公斤|lb|oz))?$/i.test(rawW) && parseFloat(rawW) > 0) {
-            const wStr = /[a-zA-Z克斤两]/.test(rawW) ? rawW : `${rawW}${wUnit}`;
-            if (!weights.includes(wStr)) weights.push(wStr);
+            rowW = /[a-zA-Z克斤两]/.test(rawW) ? rawW : `${rawW}${wUnit}`;
+            if (!weights.includes(rowW)) weights.push(rowW);
           }
         }
         if (lenCol >= 0 && widCol >= 0 && heiCol >= 0 && r[lenCol] && r[widCol] && r[heiCol]) {
           const l = r[lenCol].replace(/[^\d.]/g, ""), w = r[widCol].replace(/[^\d.]/g, ""), h = r[heiCol].replace(/[^\d.]/g, "");
           if (l && w && h) {
-            const dStr = `${l}×${w}×${h}${dUnit}`;
-            if (!dims.includes(dStr)) dims.push(dStr);
+            rowDim = `${l}×${w}×${h}${dUnit}`;
+            if (!dims.includes(rowDim)) dims.push(rowDim);
           }
         }
         if (cartonCol >= 0 && r[cartonCol]) {
           const cTxt = r[cartonCol];
-          const cm = cTxt.match(/外箱\s*[:：]\s*(\d+(?:\.\d+)?\s*[*×xX]\s*\d+(?:\.\d+)?\s*[*×xX]\s*\d+(?:\.\d+)?\s*(?:cm|mm|m)?)/i);
+          const cm = cTxt.match(/(?:外箱|箱规|尺寸)?\s*[:：]?\s*(\d+(?:\.\d+)?\s*[*×xX]\s*\d+(?:\.\d+)?\s*[*×xX]\s*\d+(?:\.\d+)?\s*(?:cm|mm|m)?)/i);
           if (cm) {
-            const cs = cm[1].replace(/[*xX]/g, "×").trim();
-            if (!ctnSizes.includes(cs)) ctnSizes.push(cs);
+            rowCtnSize = cm[1].replace(/[*xX]/g, "×").replace(/\s+/g, "").trim();
+            if (!/[a-zA-Z]$/.test(rowCtnSize)) rowCtnSize += "cm";
+            if (!ctnSizes.includes(rowCtnSize)) ctnSizes.push(rowCtnSize);
           }
-          const qm = cTxt.match(/数量\s*[:：]\s*(\d+\s*[件个只套支双条袋盒]?\/箱)/i);
-          if (qm && !ctnQtys.includes(qm[1].trim())) ctnQtys.push(qm[1].trim());
-          const wm = cTxt.match(/(?:毛重|净重)\s*[:：]\s*(\d+(?:\.\d+)?\s*(?:kg|g|千克|公斤))/i);
-          if (wm && !ctnWeights.includes(wm[0].replace(/\s+/g, ""))) ctnWeights.push(wm[0].replace(/\s+/g, ""));
+          const qm = cTxt.match(/(?:数量|装箱数)?\s*[:：]?\s*(\d+\s*[件个只套支双条袋盒]?\/箱)/i);
+          if (qm) {
+            rowCtnQty = qm[1].replace(/\s+/g, "").trim();
+            if (!ctnQtys.includes(rowCtnQty)) ctnQtys.push(rowCtnQty);
+          }
+          const wMatches = [...cTxt.matchAll(/(毛重|净重)\s*[:：]\s*(\d+(?:\.\d+)?\s*(?:kg|g|千克|公斤))/gi)];
+          if (wMatches.length) {
+            rowCtnWeight = wMatches.map(m => `${m[1]} ${m[2].replace(/\s+/g, "")}`).join(" / ");
+            if (!ctnWeights.includes(rowCtnWeight)) ctnWeights.push(rowCtnWeight);
+          }
+        }
+        const rowLabel = (labelCol >= 0 ? r[labelCol] : r[0] || "").trim();
+        if (rowW || rowDim || rowCtnSize || rowCtnQty || rowCtnWeight) {
+          packSpecs.push({
+            label: rowLabel,
+            size: rowDim,
+            weight: rowW,
+            cartonSize: rowCtnSize,
+            cartonQty: rowCtnQty,
+            cartonWeight: rowCtnWeight,
+          });
         }
       }
       if (weights.length) putAttr("单件重量", weights.slice(0, 4).join(" / "));
@@ -650,7 +671,7 @@
         || searchScope.match(/((?:单个|独立|透明|加厚|定制)?(?:OPP袋|PE袋|CPE袋|自封袋|磨砂袋|气泡袋|防尘袋|无纺布袋|绒布袋|编织袋|彩盒|白盒|牛皮纸盒|瓦楞盒|天地盖盒|礼盒|纸盒|吸塑卡|吸塑盒|吊卡|纸箱|袋装|盒装|散装)(?:独立)?(?:包装|装)?)/i);
       if (packMatch && packMatch[1] && !attrs["包装方式"]) putAttr("包装方式", packMatch[1].trim());
     }
-    return { url: location.href, title, pageLang: document.documentElement?.lang || "", isEcommerce: true, main, detail, sku, videos, attrs, pageText, priceTiers, variantsData };
+    return { url: location.href, title, pageLang: document.documentElement?.lang || "", isEcommerce: true, main, detail, sku, videos, attrs, pageText, priceTiers, variantsData, packSpecs };
   }
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

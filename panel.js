@@ -1529,12 +1529,14 @@ async function extractUniversalPageInTab() {
 
     // 优先解析列式「商品件重尺 / 包装信息」表格（兼容单 table 与固定表头双 table，严禁把箱规列混入单件重量或产品尺寸）
     const columnarTables = new Set();
+    const packSpecs = [];
     const readTblRows = el => [...el.querySelectorAll("tr, [role='row']")]
       .map(r => [...r.querySelectorAll("th, td, [role='columnheader'], [role='cell']")].map(x => (x.innerText || "").replace(/[\u200e\u200f]/g, "").replace(/\s+/g, " ").trim()))
       .filter(cells => cells.some(Boolean));
     const parseColPackRows = (rows, markEls = []) => {
       if (rows.length < 2) return false;
       const hdr = rows[0];
+      const labelCol = hdr.findIndex(h => /^(?:颜色|规格|款式|型号|名称|品类|尺码|color|spec|size|model)/i.test(h));
       const weightCol = hdr.findIndex(h => /^(?:重量|单件重量|单品重量|产品重量|克重|weight)(?:\s*[\(（]\s*(?:kg|g|克|千克|公斤|lb|oz)\s*[\)）])?$/i.test(h));
       const lenCol = hdr.findIndex(h => /^长(?:度)?(?:\s*[\(（]\s*(?:cm|mm|m)\s*[\)）])?$/i.test(h));
       const widCol = hdr.findIndex(h => /^宽(?:度)?(?:\s*[\(（]\s*(?:cm|mm|m)\s*[\)）])?$/i.test(h));
@@ -1549,25 +1551,37 @@ async function extractUniversalPageInTab() {
       const weights = [], dims = [], ctnSizes = [], ctnQtys = [], ctnWeights = [];
       for (let ri = 1; ri < rows.length; ri++) {
         const r = rows[ri];
+        let rowW = "", rowDim = "", rowCtnSize = "", rowCtnQty = "", rowCtnWeight = "";
         if (weightCol >= 0 && r[weightCol] && /^\d+(?:\.\d+)?(?:\s*(?:g|kg|克|千克|公斤|lb|oz))?$/i.test(r[weightCol].trim()) && parseFloat(r[weightCol]) > 0) {
-          const wStr = /[a-zA-Z克斤两]/.test(r[weightCol]) ? r[weightCol].trim() : `${r[weightCol].trim()}${wUnit}`;
-          if (!weights.includes(wStr)) weights.push(wStr);
+          rowW = /[a-zA-Z克斤两]/.test(r[weightCol]) ? r[weightCol].trim() : `${r[weightCol].trim()}${wUnit}`;
+          if (!weights.includes(rowW)) weights.push(rowW);
         }
         if (lenCol >= 0 && widCol >= 0 && heiCol >= 0 && r[lenCol] && r[widCol] && r[heiCol]) {
           const l = r[lenCol].replace(/[^\d.]/g, ""), w = r[widCol].replace(/[^\d.]/g, ""), h = r[heiCol].replace(/[^\d.]/g, "");
           if (l && w && h) {
-            const dStr = `${l}×${w}×${h}${dUnit}`;
-            if (!dims.includes(dStr)) dims.push(dStr);
+            rowDim = `${l}×${w}×${h}${dUnit}`;
+            if (!dims.includes(rowDim)) dims.push(rowDim);
           }
         }
         if (cartonCol >= 0 && r[cartonCol]) {
           const cTxt = r[cartonCol];
-          const cm = cTxt.match(/外箱\s*[:：]\s*(\d+(?:\.\d+)?\s*[*×xX]\s*\d+(?:\.\d+)?\s*[*×xX]\s*\d+(?:\.\d+)?\s*(?:cm|mm|m)?)/i);
-          if (cm) { const cs = cm[1].replace(/[*xX]/g, "×").trim(); if (!ctnSizes.includes(cs)) ctnSizes.push(cs); }
-          const qm = cTxt.match(/数量\s*[:：]\s*(\d+\s*[件个只套支双条袋盒]?\/箱)/i);
-          if (qm && !ctnQtys.includes(qm[1].trim())) ctnQtys.push(qm[1].trim());
-          const wm = cTxt.match(/(?:毛重|净重)\s*[:：]\s*(\d+(?:\.\d+)?\s*(?:kg|g|千克|公斤))/i);
-          if (wm && !ctnWeights.includes(wm[0].replace(/\s+/g, ""))) ctnWeights.push(wm[0].replace(/\s+/g, ""));
+          const cm = cTxt.match(/(?:外箱|箱规|尺寸)?\s*[:：]?\s*(\d+(?:\.\d+)?\s*[*×xX]\s*\d+(?:\.\d+)?\s*[*×xX]\s*\d+(?:\.\d+)?\s*(?:cm|mm|m)?)/i);
+          if (cm) {
+            rowCtnSize = cm[1].replace(/[*xX]/g, "×").replace(/\s+/g, "").trim();
+            if (!/[a-zA-Z]$/.test(rowCtnSize)) rowCtnSize += "cm";
+            if (!ctnSizes.includes(rowCtnSize)) ctnSizes.push(rowCtnSize);
+          }
+          const qm = cTxt.match(/(?:数量|装箱数)?\s*[:：]?\s*(\d+\s*[件个只套支双条袋盒]?\/箱)/i);
+          if (qm) { rowCtnQty = qm[1].replace(/\s+/g, "").trim(); if (!ctnQtys.includes(rowCtnQty)) ctnQtys.push(rowCtnQty); }
+          const wMatches = [...cTxt.matchAll(/(毛重|净重)\s*[:：]\s*(\d+(?:\.\d+)?\s*(?:kg|g|千克|公斤))/gi)];
+          if (wMatches.length) {
+            rowCtnWeight = wMatches.map(m => `${m[1]} ${m[2].replace(/\s+/g, "")}`).join(" / ");
+            if (!ctnWeights.includes(rowCtnWeight)) ctnWeights.push(rowCtnWeight);
+          }
+        }
+        const rowLabel = (labelCol >= 0 ? r[labelCol] : r[0] || "").trim();
+        if (rowW || rowDim || rowCtnSize || rowCtnQty || rowCtnWeight) {
+          packSpecs.push({ label: rowLabel, size: rowDim, weight: rowW, cartonSize: rowCtnSize, cartonQty: rowCtnQty, cartonWeight: rowCtnWeight });
         }
       }
       if (weights.length) put("单件重量", weights.slice(0, 4).join(" / "));
@@ -1575,6 +1589,7 @@ async function extractUniversalPageInTab() {
       if (ctnSizes.length && !attrs["箱子尺寸"]) put("箱子尺寸", ctnSizes.slice(0, 3).join(" / "));
       if (ctnQtys.length && !attrs["每箱多少个"]) put("每箱多少个", ctnQtys.slice(0, 3).join(" / "));
       if (ctnWeights.length && !attrs["箱子毛净重"]) put("箱子毛净重", ctnWeights.slice(0, 3).join(" / "));
+      if (packSpecs.length) window.__xmTempPackSpecs = packSpecs;
       return true;
     };
     queryAllDeep(".ant-table, .next-table, [class*='table-wrapper'], [class*='table-container'], [class*='pack']").forEach(wrap => {
@@ -2093,6 +2108,7 @@ async function extractUniversalPageInTab() {
     sku,
     videos,
     attrs,
+    packSpecs: Array.isArray(window.__xmTempPackSpecs) ? window.__xmTempPackSpecs.slice(0, 20) : [],
     nonEcomMeta,
     imageDims,
     imageMeta,
@@ -5807,36 +5823,90 @@ async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMod
 
   if (!cache.aiMultiSpecs) {
     cache.aiMultiSpecs = (async () => {
-      const baseFallback = detected.map((d, idx) => ({
-        spec: d.spec,
-        model: useSubModel ? (baseCode ? `${baseCode}-${idx + 1}` : (d.model || "")) : (d.model || ""),
-        price: d.price ? (priceMode === "markup_pct" ? applyPriceMarkupPct(d.price, markupPct) : d.price) : "",
-      }));
+      const catProfile = _getCategoryCartonProfile(data?.title || "", "", data?.attrs || {});
+      const cleanStr = v => {
+        const s = stripBracketsAndBoxes(String(v ?? "").trim());
+        return (!s || /^[-—–_/\\]+$/.test(s) || /^(?:未查到|未提供|未知|不详|暂无|待定|无|n\/a|none|null)$/i.test(s)) ? "" : s;
+      };
+      const cleanCartonVal = (field, raw) => {
+        const s = cleanStr(raw);
+        if (!s) return "";
+        if (field === "每箱多少个") {
+          const norm = _normalizeCartonQty(s, data?.title || "", data?.attrs || {});
+          if (!validCartonValue("每箱多少个", norm)) return "";
+          const qn = parseInt((norm.match(/\d+/) || ["0"])[0], 10);
+          if (qn < (catProfile?.minValidQty || 6)) return "";
+          return norm;
+        }
+        if (field === "箱子尺寸") {
+          const norm = _normalizeCartonDim(s);
+          return validCartonValue("箱子尺寸", norm) ? norm : "";
+        }
+        if (field === "箱子立方数") {
+          const m = s.match(/\d+(?:\.\d+)?/);
+          const norm = m ? `${Number(m[0])} m³` : "";
+          return (norm && validCartonValue("箱子立方数", norm)) ? norm : "";
+        }
+        if (field === "箱子毛净重") {
+          return validCartonValue("箱子毛净重", s) ? s : "";
+        }
+        return s;
+      };
+
+      const packList = Array.isArray(data?.packSpecs) ? data.packSpecs : [];
+      const matchPackRow = (specName) => {
+        if (!packList.length || !specName) return null;
+        const low = specName.toLowerCase();
+        const numTok = (low.match(/\d+(?:\.\d+)?/) || [])[0] || "";
+        return packList.find(r => {
+          const rl = String(r.label || "").toLowerCase();
+          return rl.includes(low) || (numTok && rl.includes(numTok));
+        }) || null;
+      };
+
+      const baseFallback = detected.map((d, idx) => {
+        const prRow = matchPackRow(d.spec);
+        const cs = prRow?.cartonSize ? cleanCartonVal("箱子尺寸", prRow.cartonSize) : "";
+        return {
+          spec: d.spec,
+          model: useSubModel ? (baseCode ? `${baseCode}-${idx + 1}` : (d.model || "")) : (d.model || ""),
+          size: prRow?.size || "",
+          weight: prRow?.weight ? normalizeUnitWeight(prRow.weight, data?.attrs || {}) : "",
+          cartonQty: prRow?.cartonQty ? cleanCartonVal("每箱多少个", prRow.cartonQty) : "",
+          cartonWeight: prRow?.cartonWeight ? cleanCartonVal("箱子毛净重", prRow.cartonWeight) : "",
+          cartonSize: cs,
+          cartonCbm: cs ? _calcCbmFromDim(cs) : "",
+          price: d.price ? (priceMode === "markup_pct" ? applyPriceMarkupPct(d.price, markupPct) : d.price) : "",
+        };
+      });
       try {
         const providers = await getAiProviders();
         if (!providers.length) return baseFallback;
-        const ctxText = extractRelevantSpecWindow(`${data?.pageText || ""}\n${stageOcrText || ""}`, 4500);
+        const pageSlice = extractRelevantSpecWindow(data?.pageText || "", 3200);
+        const ocrSlice = extractRelevantSpecWindow(stageOcrText || "", 2400);
+        const packHint = packList.slice(0, 12).map(p => `${p.label}: 尺寸=${p.size || ""} 重量=${p.weight || ""} 箱规=${p.cartonSize || ""} ${p.cartonQty || ""} ${p.cartonWeight || ""}`).join("\n");
         const variantsHint = detected.map(d => `${d.spec}${d.model ? ` 型号:${d.model}` : ""}${d.price ? ` 价格:${d.price}` : ""}`).join("\n");
         const tiersHint = (data?.priceTiers || []).map(t => `${t.qtyLabel} ${t.currency}${t.price}`).join("，");
         const messages = [
           {
             role: "system",
             content: [
-              "你是电商多规格参数结构化整理助手。该商品存在多个不同物理规格（如容量、尺寸、单件重量、功率、电压、大小号），请严格依据提供的网页文本、SKU列表和OCR文字，按每个独立物理规格分别整理其对应的差异参数。",
+              "你是电商多规格参数结构化整理助手。该商品存在多个不同物理规格（如容量、尺寸、单件重量、功率、电压、大小号），请严格依据提供的网页文本、包装件重尺表、SKU列表和OCR文字，按每个独立物理规格分别整理其对应的差异参数。",
               "严格输出纯 JSON 数组，每个元素格式：",
-              `{"spec":"纯物理规格名如350ml或500ml或迷你(严禁带颜色词)","model":"该规格型号(无则留空)","size":"产品尺寸","weight":"单件重量(带单位)","cartonQty":"每箱多少个","cartonWeight":"箱子毛净重","cartonSize":"箱子尺寸","cartonCbm":"箱子立方数","price":"该规格价格(如有阶梯写清XXX件多少钱，过滤低于${minQty}件的价格)"}`,
-              "铁律：颜色绝对不能单独成为规格！同一规格的不同颜色（如“迷你--黑色”“迷你--红色”）必须合并为同一个规格“迷你”，只有容量、尺寸、单件重量、功率、电压、大小号等物理规格才能独立成规格；若实际只有 1 个物理规格返回空数组 []。",
+              `{"spec":"纯物理规格名如350ml或500ml或迷你(严禁带颜色词)","model":"该规格型号(无则留空)","size":"产品尺寸","weight":"单件重量(带单位)","cartonQty":"每箱多少个(必须带/箱如60个/箱，未找到必须留空字符串)","cartonWeight":"箱子毛净重(如毛重12kg/净重10kg，未找到必须留空字符串)","cartonSize":"箱子尺寸(长×宽×高cm，未找到必须留空字符串)","cartonCbm":"箱子立方数(如0.085 m³，未找到必须留空字符串)","price":"该规格价格(如有阶梯写清XXX件多少钱，过滤低于${minQty}件的价格)"}`,
+              "铁律1：颜色绝对不能单独成为规格！同一规格的不同颜色（如“迷你--黑色”“迷你--红色”）必须合并为同一个规格“迷你”，只有容量、尺寸、单件重量、功率、电压、大小号等物理规格才能独立成规格；若实际只有 1 个物理规格返回空数组 []。",
+              "铁律2：严禁编造、严禁输出 \"-\" 占位符、严禁把规格数量(如3种容量)当成每箱多少个！找不到的箱规字段一律返回空字符串 \"\"。",
             ].join("\n"),
           },
           {
             role: "user",
-            content: `商品标题：${String(data?.title || "").slice(0, 120)}\n识别到的物理规格列表：\n${variantsHint || capVal}\n网页阶梯价：${tiersHint || "无"}\n详情与OCR文本：\n${ctxText}\n请输出纯JSON数组：`,
+            content: `商品标题：${String(data?.title || "").slice(0, 120)}\n识别到的物理规格列表：\n${variantsHint || capVal}\n网页阶梯价：${tiersHint || "无"}\n包装件重尺明细：\n${packHint || "无"}\n网页详情文本：\n${pageSlice || "无"}\n图片OCR识别文字：\n${ocrSlice || "无"}\n请输出纯JSON数组：`,
           },
         ];
         for (const p of providers) {
           if (p.isAdminTrial && Date.now() < llmCooldownUntil) continue;
           try {
-            const r = await aiAgentRun(p, messages, { maxSteps: 1, webSearch: false, maxTokens: 900 });
+            const r = await aiAgentRun(p, messages, { maxSteps: 1, webSearch: false, maxTokens: 950 });
             const m = String(r?.text || "").match(/\[[\s\S]*\]/);
             if (!m) continue;
             const arr = JSON.parse(m[0]);
@@ -5847,17 +5917,20 @@ async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMod
                 if (!normSp) continue;
                 const k = normSp.toLowerCase();
                 if (dedup.has(k)) continue;
+                const prRow = matchPackRow(normSp);
                 let pr = normalizeRawPriceText(it.price || "");
                 if (pr && priceMode === "markup_pct") pr = applyPriceMarkupPct(pr, markupPct);
+                const cSize = cleanCartonVal("箱子尺寸", it.cartonSize) || cleanCartonVal("箱子尺寸", prRow?.cartonSize);
+                const cCbm = cleanCartonVal("箱子立方数", it.cartonCbm) || (cSize ? _calcCbmFromDim(cSize) : "");
                 dedup.set(k, {
                   spec: normSp,
-                  rawModel: stripBracketsAndBoxes(String(it.model || "").trim()),
-                  size: stripBracketsAndBoxes(String(it.size || "").trim()),
-                  weight: it.weight ? normalizeUnitWeight(it.weight, data?.attrs || {}) : "",
-                  cartonQty: stripBracketsAndBoxes(String(it.cartonQty || "").trim()),
-                  cartonWeight: stripBracketsAndBoxes(String(it.cartonWeight || "").trim()),
-                  cartonSize: stripBracketsAndBoxes(String(it.cartonSize || "").trim()),
-                  cartonCbm: stripBracketsAndBoxes(String(it.cartonCbm || "").trim()),
+                  rawModel: cleanStr(it.model),
+                  size: cleanStr(it.size) || prRow?.size || "",
+                  weight: (cleanStr(it.weight) || prRow?.weight) ? normalizeUnitWeight(cleanStr(it.weight) || prRow?.weight, data?.attrs || {}) : "",
+                  cartonQty: cleanCartonVal("每箱多少个", it.cartonQty) || cleanCartonVal("每箱多少个", prRow?.cartonQty),
+                  cartonWeight: cleanCartonVal("箱子毛净重", it.cartonWeight) || cleanCartonVal("箱子毛净重", prRow?.cartonWeight),
+                  cartonSize: cSize,
+                  cartonCbm: cCbm,
                   price: pr,
                 });
                 if (dedup.size >= 8) break;
@@ -7088,6 +7161,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         if (hasMultiSpecLayout) {
           specFieldsCovered.add("详细规格");
           specFieldsCovered.add("容量");
+          let qtyHitN = 0, wtHitN = 0, szHitN = 0, cbmHitN = 0;
           for (let si = 0; si < multiSpecs.length; si++) {
             const sp = multiSpecs[si];
             allLines.push("");
@@ -7104,21 +7178,21 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
               specFieldsCovered.add("单件重量");
               await pushFieldLine(formatFieldDisplayName("单件重量"), translateCommonValue(sp.weight, outLang), builtCommonOut, "", "单件重量");
             }
-            if (checkedNameSet.has("每箱多少个") && sp.cartonQty) {
-              specFieldsCovered.add("每箱多少个");
+            if (checkedNameSet.has("每箱多少个") && sp.cartonQty && validCartonValue("每箱多少个", sp.cartonQty)) {
+              qtyHitN++;
               await pushFieldLine(formatFieldDisplayName("每箱多少个"), translateCommonValue(sp.cartonQty, outLang), builtCommonOut, "", "每箱多少个");
             }
-            if (checkedNameSet.has("箱子毛净重") && sp.cartonWeight) {
-              specFieldsCovered.add("箱子毛净重");
+            if (checkedNameSet.has("箱子毛净重") && sp.cartonWeight && validCartonValue("箱子毛净重", sp.cartonWeight)) {
+              wtHitN++;
               await pushFieldLine(formatFieldDisplayName("箱子毛净重"), translateCommonValue(sp.cartonWeight, outLang), builtCommonOut, "", "箱子毛净重");
             }
-            if (checkedNameSet.has("箱子尺寸") && sp.cartonSize) {
-              specFieldsCovered.add("箱子尺寸");
+            if (checkedNameSet.has("箱子尺寸") && sp.cartonSize && validCartonValue("箱子尺寸", sp.cartonSize)) {
+              szHitN++;
               await pushFieldLine(formatFieldDisplayName("箱子尺寸"), translateCommonValue(sp.cartonSize, outLang), builtCommonOut, "", "箱子尺寸");
             }
             const cbmVal = sp.cartonCbm || (sp.cartonSize ? _calcCbmFromDim(sp.cartonSize) : "");
-            if (checkedNameSet.has("箱子立方数") && cbmVal) {
-              specFieldsCovered.add("箱子立方数");
+            if (checkedNameSet.has("箱子立方数") && cbmVal && validCartonValue("箱子立方数", cbmVal)) {
+              cbmHitN++;
               await pushFieldLine(formatFieldDisplayName("箱子立方数"), translateCommonValue(cbmVal, outLang), builtCommonOut, "", "箱子立方数");
             }
             if (checkedNameSet.has("价格") && sp.price) {
@@ -7127,6 +7201,11 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
               await pushFieldLine(formatFieldDisplayName("价格"), translateCommonValue(spPriceOut, outLang), builtCommonOut, "", "价格");
             }
           }
+          // 只有当各规格自身确实拿到了有效箱规时才标记覆盖；否则必须放行让下方「通用参数」走四级搜索 + AGNES 深度检索补全
+          if (qtyHitN >= multiSpecs.length) specFieldsCovered.add("每箱多少个");
+          if (wtHitN >= multiSpecs.length) specFieldsCovered.add("箱子毛净重");
+          if (szHitN >= multiSpecs.length) specFieldsCovered.add("箱子尺寸");
+          if (cbmHitN >= multiSpecs.length) specFieldsCovered.add("箱子立方数");
           allLines.push("");
           allLines.push(outLang === "en" ? "Common Parameters" : "通用参数");
         }
