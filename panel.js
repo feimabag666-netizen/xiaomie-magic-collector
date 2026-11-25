@@ -3499,6 +3499,96 @@ async function saveActiveFieldProfile() {
   });
 }
 
+const DETAILED_SPEC_MERGED_FIELDS = new Set(["产品尺寸", "容量", "单件重量"]);
+let _preDetailedSpecStates = null;
+
+function isDetailedSpecModeActive() {
+  const inCommon = (COMMON_FIELDS || []).find(f => f && f.n === "详细规格");
+  if (inCommon) return Boolean(inCommon.c);
+  const inSec = (SECONDARY_FIELDS || []).find(f => f && f.n === "详细规格");
+  return Boolean(inSec && inSec.c);
+}
+
+function enforceDetailedSpecExclusion() {
+  if (!isDetailedSpecModeActive()) return;
+  (COMMON_FIELDS || []).forEach(f => {
+    if (f && DETAILED_SPEC_MERGED_FIELDS.has(f.n)) f.c = false;
+  });
+  (SECONDARY_FIELDS || []).forEach(f => {
+    if (f && DETAILED_SPEC_MERGED_FIELDS.has(f.n)) f.c = false;
+  });
+}
+
+function confirmEnableDetailedSpecDialog() {
+  const dlg = $("detailedSpecDialog");
+  if (!dlg || typeof dlg.showModal !== "function") {
+    const msg = "「详细规格（电子类，设备类）」是综合参数区，启用后「产品尺寸」「容量」「单件重量」将无法单独勾选，并自动合并写入「详细规格」里（箱规、价格、型号仍按老规矩独立适配）。确认启用吗？";
+    return Promise.resolve(typeof confirm === "function" ? confirm(msg) : true);
+  }
+  return new Promise(resolve => {
+    const okBtn = $("detailedSpecConfirm");
+    const cancelBtn = $("detailedSpecCancel");
+    let settled = false;
+    const finish = (val) => {
+      if (settled) return;
+      settled = true;
+      okBtn?.removeEventListener("click", onOk);
+      cancelBtn?.removeEventListener("click", onCancel);
+      dlg.removeEventListener("cancel", onCancel);
+      try { if (dlg.open) dlg.close(); } catch {}
+      resolve(val);
+    };
+    const onOk = () => finish(true);
+    const onCancel = () => finish(false);
+    okBtn?.addEventListener("click", onOk);
+    cancelBtn?.addEventListener("click", onCancel);
+    dlg.addEventListener("cancel", onCancel);
+    try { dlg.showModal(); } catch { finish(true); }
+  });
+}
+
+async function handleDetailedSpecCheckboxToggle(targetField, wantChecked, cbEl = null) {
+  if (!targetField) return false;
+  if (wantChecked) {
+    const ok = await confirmEnableDetailedSpecDialog();
+    if (!ok) {
+      targetField.c = false;
+      if (cbEl) cbEl.checked = false;
+      return false;
+    }
+    _preDetailedSpecStates = {};
+    for (const fn of DETAILED_SPEC_MERGED_FIELDS) {
+      const cf = (COMMON_FIELDS || []).find(x => x.n === fn);
+      const sf = (SECONDARY_FIELDS || []).find(x => x.n === fn);
+      _preDetailedSpecStates[fn] = cf ? Boolean(cf.c) : (sf ? Boolean(sf.c) : fn !== "容量");
+    }
+    targetField.c = true;
+    (COMMON_FIELDS || []).forEach(x => { if (x.n === "详细规格") x.c = true; });
+    (SECONDARY_FIELDS || []).forEach(x => { if (x.n === "详细规格") x.c = true; });
+    enforceDetailedSpecExclusion();
+    await saveActiveFieldProfile();
+    renderAllFieldBoxes();
+    if ($("status")) $("status").innerText = "已启用「详细规格（电子类，设备类）」：产品尺寸、容量、单件重量已自动合并至该综合区，箱规/价格/型号仍照常独立适配。";
+    return true;
+  }
+  targetField.c = false;
+  (COMMON_FIELDS || []).forEach(x => { if (x.n === "详细规格") x.c = false; });
+  (SECONDARY_FIELDS || []).forEach(x => { if (x.n === "详细规格") x.c = false; });
+  for (const fn of DETAILED_SPEC_MERGED_FIELDS) {
+    const restoreChecked = _preDetailedSpecStates && Object.prototype.hasOwnProperty.call(_preDetailedSpecStates, fn)
+      ? Boolean(_preDetailedSpecStates[fn])
+      : (fn !== "容量");
+    const cf = (COMMON_FIELDS || []).find(x => x.n === fn);
+    const sf = (SECONDARY_FIELDS || []).find(x => x.n === fn);
+    if (cf) cf.c = restoreChecked;
+    if (sf && !cf) sf.c = restoreChecked;
+  }
+  await saveActiveFieldProfile();
+  renderAllFieldBoxes();
+  if ($("status")) $("status").innerText = "已取消「详细规格」，产品尺寸、容量、单件重量已恢复可独立勾选。";
+  return true;
+}
+
 async function loadActiveFieldProfile(mode = activeBizMode) {
   activeBizMode = mode === "b2c" ? "b2c" : "b2b";
   const key = getProfileStorageKey(activeBizMode);
@@ -3542,10 +3632,11 @@ async function loadActiveFieldProfile(mode = activeBizMode) {
       ? secSavedMap.get(d.n)
       : (activeBizMode === "b2b" ? Boolean(d.b2b) : Boolean(d.b2c)),
   }));
-  // 确保常用参数中已有的自定义项若曾属于可选，不重复；并在保存一次
+  // 确保常用参数中已有的自定义项若曾属于可选，不重复；若启用「详细规格」则自动锁定尺寸/容量/单重
   for (const sf of SECONDARY_FIELDS) {
     if (commonNames.has(sf.n)) sf.c = false;
   }
+  enforceDetailedSpecExclusion();
   await saveActiveFieldProfile();
 }
 
@@ -3590,20 +3681,37 @@ function renderSecondaryFields() {
     const grid = document.createElement("div");
     grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:6px";
     for (const f of items) {
+      const mergedLocked = DETAILED_SPEC_MERGED_FIELDS.has(f.n) && isDetailedSpecModeActive();
       const lbl = document.createElement("label");
-      lbl.style.cssText = `display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid ${f.c ? "#cbbbe0" : "#e9e3f2"};border-radius:7px;background:${f.c ? "#f6f1fd" : "#fff"};font-size:12px;font-weight:${f.c ? "700" : "500"};color:${f.c ? "#4a3563" : "#64748b"};cursor:pointer;margin:0;user-select:none`;
+      lbl.style.cssText = `display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid ${f.c ? "#cbbbe0" : "#e9e3f2"};border-radius:7px;background:${mergedLocked ? "#f1f5f9" : (f.c ? "#f6f1fd" : "#fff")};font-size:12px;font-weight:${f.c ? "700" : "500"};color:${mergedLocked ? "#94a3b8" : (f.c ? "#4a3563" : "#64748b")};cursor:${mergedLocked ? "not-allowed" : "pointer"};opacity:${mergedLocked ? "0.75" : "1"};margin:0;user-select:none`;
+      if (mergedLocked) lbl.title = "已启用「详细规格（电子类，设备类）」，该项已自动合并放入详细规格，不可单独勾选";
       const cb = document.createElement("input");
       cb.type = "checkbox";
-      cb.checked = Boolean(f.c);
+      cb.checked = mergedLocked ? false : Boolean(f.c);
+      cb.disabled = mergedLocked;
       cb.dataset.secField = f.n;
-      cb.onchange = () => {
+      cb.onchange = async () => {
+        if (f.n === "详细规格") {
+          await handleDetailedSpecCheckboxToggle(f, cb.checked, cb);
+          return;
+        }
+        if (DETAILED_SPEC_MERGED_FIELDS.has(f.n) && isDetailedSpecModeActive()) {
+          cb.checked = false;
+          f.c = false;
+          return;
+        }
         f.c = cb.checked;
         saveActiveFieldProfile();
         renderSecondaryFields();
       };
       const span = document.createElement("span");
-      span.textContent = f.n === "详细规格" ? "详细规格（电子类，设备类）" : f.n;
+      span.textContent = f.n === "详细规格" ? "详细规格（电子类，设备类）" : (mergedLocked ? `${f.n}（已并入详细规格）` : f.n);
       lbl.append(cb, span);
+      if (mergedLocked) {
+        lbl.onclick = () => {
+          if ($("status")) $("status").innerText = `提示：当前已启用「详细规格（电子类，设备类）」，${f.n} 会自动合并至详细规格中，取消「详细规格」后方可单选。`;
+        };
+      }
       grid.appendChild(lbl);
     }
     grpDiv.append(titleDiv, grid);
@@ -3682,18 +3790,32 @@ function renderFields(boxId, key, arr, isAi) {
   if (!box) return;
   box.innerHTML = "";
   arr.forEach((f, i) => {
+    const mergedLocked = !isAi && DETAILED_SPEC_MERGED_FIELDS.has(f.n) && isDetailedSpecModeActive();
     const row = document.createElement("div");
-    row.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid #ede7f5;border-radius:8px;background:#fcfbfe;user-select:none";
+    row.style.cssText = `display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid #ede7f5;border-radius:8px;background:${mergedLocked ? "#f4f6f9" : "#fcfbfe"};opacity:${mergedLocked ? "0.78" : "1"};user-select:none`;
+    if (mergedLocked) row.title = "已启用「详细规格（电子类，设备类）」，尺寸、容量、单件重量将统一归并放入详细规格，不可单独勾选";
     const cb = document.createElement("input");
-    cb.type = "checkbox"; cb.checked = !!f.c;
-    cb.onchange = () => {
+    cb.type = "checkbox";
+    cb.checked = mergedLocked ? false : !!f.c;
+    cb.disabled = mergedLocked;
+    cb.onchange = async () => {
+      if (!isAi && f.n === "详细规格") {
+        await handleDetailedSpecCheckboxToggle(f, cb.checked, cb);
+        return;
+      }
+      if (mergedLocked || (!isAi && DETAILED_SPEC_MERGED_FIELDS.has(f.n) && isDetailedSpecModeActive())) {
+        cb.checked = false;
+        f.c = false;
+        if ($("status")) $("status").innerText = `提示：当前已勾选「详细规格（电子类，设备类）」，${f.n} 已自动并入该综合参数区，取消「详细规格」后方可单选。`;
+        return;
+      }
       f.c = cb.checked;
       if (isAi) saveFields(key, AI_FIELDS);
       else saveActiveFieldProfile();
     };
     const nm = document.createElement("span");
     nm.innerText = f.n === "详细规格" ? "详细规格（电子类，设备类）" : f.n;
-    nm.style.cssText = "min-width:96px;font-weight:700;font-size:12.5px;color:#4a3563;cursor:default";
+    nm.style.cssText = `min-width:96px;font-weight:700;font-size:12.5px;color:${mergedLocked ? "#94a3b8" : "#4a3563"};cursor:${mergedLocked ? "not-allowed" : "default"}`;
     const inp = document.createElement("input");
     if (!isAi && f.n === "型号") {
       f.v = "";
@@ -3704,6 +3826,17 @@ function renderFields(boxId, key, arr, isAi) {
       inp.defaultValue = "请在文件夹与编号区域填写编号";
       inp.placeholder = "请在文件夹与编号区域填写编号";
       inp.style.cssText = "flex:1;min-width:0;padding:5px 8px;font-size:12px;background:#eef0f5;color:#8b95a5;border:1px solid #d8dee9;cursor:not-allowed";
+    } else if (mergedLocked) {
+      inp.type = "text";
+      inp.disabled = true;
+      inp.readOnly = true;
+      inp.value = "已并入「详细规格」综合参数区";
+      inp.defaultValue = "已并入「详细规格」综合参数区";
+      inp.style.cssText = "flex:1;min-width:0;padding:5px 8px;font-size:12px;background:#eef0f5;color:#8b95a5;border:1px solid #d8dee9;cursor:not-allowed";
+      row.onclick = (ev) => {
+        if (ev.target?.closest?.("button")) return;
+        if ($("status")) $("status").innerText = `提示：当前已勾选「详细规格（电子类，设备类）」，${f.n} 已并入详细规格统一输出，取消「详细规格」后方可恢复单选。`;
+      };
     } else {
       inp.value = f.v || "";
       inp.defaultValue = f.v || "";
@@ -3905,7 +4038,12 @@ async function initFields() {
   }
   if ($("btnSecSelectAll")) {
     $("btnSecSelectAll").onclick = () => {
-      COMMON_FIELDS.forEach(f => { f.c = true; });
+      const keepDetailed = isDetailedSpecModeActive();
+      COMMON_FIELDS.forEach(f => {
+        if (keepDetailed && DETAILED_SPEC_MERGED_FIELDS.has(f.n)) f.c = false;
+        else if (!keepDetailed && f.n === "详细规格") f.c = false;
+        else f.c = true;
+      });
       DYNAMIC_SECONDARY_FIELDS.forEach(f => { f.c = true; });
       if ($("optIncludeUnlistedAttrs")) $("optIncludeUnlistedAttrs").checked = true;
       chrome.storage.local.set({ optIncludeUnlistedAttrs: true });
@@ -7047,6 +7185,11 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
 
   const mergedOcrText = Array.isArray(ocrItems) ? ocrItems.map(x => x.text).join("\n") : "";
   const allCheckedTargets = (COMMON_FIELDS || []).filter(f => f && f.c && f.n !== "商品标题" && f.n !== "型号" && !CARTON_FIELDS.includes(f.n)).map(f => f.n);
+  if (isDetailedSpecModeActive()) {
+    for (const df of ["产品尺寸", "容量", "单件重量", "电压", "功率"]) {
+      if (!allCheckedTargets.includes(df)) allCheckedTargets.push(df);
+    }
+  }
   if (!isCarton && !allCheckedTargets.includes(field)) allCheckedTargets.push(field);
 
   // 2b) 第一步兜底：插件 AI 综合检索本网页文字 + 本网页图片 OCR 文字
@@ -7858,8 +8001,9 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         const minQty = Math.max(0, parseInt($("priceMinQty")?.value, 10) || 0);
         const checkedNameSet = new Set(checkedCommonAll.map(x => x.n));
 
-        // 0) 预先收集联动核心字段（网页+OCR+缓存步骤），确保多规格分组把产品尺寸/重量/容量/箱规/价格全部收到一起适配，不在通用参数重复输出
+        // 0) 预先收集联动核心字段（网页+OCR+缓存步骤），确保多规格分组把产品尺寸/重量/容量/箱规/价格全部收到一起适配；若开启「详细规格」则把尺寸/容量/重量归入综合详细规格，仍照常适配箱规/价格/型号
         const useSubModel = Boolean($("optSpecSubModel")?.checked ?? optSpecSubModelEnabled);
+        const isDetailedSpecMode = checkedNameSet.has("详细规格");
         let specData = data;
         if (doParams) {
           const preAttrs = { ...(data.attrs || {}) };
@@ -7872,7 +8016,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
           }
           if (allowNetworkCascade && detectDistinctMultiSpecs(data, preAttrs, ocrAll).length >= 2) {
             for (const fn of ["产品尺寸", "容量", "单件重量", "价格"]) {
-              if (!checkedNameSet.has(fn) && fn !== "容量") continue;
+              if (!checkedNameSet.has(fn) && fn !== "容量" && !(isDetailedSpecMode && DETAILED_SPEC_MERGED_FIELDS.has(fn))) continue;
               const curV = matchField(fn, preAttrs, "");
               if (!curV || !/\d/.test(curV)) {
                 const netHit = await findSpecsByFourStageCascade(data, url, stageOcrItems, fn, cascadeCache, true, false);
@@ -7891,6 +8035,19 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
           specFieldsCovered.add("详细规格");
           specFieldsCovered.add("容量");
           specFieldsCovered.add("规格");
+          if (isDetailedSpecMode) {
+            specFieldsCovered.add("产品尺寸");
+            specFieldsCovered.add("单件重量");
+            specFieldsCovered.add("电压");
+            specFieldsCovered.add("功率");
+          }
+          let elecBaseParts = [];
+          if (isDetailedSpecMode) {
+            const voltRes0 = await findSpecsByFourStageCascade(specData, url, stageOcrItems, "电压", cascadeCache, false, false);
+            if (voltRes0?.value) elecBaseParts.push(`${outLang === "en" ? "Voltage" : "电压"} ${voltRes0.value}`);
+            const powRes0 = await findSpecsByFourStageCascade(specData, url, stageOcrItems, "功率", cascadeCache, false, false);
+            if (powRes0?.value) elecBaseParts.push(`${outLang === "en" ? "Power" : "功率"} ${powRes0.value}`);
+          }
           let qtyHitN = 0, wtHitN = 0, szHitN = 0, cbmHitN = 0;
           for (let si = 0; si < multiSpecs.length; si++) {
             const sp = multiSpecs[si];
@@ -7900,13 +8057,26 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
               specFieldsCovered.add("型号");
               await pushFieldLine(formatFieldDisplayName("型号"), sp.model, builtCommonOut, "", "型号");
             }
-            if (checkedNameSet.has("产品尺寸") && sp.size) {
-              specFieldsCovered.add("产品尺寸");
-              await pushFieldLine(formatFieldDisplayName("产品尺寸"), translateCommonValue(sp.size, outLang), builtCommonOut, "", "产品尺寸");
-            }
-            if (checkedNameSet.has("单件重量") && sp.weight) {
-              specFieldsCovered.add("单件重量");
-              await pushFieldLine(formatFieldDisplayName("单件重量"), translateCommonValue(sp.weight, outLang), builtCommonOut, "", "单件重量");
+            if (isDetailedSpecMode) {
+              const combinedParts = [];
+              if (sp.spec) combinedParts.push(`${_capToMl(sp.spec) > 0 ? (outLang === "en" ? "Capacity" : "容量") : (outLang === "en" ? "Spec" : "规格")} ${sp.spec}`);
+              if (sp.size) combinedParts.push(`${outLang === "en" ? "Dimensions" : "产品尺寸"} ${translateCommonValue(sp.size, outLang)}`);
+              if (sp.weight) combinedParts.push(`${outLang === "en" ? "Weight" : "单件重量"} ${translateCommonValue(sp.weight, outLang)}`);
+              for (const ep of elecBaseParts) {
+                if (!combinedParts.some(x => x.includes(ep))) combinedParts.push(ep);
+              }
+              if (combinedParts.length) {
+                await pushFieldLine(formatFieldDisplayName("详细规格"), combinedParts.join(outLang === "en" ? "; " : "；"), builtCommonOut, "", "详细规格");
+              }
+            } else {
+              if (checkedNameSet.has("产品尺寸") && sp.size) {
+                specFieldsCovered.add("产品尺寸");
+                await pushFieldLine(formatFieldDisplayName("产品尺寸"), translateCommonValue(sp.size, outLang), builtCommonOut, "", "产品尺寸");
+              }
+              if (checkedNameSet.has("单件重量") && sp.weight) {
+                specFieldsCovered.add("单件重量");
+                await pushFieldLine(formatFieldDisplayName("单件重量"), translateCommonValue(sp.weight, outLang), builtCommonOut, "", "单件重量");
+              }
             }
             if (checkedNameSet.has("每箱多少个") && sp.cartonQty && validCartonValue("每箱多少个", sp.cartonQty)) {
               qtyHitN++;
@@ -7944,6 +8114,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         for (const f of checkedCommonAll) {
           if (f.n === "商品标题") continue;
           if (hasMultiSpecLayout && specFieldsCovered.has(f.n)) continue;
+          if (isDetailedSpecMode && DETAILED_SPEC_MERGED_FIELDS.has(f.n)) continue;
           if (f.n === "型号") {
             const modelVal = slot.hasUserNo ? code : "";
             await pushFieldLine(formatFieldDisplayName(f.n), modelVal, builtCommonOut, "", f.n, true);
@@ -7971,20 +8142,36 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
               v = rawPreset;
               srcStage = "";
             }
-            // 「详细规格（电子类，设备类）」自动汇总归类网页与OCR中的电压、功率等电气参数
+            // 「详细规格（电子类，设备类）」综合参数区：自动合并 尺寸/容量/单件重量/电压/功率 等规格与技术参数
             if (f.n === "详细规格") {
               const elecParts = [];
-              const voltRes = await findSpecsByFourStageCascade(data, url, stageOcrItems, "电压", cascadeCache, false, false);
-              if (voltRes?.value && !String(v || "").includes(voltRes.value)) {
-                elecParts.push(`${outLang === "en" ? "Voltage" : "电压"}: ${voltRes.value}`);
+              const mergedSpecs = [
+                ["容量", outLang === "en" ? "Capacity" : "容量"],
+                ["产品尺寸", outLang === "en" ? "Dimensions" : "产品尺寸"],
+                ["单件重量", outLang === "en" ? "Unit Weight" : "单件重量"],
+                ["电压", outLang === "en" ? "Voltage" : "电压"],
+                ["功率", outLang === "en" ? "Power" : "功率"],
+              ];
+              for (const [fn, lblFn] of mergedSpecs) {
+                const subRes = await findSpecsByFourStageCascade(specData, url, stageOcrItems, fn, cascadeCache, allowNetworkCascade, false);
+                let sv = subRes?.value || "";
+                if (fn === "单件重量" && sv) sv = normalizeUnitWeight(sv, specData.attrs || {});
+                if (sv && !String(v || "").includes(sv)) {
+                  elecParts.push(`${lblFn} ${sv}`);
+                }
               }
-              const powRes = await findSpecsByFourStageCascade(data, url, stageOcrItems, "功率", cascadeCache, false, false);
-              if (powRes?.value && !String(v || "").includes(powRes.value)) {
-                elecParts.push(`${outLang === "en" ? "Power" : "功率"}: ${powRes.value}`);
+              const extraTech = extractProductSpecs(specData.attrs || {}, (specData.pageText || "") + "\n" + ocrAll);
+              if (extraTech) {
+                for (const seg of extraTech.split(/[；;]+/).map(x => x.trim()).filter(Boolean)) {
+                  const valPart = seg.split(/[:：]/).slice(1).join(":").trim();
+                  if (valPart && !String(v || "").includes(valPart) && !elecParts.some(e => e.includes(valPart))) {
+                    elecParts.push(seg.replace(/[:：]/, " "));
+                  }
+                }
               }
               if (elecParts.length) {
                 v = [v, ...elecParts].filter(Boolean).join("；");
-                if (!srcStage) srcStage = voltRes?.source || powRes?.source || "网页参数";
+                if (!srcStage) srcStage = "综合规格参数";
               }
             }
           }
@@ -8056,9 +8243,9 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
 
         // 2) 将网页中识别出的其他有价值参数（如颜色、规格、容量、尺寸、单重、包装方式等）去重后按「字段名：字段内容」一行一个并入
         if (doParams) {
-          const excludedNames = new Set(["货号", "产品参数", "毛净重", "产品名称", "商品标题", ...(hasMultiSpecLayout ? ["规格"] : []), ...CARTON_FIELDS.map(x => x.toLowerCase()), ...uncheckedNames]);
+          const excludedNames = new Set(["货号", "产品参数", "毛净重", "产品名称", "商品标题", ...(hasMultiSpecLayout ? ["规格"] : []), ...(isDetailedSpecMode ? [...DETAILED_SPEC_MERGED_FIELDS, "电压", "功率"] : []), ...CARTON_FIELDS.map(x => x.toLowerCase()), ...uncheckedNames]);
           const existingKeys = new Set(["商品标题", "产品名称", (langPack.lblTitle || "").toLowerCase()]);
-          for (const cov of specFieldsCovered) {
+          for (const cov of (isDetailedSpecMode ? new Set([...specFieldsCovered, ...DETAILED_SPEC_MERGED_FIELDS, "电压", "功率"]) : specFieldsCovered)) {
             existingKeys.add(cov.toLowerCase());
             (FIELD_ALIAS[cov] || []).forEach(a => existingKeys.add(a.toLowerCase()));
           }
