@@ -5919,15 +5919,19 @@ function detectDistinctMultiSpecs(data, attrs = {}, extraText = "") {
   const pickMultiRaw = (stdName, fallbackKeys = [], isCarton = false) => {
     for (const k of [stdName, ...fallbackKeys]) {
       const v = String(a[k] || "").trim();
-      if (v && /[/／|；;、，,]/.test(v)) return v;
+      if (v && /[/／|；;、，,]/.test(v) && /\d/.test(v)) return v;
     }
+    const textHit = isCarton ? extractCartonValue(stdName, {}, corpus) : matchField(stdName, {}, corpus);
+    if (textHit && /[/／|；;、，,]/.test(textHit) && /\d/.test(textHit)) return textHit;
     if (isCarton) {
       for (const k of [stdName, ...fallbackKeys]) {
-        if (a[k]) return String(a[k]).trim();
+        if (a[k] && /\d/.test(String(a[k]))) return String(a[k]).trim();
       }
       return extractCartonValue(stdName, a, corpus) || "";
     }
-    return matchField(stdName, a, corpus) || fallbackKeys.map(k => a[k]).find(Boolean) || "";
+    const attrHit = matchField(stdName, a, "") || fallbackKeys.map(k => a[k]).find(Boolean) || "";
+    if (/\d/.test(attrHit)) return attrHit;
+    return textHit || attrHit || "";
   };
 
   const rawVariants = Array.isArray(data?.variantsData) ? data.variantsData : [];
@@ -7722,14 +7726,16 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         if (doParams) {
           const preAttrs = { ...(data.attrs || {}) };
           for (const fn of ["产品尺寸", "容量", "单件重量", "价格"]) {
-            if (!matchField(fn, preAttrs, "")) {
+            const curV = matchField(fn, preAttrs, "");
+            if (!curV || !/\d/.test(curV)) {
               const localPre = await findSpecsByFourStageCascade(data, url, stageOcrItems, fn, cascadeCache, false, false);
-              if (localPre?.value) preAttrs[fn] = localPre.value;
+              if (localPre?.value && /\d/.test(localPre.value)) preAttrs[fn] = localPre.value;
             }
           }
-          if (allowNetworkCascade && checkedNameSet.has("产品尺寸") && !matchField("产品尺寸", preAttrs, "") && detectDistinctMultiSpecs(data, preAttrs, ocrAll).length >= 2) {
+          const curDimV = matchField("产品尺寸", preAttrs, "");
+          if (allowNetworkCascade && checkedNameSet.has("产品尺寸") && (!curDimV || !/\d/.test(curDimV)) && detectDistinctMultiSpecs(data, preAttrs, ocrAll).length >= 2) {
             const netDim = await findSpecsByFourStageCascade(data, url, stageOcrItems, "产品尺寸", cascadeCache, true, false);
-            if (netDim?.value) preAttrs["产品尺寸"] = netDim.value;
+            if (netDim?.value && /\d/.test(netDim.value)) preAttrs["产品尺寸"] = netDim.value;
           }
           specData = { ...data, attrs: preAttrs };
         }
