@@ -249,8 +249,23 @@
                   if (hiRes) push(sku, hiRes);
                 });
                 if (o.prop && vals.length) {
-                  putAttr(o.prop, vals.join(" / "));
-                  if (!attrs["规格"]) putAttr("规格", vals.join(" / "));
+                  let outVals = vals;
+                  if (/容量|尺寸|尺码|重量|克重|净重|功率|电压|size|capacity|weight/i.test(String(o.prop))) {
+                    const unitVotes = {};
+                    vals.forEach(s => {
+                      const um = s.match(/^\d+(?:\.\d+)?\s*(ml|l|oz|g|kg|cm|mm|m|w|kw|v|寸|英寸|毫升|升|克|千克|公斤)$/i);
+                      if (um) {
+                        const u = um[1].toLowerCase() === "毫升" ? "ml" : (um[1].toLowerCase() === "升" ? "L" : um[1]);
+                        unitVotes[u] = (unitVotes[u] || 0) + 1;
+                      }
+                    });
+                    const domUnit = Object.entries(unitVotes).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+                    if (domUnit) {
+                      outVals = vals.map(s => /^\d+(?:\.\d+)?$/.test(s) ? `${s}${domUnit}` : s);
+                    }
+                  }
+                  putAttr(o.prop, outVals.join(" / "));
+                  if (!attrs["规格"]) putAttr("规格", outVals.join(" / "));
                 }
               }
             });
@@ -363,26 +378,53 @@
           }
         }
       }
-      const skuMapMatch = htmlRaw.match(/"skuInfoMap"\s*:\s*(\{[\s\S]{10,18000}?\})\s*,\s*"[a-zA-Z]/);
-      if (skuMapMatch) {
-        try {
-          const sm = JSON.parse(skuMapMatch[1]);
-          const seenSpec = new Set();
-          for (const [k, info] of Object.entries(sm || {})) {
-            if (!info || typeof info !== "object") continue;
-            const specName = cleanPriceText(k.replace(/&gt;/g, " / ").replace(/>/g, " / "));
-            if (!specName || seenSpec.has(specName)) continue;
-            seenSpec.add(specName);
-            const pVal = parseFloat(info.discountPrice || info.price || "");
-            variantsData.push({
-              spec: specName,
-              model: String(info.skuCode || info.cargoNumber || "").trim(),
-              price: Number.isFinite(pVal) && pVal > 0 ? pVal : 0,
-              currency: "¥",
-            });
-            if (variantsData.length >= 20) break;
+      const htmlSkuSources = [htmlRaw];
+      if (htmlRaw.includes('\\"')) htmlSkuSources.push(htmlRaw.replace(/\\"/g, '"'));
+      const seenSpec = new Set();
+      for (const hSrc of htmlSkuSources) {
+        for (const mapKey of ['"skuInfoMap"', '"skuInfoMapOriginal"']) {
+          let mPos = 0;
+          while (mPos < hSrc.length && variantsData.length < 200) {
+            const kIdx = hSrc.indexOf(mapKey, mPos);
+            if (kIdx < 0) break;
+            mPos = kIdx + mapKey.length;
+            const oStart = hSrc.indexOf("{", kIdx);
+            if (oStart < 0 || oStart - kIdx > 24) continue;
+            let depth = 0, inStr = false, esc = false, oEnd = -1;
+            for (let i = oStart; i < Math.min(hSrc.length, oStart + 260000); i++) {
+              const ch = hSrc[i];
+              if (esc) { esc = false; continue; }
+              if (ch === "\\") { esc = true; continue; }
+              if (ch === '"') { inStr = !inStr; continue; }
+              if (!inStr) {
+                if (ch === "{") depth++;
+                else if (ch === "}") {
+                  depth--;
+                  if (depth === 0) { oEnd = i + 1; break; }
+                }
+              }
+            }
+            if (oEnd <= oStart) continue;
+            try {
+              const sm = JSON.parse(hSrc.slice(oStart, oEnd));
+              for (const [k, info] of Object.entries(sm || {})) {
+                if (!info || typeof info !== "object") continue;
+                const specName = cleanPriceText(k.replace(/&gt;/g, " / ").replace(/>/g, " / "));
+                if (!specName || seenSpec.has(specName)) continue;
+                const pVal = parseFloat(info.discountPrice ?? info.price ?? info.skuPrice ?? info.retailPrice ?? "");
+                seenSpec.add(specName);
+                variantsData.push({
+                  spec: specName,
+                  model: String(info.skuCode || info.cargoNumber || "").trim(),
+                  price: Number.isFinite(pVal) && pVal > 0 ? pVal : 0,
+                  currency: "¥",
+                });
+                if (variantsData.length >= 200) break;
+              }
+            } catch {}
           }
-        } catch {}
+        }
+        if (variantsData.length) break;
       }
     } catch {}
 
@@ -485,8 +527,8 @@
           });
         }
       }
-      if (weights.length) putAttr("单件重量", weights.slice(0, 4).join(" / "));
-      if (dims.length && !attrs["产品尺寸"]) putAttr("产品尺寸", dims.slice(0, 4).join(" / "));
+      if (weights.length) putAttr("单件重量", weights.slice(0, 8).join(" / "));
+      if (dims.length && !attrs["产品尺寸"]) putAttr("产品尺寸", dims.slice(0, 8).join(" / "));
       if (ctnSizes.length && !attrs["箱子尺寸"]) putAttr("箱子尺寸", ctnSizes.slice(0, 3).join(" / "));
       if (ctnQtys.length && !attrs["每箱多少个"]) putAttr("每箱多少个", ctnQtys.slice(0, 3).join(" / "));
       if (ctnWeights.length && !attrs["箱子毛净重"]) putAttr("箱子毛净重", ctnWeights.slice(0, 3).join(" / "));
