@@ -5660,14 +5660,19 @@ function buildConciseProductTitle(rawTitle, attrs = {}, outLang = "zh") {
   if (!s) return "";
   s = s
     .replace(/(?:202\d\s*年?|新款|新品|爆款|热卖|热销|跨境|外贸|出口|专供|工厂直销|厂家直销|源头厂家|源头工厂|批发|一件代发|代发|现货|特价|包邮|秒杀|抖音同款|小红书同款|网红|ins风|高颜值|亚马逊|amazon|temu|shein|tiktok|支持定制|可定制|定制logo|印logo|加印logo|礼盒装|批發|熱銷)/gi, " ")
-    .replace(/[|｜/／\\,，、;；!！?？~～]+/g, " ")
+    .replace(/(?<!\d)[/／](?!\d)|[|｜\\,，、;；!！?？~～]+/g, " ")
     .replace(/\s{2,}/g, " ")
     .trim();
   if (!s) s = stripBrandAndFactoryFromTitle(rawTitle, attrs) || stripBracketsAndBoxes(String(rawTitle || "").trim());
   s = stripBrandAndFactoryFromTitle(s, attrs) || s;
   if (outLang === "zh") {
-    const compact = s.replace(/\s+/g, "");
-    return compact.length > 22 ? compact.slice(0, 22) : compact;
+    // 仅折叠与中文相邻的空白，保留英文/数字之间的分隔，绝不把 350/550/750ml 或 350 550ml 粘连成 350550750ml
+    const compact = s
+      .replace(/([\u4e00-\u9fa5])\s+/g, "$1")
+      .replace(/\s+([\u4e00-\u9fa5])/g, "$1")
+      .replace(/\s+/g, " ")
+      .trim();
+    return compact.length > 26 ? compact.slice(0, 26) : compact;
   }
   const words = s.split(/\s+/).filter(Boolean);
   return words.length > 10 ? words.slice(0, 10).join(" ") : s.slice(0, 68).trim();
