@@ -1527,8 +1527,48 @@ async function extractUniversalPageInTab() {
       }
     }
 
+    // 优先解析列式「商品件重尺 / 包装信息」表格（如：颜色 | 长(cm) | 宽(cm) | 高(cm) | 体积(cm³) | 重量(g)）
+    const columnarTables = new Set();
+    queryAllDeep("table, [role='table']").forEach(tbl => {
+      if (isInNoise(tbl)) return;
+      const rows = [...tbl.querySelectorAll("tr, [role='row']")]
+        .map(r => [...r.querySelectorAll("th, td, [role='columnheader'], [role='cell']")].map(x => (x.innerText || "").replace(/[\u200e\u200f]/g, "").replace(/\s+/g, " ").trim()))
+        .filter(cells => cells.some(Boolean));
+      if (rows.length < 2) return;
+      const hdr = rows[0];
+      const weightCol = hdr.findIndex(h => /^(?:重量|单件重量|单品重量|产品重量|毛重|净重|克重|weight)(?:\s*[\(（]\s*(?:kg|g|克|千克|公斤|lb|oz)\s*[\)）])?$/i.test(h));
+      const lenCol = hdr.findIndex(h => /^长(?:度)?(?:\s*[\(（]\s*(?:cm|mm|m)\s*[\)）])?$/i.test(h));
+      const widCol = hdr.findIndex(h => /^宽(?:度)?(?:\s*[\(（]\s*(?:cm|mm|m)\s*[\)）])?$/i.test(h));
+      const heiCol = hdr.findIndex(h => /^高(?:度)?(?:\s*[\(（]\s*(?:cm|mm|m)\s*[\)）])?$/i.test(h));
+      if (weightCol < 0 && !(lenCol >= 0 && widCol >= 0 && heiCol >= 0)) return;
+      columnarTables.add(tbl);
+      const wUnitM = weightCol >= 0 ? hdr[weightCol].match(/[\(（]\s*(kg|g|克|千克|公斤|lb|oz)\s*[\)）]/i) : null;
+      const wUnit = wUnitM ? wUnitM[1] : "g";
+      const dUnitM = lenCol >= 0 ? hdr[lenCol].match(/[\(（]\s*(cm|mm|m)\s*[\)）]/i) : null;
+      const dUnit = dUnitM ? dUnitM[1] : "cm";
+      const weights = [], dims = [];
+      for (let ri = 1; ri < rows.length; ri++) {
+        const r = rows[ri];
+        if (weightCol >= 0 && r[weightCol] && /\d/.test(r[weightCol])) {
+          const wStr = /[a-zA-Z克斤两]/.test(r[weightCol]) ? r[weightCol] : `${r[weightCol]}${wUnit}`;
+          if (!weights.includes(wStr)) weights.push(wStr);
+        }
+        if (lenCol >= 0 && widCol >= 0 && heiCol >= 0 && r[lenCol] && r[widCol] && r[heiCol]) {
+          const l = r[lenCol].replace(/[^\d.]/g, ""), w = r[widCol].replace(/[^\d.]/g, ""), h = r[heiCol].replace(/[^\d.]/g, "");
+          if (l && w && h) {
+            const dStr = `${l}×${w}×${h}${dUnit}`;
+            if (!dims.includes(dStr)) dims.push(dStr);
+          }
+        }
+      }
+      if (weights.length && !attrs["单件重量"]) put("单件重量", weights.slice(0, 4).join(" / "));
+      if (dims.length && !attrs["产品尺寸"]) put("产品尺寸", dims.slice(0, 4).join(" / "));
+    });
+
     queryAllDeep("table tr").forEach(row => {
       if (isInNoise(row)) return;
+      const parentTbl = row.closest("table");
+      if (parentTbl && columnarTables.has(parentTbl)) return;
       const cells = [...row.querySelectorAll("th,td")].map(x => (x.innerText || "").replace(/[\u200e\u200f]/g, "").replace(/\s+/g, " ").trim()).filter(Boolean);
       if (cells.length === 2) {
         put(cells[0], cells[1]);
@@ -4196,22 +4236,26 @@ function extractStoryProductProfile(ctx) {
     }
   }
 
-  // 从标题与参数中深挖本品独有的微距功能/结构特征（让故事一眼看出是专为这款产品写的，绝不千篇一律）
+  // 从标题与参数中深挖本品独有的微距功能/结构特征（严格按品类匹配，绝不把水杯卖点安到背包等其他品类上）
   const featureTokens = [];
+  const fullCtxText = `${rawTitle} ${JSON.stringify(attrMap)}`;
+  const isDrinkware = /杯|壶|饭盒|餐盒|锅|保温|内胆/.test(fullCtxText);
+  const isBagOrApparel = /包|背包|双肩包|书包|手提包|箱包|行李|牛津布|帆布|衣|裤|裙|服|鞋/.test(fullCtxText);
   const featureRules = [
-    [/单束|小头|尖头/, "0.12mm高密单束微尖刷头"],
-    [/正畸|牙套|智齿|窝沟|牙缝/, "专为正畸托槽、智齿盲区与深层窝沟定型"],
-    [/吸盘/, "底部自带防潮直立吸盘底座"],
-    [/软毛/, "磨尖高弹杜邦软毛不伤牙龈"],
-    [/316|304|不锈钢/, "食品接触级高标不锈钢内胆"],
-    [/保温|保冷|真空/, "双层抽真空长效锁温结构"],
-    [/折叠|免安装/, "卡扣式免工具3秒快折结构"],
-    [/加厚|承重/, "加强筋加厚抗压承重框架"],
-    [/防水|防漏|密封/, "360°硅胶密封防漏胶圈"],
-    [/纯棉|重磅|亲肤/, "高支高密亲肤透气面料"],
+    [/单束|小头|尖头/, "0.12mm高密单束微尖刷头", !isBagOrApparel],
+    [/正畸|牙套|智齿|窝沟|牙缝/, "专为正畸托槽、智齿盲区与深层窝沟定型", !isBagOrApparel],
+    [/吸盘/, "底部自带防潮直立吸盘底座", true],
+    [/软毛/, "磨尖高弹杜邦软毛不伤牙龈", !isBagOrApparel],
+    [/\b(?:316|304)\b|不锈钢/, "食品接触级高标不锈钢内胆", isDrinkware && !isBagOrApparel],
+    [/保温|保冷|真空/, "双层抽真空长效锁温结构", isDrinkware && !isBagOrApparel],
+    [/折叠|免安装/, "便携快折收纳结构", true],
+    [/加厚|承重/, "加强筋加厚抗压承重结构", true],
+    [/防水|防泼水/, "防泼水耐磨面料工艺", isBagOrApparel],
+    [/防水|防漏|密封/, "360°硅胶密封防漏胶圈", !isBagOrApparel],
+    [/纯棉|重磅|亲肤/, "高支高密亲肤透气面料", true],
   ];
-  for (const [re, desc] of featureRules) {
-    if (re.test(rawTitle + " " + JSON.stringify(attrMap))) featureTokens.push(desc);
+  for (const [re, desc, allow] of featureRules) {
+    if (allow && re.test(fullCtxText)) featureTokens.push(desc);
   }
   const funcAttr = pick("功能", "特点", "产品类别", "适用人群", "是否量贩装");
   if (funcAttr && !featureTokens.some(t => t.includes(funcAttr))) {
