@@ -316,16 +316,63 @@
     flex-wrap: wrap;
     margin-bottom: 8px;
   }
-  input#urls {
+  .urls-input-wrap {
     flex: 1;
     min-width: 200px;
     height: 34px;
-    padding: 0 11px;
-    font-size: 12.5px;
-    line-height: 34px;
+    display: flex;
+    align-items: center;
     border: 1px solid #d8cee8;
     border-radius: 8px;
     background: #fcfbfe;
+    padding: 0 6px;
+    gap: 2px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .urls-input-wrap:focus-within {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 2px rgba(107, 63, 160, 0.12);
+    background: #fff;
+  }
+  .urls-clear-btn {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: #9e91b3;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 22px;
+    text-align: center;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .urls-clear-btn.has-text {
+    color: #6b5b84;
+    background: #efeaf7;
+  }
+  .urls-clear-btn:hover {
+    background: #fee2e2;
+    color: #dc2626;
+  }
+  input#urls {
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+    padding: 0 6px 0 4px;
+    font-size: 12.5px;
+    line-height: 32px;
+    border: none;
+    outline: none;
+    box-shadow: none;
+    background: transparent;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -891,7 +938,10 @@
 
   <!-- 紧凑合一：单行网址输入框 + 一键开始采集 + 下方队列 -->
   <div class="collect-bar">
-    <input type="text" id="urls" placeholder="输入或粘贴商品/网页网址（回车或点开始采集自动清空并进入下方队列）…" autocomplete="off">
+    <div class="urls-input-wrap">
+      <button type="button" id="clearUrls" class="urls-clear-btn" title="一键删除输入框内的网址" aria-label="清空输入框网址">✕</button>
+      <input type="text" id="urls" placeholder="输入或粘贴商品/网页网址（回车或点开始采集自动清空并进入下方队列）…" autocomplete="off">
+    </div>
     <div class="collect-bar-actions">
       <label style="margin:0;padding:6px 11px;font-size:12px;color:var(--brand);cursor:pointer;font-weight:600;border:1px solid #dcd2e8;border-radius:8px;background:#fff;white-space:nowrap" title="批量导入 TXT 链接文件">
         📄 导入TXT <input id="txtFile" type="file" accept=".txt,text/plain" style="display:none">

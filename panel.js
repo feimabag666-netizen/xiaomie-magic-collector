@@ -21,7 +21,7 @@ $("catViewer").addEventListener("click", event => {
 });
 
 if (location.hash && !location.hash.startsWith("#capture=")) {
-  window.addEventListener("load", () => { $("urls").value = decodeURIComponent(location.hash.slice(1)); });
+  window.addEventListener("load", () => { $("urls").value = decodeURIComponent(location.hash.slice(1)); syncUrlsInputState(); });
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -865,9 +865,22 @@ window.addEventListener("load", () => {
   });
 });
 
-// 单行网址输入框：支持多行粘贴自动转空格分隔、悬停看全网址、回车直接开始采集
-$("urls")?.addEventListener("input", () => {
-  $("urls").title = $("urls").value.trim();
+// 单行网址输入框：支持左侧小叉一键清空、多行粘贴自动转空格分隔、悬停看全网址、回车直接开始采集
+function syncUrlsInputState() {
+  const el = $("urls");
+  if (!el) return;
+  const val = el.value.trim();
+  el.title = val;
+  $("clearUrls")?.classList?.toggle("has-text", Boolean(val));
+}
+$("urls")?.addEventListener("input", syncUrlsInputState);
+$("clearUrls")?.addEventListener("click", () => {
+  const el = $("urls");
+  if (!el) return;
+  el.value = "";
+  syncUrlsInputState();
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.focus();
 });
 $("urls")?.addEventListener("paste", e => {
   const txt = e.clipboardData?.getData("text") || "";
@@ -877,7 +890,7 @@ $("urls")?.addEventListener("paste", e => {
     const el = $("urls");
     const cur = el.value.trim();
     el.value = [cur, cleaned].filter(Boolean).join(" ");
-    el.title = el.value;
+    syncUrlsInputState();
   }
 });
 $("urls")?.addEventListener("keydown", e => {
@@ -895,7 +908,7 @@ $("txtFile").addEventListener("change", async e => {
   const lines = incoming.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
   const old = $("urls").value.trim();
   $("urls").value = [old, ...lines].filter(Boolean).join(" ");
-  $("urls").title = $("urls").value;
+  syncUrlsInputState();
   $("status").innerText = `已导入TXT：${lines.length} 条链接，点击「开始采集」进入下方队列`;
   e.target.value = "";
 });
@@ -2331,6 +2344,7 @@ async function loadPendingCapture() {
   if (!pendingCapture) return;
   await Promise.all([settingsReadyPromise, fieldsReadyPromise].filter(Boolean)).catch(() => {});
   $("urls").value = pendingCapture.url || "";
+  syncUrlsInputState();
   applyCaptureModeUI(pendingCapture.isEcommerce !== false);
   renderCaptureCard();
   await refreshUngrantedOrigins();
@@ -2385,6 +2399,7 @@ window.addEventListener("load", () => {
         pendingCapture = fresh;
         await chrome.storage.local.set({ lastCapture: pendingCapture }).catch(() => {});
         $("urls").value = pendingCapture.url || "";
+        syncUrlsInputState();
         applyCaptureModeUI(pendingCapture.isEcommerce !== false);
         renderCaptureCard();
         await refreshUngrantedOrigins();
@@ -2408,7 +2423,7 @@ window.addEventListener("load", () => {
       const existing = $("urls").value.split(/[\r\n\s]+/).map(s => s.trim()).filter(Boolean);
       const merged = [...new Set([...existing, ...urls])];
       $("urls").value = merged.join(" ");
-      $("urls").title = $("urls").value;
+      syncUrlsInputState();
       await refreshUngrantedOrigins();
       $("status").textContent = `已将 ${urls.length} 个已打开的网页加入下方采集队列（合计 ${merged.length} 条）。`;
     };
@@ -2426,7 +2441,7 @@ window.addEventListener("load", () => {
       const oldUrl = pendingCapture?.url;
       pendingCapture = null;
       renderCaptureCard();
-      if (oldUrl && $("urls").value.trim() === oldUrl) $("urls").value = "";
+      if (oldUrl && $("urls").value.trim() === oldUrl) { $("urls").value = ""; syncUrlsInputState(); }
       if (location.hash.startsWith("#capture=")) history.replaceState(null, "", location.pathname);
       $("status").textContent = "已移除当前浏览页快照；可粘贴网页链接进行批量采集。";
     };
@@ -8713,7 +8728,7 @@ $("go").onclick = async () => {
   // 点击开始采集后立即清空上方网址输入框，网址直接进入下方排队模块
   if ($("urls")) {
     $("urls").value = "";
-    $("urls").title = "";
+    syncUrlsInputState();
   }
   collectQueueTotalEnqueued += jobs.length;
   await scheduleCollectWorkers();
