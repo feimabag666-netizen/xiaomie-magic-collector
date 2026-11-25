@@ -7225,13 +7225,13 @@ async function ensureCrispSkuImage(im) {
   return im;
 }
 
-// 视觉像素级杂图检测（拦截空白模板/淡色线框占位图/山水默认图/纯平色小图标/第三方插件角标）
+// 视觉像素级杂图与徽标特征检测（拦截空白模板/淡色线框占位图/纯平矢量图标，并标记底部含铺货彩条的合成角标送入强化OCR）
 async function inspectImageVisualNoise(im, label = "") {
   if (!im || !im.blob || typeof createImageBitmap !== "function" || typeof document === "undefined") {
-    return { isJunk: false, reason: "" };
+    return { isJunk: false, reason: "", isSuspectBadge: false };
   }
   if ((im.blob.size || 0) > 0 && (im.blob.size || 0) < 1800 && label === "SKU图") {
-    return { isJunk: true, reason: "tiny_blob" };
+    return { isJunk: true, reason: "tiny_blob", isSuspectBadge: true };
   }
   let bm = null;
   try {
@@ -7248,41 +7248,90 @@ async function inspectImageVisualNoise(im, label = "") {
     cv.height = 0;
 
     const total = cw * ch;
-    let pureWhite = 0, transparent = 0, strongContrast = 0;
+    let pureWhite = 0, transparent = 0, strongContrast = 0, botVividPx = 0, botTotalPx = 0;
     const buckets = new Map();
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
-      if (a < 28) {
-        transparent++;
-        buckets.set(-1, (buckets.get(-1) || 0) + 1);
-        continue;
+    const botStartRow = Math.floor(ch * 0.68);
+    for (let y = 0; y < ch; y++) {
+      for (let x = 0; x < cw; x++) {
+        const i = (y * cw + x) * 4;
+        const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+        if (a < 28) {
+          transparent++;
+          buckets.set(-1, (buckets.get(-1) || 0) + 1);
+          continue;
+        }
+        if (r >= 242 && g >= 242 && b >= 242) pureWhite++;
+        const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
+        if (minC < 200 || (maxC - minC) > 38) strongContrast++;
+        if (y >= botStartRow) {
+          botTotalPx++;
+          if ((maxC - minC) >= 65 && maxC >= 110) botVividPx++;
+        }
+        const bk = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+        buckets.set(bk, (buckets.get(bk) || 0) + 1);
       }
-      if (r >= 242 && g >= 242 && b >= 242) pureWhite++;
-      const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
-      if (minC < 200 || (maxC - minC) > 38) strongContrast++;
-      const bk = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
-      buckets.set(bk, (buckets.get(bk) || 0) + 1);
     }
 
     const whiteOrTransRatio = (pureWhite + transparent) / total;
     const strongRatio = strongContrast / total;
     // 1) 空白占位图 / 极淡线框图（如 1688 定制模板白底淡蓝圆圈占位图）
-    if (whiteOrTransRatio >= 0.965) return { isJunk: true, reason: "nearly_blank" };
-    if (whiteOrTransRatio >= 0.88 && strongRatio < 0.025) return { isJunk: true, reason: "faint_wireframe_placeholder" };
+    if (whiteOrTransRatio >= 0.965) return { isJunk: true, reason: "nearly_blank", isSuspectBadge: true };
+    if (whiteOrTransRatio >= 0.88 && strongRatio < 0.025) return { isJunk: true, reason: "faint_wireframe_placeholder", isSuspectBadge: true };
 
     // 2) 纯平矢量 UI 图标（背景纯白/透明 > 45%，且全图颜色几乎集中在 2~4 个色块内，无摄影光影过渡）
     const counts = [...buckets.values()].sort((a, b) => b - a);
     const top3Ratio = ((counts[0] || 0) + (counts[1] || 0) + (counts[2] || 0)) / total;
+    const top4Ratio = (top3Ratio * total + (counts[3] || 0)) / total;
     const significantBuckets = counts.filter(c => c >= 3).length;
     if (whiteOrTransRatio >= 0.48 && top3Ratio >= 0.89 && significantBuckets <= 8) {
-      return { isJunk: true, reason: "flat_vector_icon" };
+      return { isJunk: true, reason: "flat_vector_icon", isSuspectBadge: true };
     }
+    const botVividRatio = botTotalPx > 0 ? (botVividPx / botTotalPx) : 0;
+    const isSuspectBadge = botVividRatio >= 0.45 || top4Ratio >= 0.65 || (im.blob.size || 0) <= 50000;
+    return { isJunk: false, reason: "", isSuspectBadge };
   } catch {} finally {
     if (bm && typeof bm.close === "function") {
       try { bm.close(); } catch {}
     }
   }
-  return { isJunk: false, reason: "" };
+  return { isJunk: false, reason: "", isSuspectBadge: false };
+}
+
+// 专门裁剪并二值化徽标底部/顶部白字彩底横条（如红底白字「铺货·下单」、蓝底白字「店管家」），大幅提高 OCR 识别率
+async function _makeBannerOcrImage(im) {
+  if (!im || !im.blob || typeof createImageBitmap !== "function" || typeof document === "undefined") return null;
+  let bm = null;
+  try {
+    bm = await createImageBitmap(im.blob);
+    const w = bm.width || im.w || 0, h = bm.height || im.h || 0;
+    if (w < 40 || h < 40) return null;
+    const stripH = Math.max(24, Math.round(h * 0.44));
+    const scale = w < 320 ? 2 : 1;
+    const outW = Math.round(w * scale), outH = Math.round(stripH * scale);
+    const cv = document.createElement("canvas");
+    cv.width = outW;
+    cv.height = outH;
+    const ctx = cv.getContext("2d", { willReadFrequently: true });
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, outW, outH);
+    ctx.drawImage(bm, 0, Math.max(0, h - stripH), w, stripH, 0, 0, outW, outH);
+    const imgData = ctx.getImageData(0, 0, outW, outH);
+    const d = imgData.data;
+    // 按感知亮度提取彩底（红/蓝/橙）上的白字（兼容有损JPEG彩边渗色，底色亮度~70-115，白字>=165），反色成白底黑字
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      const val = lum >= 165 ? 0 : 255;
+      d[i] = val; d[i + 1] = val; d[i + 2] = val; d[i + 3] = 255;
+    }
+    ctx.putImageData(imgData, 0, 0);
+    const outBlob = await new Promise(resolve => cv.toBlob(resolve, "image/png"));
+    cv.width = 0; cv.height = 0;
+    return outBlob ? { blob: outBlob, w: outW, h: outH } : null;
+  } catch {} finally {
+    if (bm && typeof bm.close === "function") { try { bm.close(); } catch {} }
+  }
+  return null;
 }
 
 // ================= Issue #6：AI 智能判断「仅商品图」还是「其他图也要」=================
@@ -7634,17 +7683,21 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
           if (descText) {
             data.pageText = `${data.pageText || ""}\n【商品详情介绍】\n${descText}`.trim();
           }
-          // 2) 若 DOM 尚未渲染详情图，自动补齐详情图 URL
+          // 2) 若 DOM 尚未渲染详情图，从 descDoc DOM 中剔除插件跳转角标与小图后自动补齐详情图 URL
           if (!data.detail.length) {
-            (htmlContent.match(/(?:src|data-lazyload-src)="([^"]+)"/g) || [])
-              .forEach(x => {
-                let u = x.replace(/^(?:src|data-lazyload-src)="/, "").slice(0, -1);
-                if (u.startsWith("//")) u = "https:" + u;
-                u = u.replace(/_.webp$/i, "").replace(/(\.(?:jpg|jpeg|png|webp))_\d+x\d+[^/]*$/i, "$1");
-                if (/^https?:/i.test(u) && !/(?:blank\.gif|lazyload|spacer|1x1)/i.test(u) && !data.detail.includes(u)) {
-                  data.detail.push(u);
-                }
-              });
+            descDoc.querySelectorAll("img").forEach(imgEl => {
+              const aHref = imgEl.closest("a")?.getAttribute("href") || "";
+              if (/(?:dianguanjia|puhuo|daifa|fenxiao|fuwu\.1688|open\.1688|page\.1688|market\.|isv|superboss|erp|taobao|tmall|douyin|jinritemai|pinduoduo|kuaishou)/i.test(aHref)) return;
+              const altInfo = `${imgEl.getAttribute("alt") || ""} ${imgEl.getAttribute("title") || ""} ${imgEl.className || ""}`;
+              if (/(?:铺货|代发|店管家|采源宝|一键下单|角标|占位|icon|badge|dianguanjia|puhuo)/i.test(altInfo)) return;
+              let u = imgEl.getAttribute("src") || imgEl.getAttribute("data-lazyload-src") || imgEl.getAttribute("data-src") || "";
+              if (!u) return;
+              if (u.startsWith("//")) u = "https:" + u;
+              u = u.replace(/_.webp$/i, "").replace(/(\.(?:jpg|jpeg|png|webp))_\d+x\d+[^/]*$/i, "$1");
+              if (/^https?:/i.test(u) && !/(?:blank\.gif|lazyload|spacer|1x1)/i.test(u) && !data.detail.includes(u)) {
+                data.detail.push(u);
+              }
+            });
           }
         }
       } catch (e) {}
@@ -8100,7 +8153,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         if (isSkuBatch && im && !visualCheck.isJunk && !isTinySkuIcon) {
           im = await ensureCrispSkuImage(im);
         }
-        return { url: u, image: im, origW, origH, visualJunk: visualCheck.isJunk || isTinySkuIcon, domDims: data.imageDims?.[u] || null, meta };
+        return { url: u, image: im, origW, origH, visualJunk: visualCheck.isJunk || isTinySkuIcon, suspectBadge: Boolean(visualCheck.isSuspectBadge), domDims: data.imageDims?.[u] || null, meta };
       });
       const accepted = [];
       for (const item of fetched) {
@@ -8151,7 +8204,12 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
     }
 
     // 2) 若为商品页或开启参数/AI：双线程 Web Worker OCR -> 三步检索 -> AI并发生成
-    const JUNK_OCR_TEXT_RE = /(?:淘宝|天猫|抖音|拼多多|快手|小红书|京东|微信号|扫码加|加微信|二维码|铺货|代发|店管家|一键下单|采源宝|微店|买家须知|购物须知|发货说明|物流说明|退换货说明|售后说明|诚招代理|关注店铺|收藏店铺|店铺首页|联系客服|掌柜推荐|跨店满减|直播间专享)/i;
+    const JUNK_OCR_TEXT_RE = /(?:淘宝|天猫|抖音|拼多多|快手|小红书|京东|微信号|扫码加|加微信|二维码|铺货|铺贷|代发|店管家|一键下单|一键铺|采源宝|微店|超级店长|店小秘|马帮|买家须知|购物须知|发货说明|物流说明|退换货说明|售后说明|诚招代理|关注店铺|收藏店铺|店铺首页|联系客服|掌柜推荐|跨店满减|直播间专享)/i;
+    const isJunkOcrText = rawText => {
+      const t = String(rawText || "");
+      const compact = t.replace(/[\s·•.\-_|:：]+/g, "");
+      return (JUNK_OCR_TEXT_RE.test(t) || JUNK_OCR_TEXT_RE.test(compact)) && !SPEC_OCR_GUARD_RE.test(t);
+    };
     const SPEC_OCR_GUARD_RE = /(?:箱规|装箱数|外箱尺寸|毛重|净重|产品尺寸|外形尺寸|规格参数|材质|容量)/i;
     if (!(isNonEcom && !doParams && !doAi)) {
       try {
@@ -8180,7 +8238,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
             $("status").innerText = `双线程识别图片文字 (${ocrDoneCount}/${candidates.length})…`;
             const labelTag = `详情图${String(i + 1).padStart(3, "0")}`;
             if (t) {
-              if (JUNK_OCR_TEXT_RE.test(t) && !SPEC_OCR_GUARD_RE.test(t) && cand.assetRef) {
+              if (isJunkOcrText(t) && cand.assetRef) {
                 cand.assetRef.__dropJunkByOcr = true;
                 aiFilteredCount++;
               }
@@ -8195,24 +8253,51 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
           });
         }
 
-        // 2b) 对尚未扫描到的详情图/主图/SKU图标徽章（如店管家/铺货代发/铺货下单方形标或横幅）做OCR杂图排查，绝不放行落盘
+        // 2b) 对末尾详情图、可疑彩条角标与中小方形徽章做完整 OCR + 彩底白字反色增强扫描（覆盖第42张等末尾铺货·下单图标）
         if (imgFilterMode !== "all" && typeof ocrImg === "function") {
-          const suspectJunkAssets = [...detailAssets, ...mainAssets, ...skuAssets].filter(a => {
-            if (!a || !a.image || a.__dropJunkByOcr || ocrCheckedAssets.has(a)) return false;
+          const tailDetailSet = new Set(detailAssets.slice(-12));
+          const headDetailSet = new Set(detailAssets.slice(0, 6));
+          const tailMainSet = new Set(mainAssets.slice(-4));
+          const prioritized = [
+            ...detailAssets.slice(-12).reverse(),
+            ...skuAssets,
+            ...mainAssets.slice(-4).reverse(),
+            ...detailAssets,
+            ...mainAssets,
+          ];
+          const seenSuspect = new Set();
+          const suspectJunkAssets = [];
+          for (const a of prioritized) {
+            if (!a || !a.image || a.__dropJunkByOcr || ocrCheckedAssets.has(a) || seenSuspect.has(a)) continue;
+            seenSuspect.add(a);
             const w = a.origW || a.image.w || 0, h = a.origH || a.image.h || 0;
-            if (!w || !h) return false;
-            const isSquareBadge = Math.abs(w - h) <= Math.max(w, h) * 0.35 && Math.max(w, h) <= 850;
-            const isWideBanner = h > 0 && (w / h) >= 1.8 && h <= 450;
-            return isSquareBadge || isWideBanner;
-          }).slice(0, 14);
+            const isSmallOrMedium = w > 0 && h > 0 && Math.max(w, h) <= 640;
+            const isWideBanner = w > 0 && h > 0 && (w / h) >= 1.8 && h <= 450;
+            const inTailOrHead = tailDetailSet.has(a) || headDetailSet.has(a) || tailMainSet.has(a) || skuAssets.includes(a);
+            if (a.suspectBadge || isSmallOrMedium || isWideBanner || inTailOrHead) {
+              suspectJunkAssets.push(a);
+              if (suspectJunkAssets.length >= 36) break;
+            }
+          }
           if (suspectJunkAssets.length) {
             await mapPool(suspectJunkAssets, OCR_POOL_SIZE, async (asset) => {
               await checkTaskControl(taskCtx);
               if (stopRequested) return;
               const t = await ocrImg(asset.image);
-              if (t && JUNK_OCR_TEXT_RE.test(t) && !SPEC_OCR_GUARD_RE.test(t)) {
+              if (t && isJunkOcrText(t)) {
                 asset.__dropJunkByOcr = true;
                 aiFilteredCount++;
+                return;
+              }
+              if (asset.suspectBadge || tailDetailSet.has(asset) || tailMainSet.has(asset)) {
+                const bannerIm = await _makeBannerOcrImage(asset.image);
+                if (bannerIm) {
+                  const t2 = await ocrImg(bannerIm);
+                  if (t2 && isJunkOcrText(t2)) {
+                    asset.__dropJunkByOcr = true;
+                    aiFilteredCount++;
+                  }
+                }
               }
             });
           }

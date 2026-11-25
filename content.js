@@ -163,7 +163,7 @@
       document.querySelectorAll(sel).forEach(el => {
         if (isUiIconImg(el)) return;
         const aHref = el.closest("a")?.getAttribute("href") || "";
-        if (/(?:dianguanjia|puhuo|daifa|taobao|tmall|douyin|jinritemai)/i.test(aHref)) return;
+        if (/(?:dianguanjia|puhuo|daifa|fenxiao|fuwu\.1688|open\.1688|page\.1688|market\.|isv|superboss|erp|taobao|tmall|douyin|jinritemai|pinduoduo|kuaishou)/i.test(aHref)) return;
         const rw = el.naturalWidth || el.width || 0, rh = el.naturalHeight || el.height || 0;
         if (rw > 0 && rh > 0 && Math.max(rw, rh) < 120) return;
         push(detail, imgSrc(el));
