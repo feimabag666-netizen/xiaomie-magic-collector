@@ -3850,15 +3850,6 @@ function renderFields(boxId, key, arr, isAi) {
         else saveActiveFieldProfile();
       };
     }
-    const del = document.createElement("button");
-    del.innerText = "✕"; del.title = "删除这个字段";
-    del.style.cssText = "padding:2px 7px;font-size:11px";
-    del.onclick = () => {
-      arr.splice(i, 1);
-      if (isAi) saveFields(key, AI_FIELDS);
-      else saveActiveFieldProfile();
-      renderAllFieldBoxes();
-    };
     row.append(cb, nm, inp);
     if (!isAi && f.n === "型号") {
       const subLbl = document.createElement("label");
@@ -3877,7 +3868,6 @@ function renderFields(boxId, key, arr, isAi) {
       subLbl.append(subCb, subTxt);
       row.appendChild(subLbl);
     }
-    if (boxId !== "sellingPointFields" && boxId !== "storyFields") row.appendChild(del);
     box.appendChild(row);
   });
   try { if (window.XM_I18N && typeof window.XM_I18N.apply === "function") window.XM_I18N.apply(); } catch {}
