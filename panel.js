@@ -5629,7 +5629,7 @@ function stripBrandAndFactoryFromTitle(rawTitle, attrs = {}) {
   for (const [k, v] of Object.entries(attrs || {})) {
     if (/^(?:品牌|商标|工厂|厂家|供应商|店铺|公司|brand|manufacturer|supplier|store|shop|company)$/i.test(String(k || "").trim())) {
       const val = String(v || "").trim();
-      if (val && !/^(?:无|暂无|自主品牌|中性|其他|other|none|no\s*brand|n\/a)$/i.test(val)) {
+      if (val && !/^(?:无|暂无|无品牌|自主品牌|自有品牌|贴牌|中性|其他|other|none|no\s*brand|n\/a)$/i.test(val)) {
         brandCandidates.push(val);
         val.split(/[/／、,，\s|()（）]+/).map(x => x.trim()).filter(x => x.length >= 2).forEach(x => brandCandidates.push(x));
       }
@@ -7789,10 +7789,15 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
               if (localPre?.value && /\d/.test(localPre.value)) preAttrs[fn] = localPre.value;
             }
           }
-          const curDimV = matchField("产品尺寸", preAttrs, "");
-          if (allowNetworkCascade && checkedNameSet.has("产品尺寸") && (!curDimV || !/\d/.test(curDimV)) && detectDistinctMultiSpecs(data, preAttrs, ocrAll).length >= 2) {
-            const netDim = await findSpecsByFourStageCascade(data, url, stageOcrItems, "产品尺寸", cascadeCache, true, false);
-            if (netDim?.value && /\d/.test(netDim.value)) preAttrs["产品尺寸"] = netDim.value;
+          if (allowNetworkCascade && detectDistinctMultiSpecs(data, preAttrs, ocrAll).length >= 2) {
+            for (const fn of ["产品尺寸", "容量", "单件重量", "价格"]) {
+              if (!checkedNameSet.has(fn) && fn !== "容量") continue;
+              const curV = matchField(fn, preAttrs, "");
+              if (!curV || !/\d/.test(curV)) {
+                const netHit = await findSpecsByFourStageCascade(data, url, stageOcrItems, fn, cascadeCache, true, false);
+                if (netHit?.value && /\d/.test(netHit.value)) preAttrs[fn] = netHit.value;
+              }
+            }
           }
           specData = { ...data, attrs: preAttrs };
         }
