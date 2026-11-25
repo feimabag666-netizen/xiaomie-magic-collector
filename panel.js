@@ -6930,6 +6930,57 @@ async function inspectImageVisualNoise(im, label = "") {
     if (pureWOnlyRatio >= 0.35 && pureBOnlyRatio >= 0.14 && (pureWOnlyRatio + pureBOnlyRatio) >= 0.72) {
       return { isJunk: true, reason: "bimodal_black_white_logo" };
     }
+
+    // 3) 蓝天绿山湖水默认破损/占位插画图标（无真实商品纹理，横扫相邻像素极平滑且呈现上蓝天+中绿山+下蓝水色带）
+    let cTop = cw, cBot = -1, cLeft = ch, cRight = -1;
+    for (let y = 0; y < ch; y++) {
+      for (let x = 0; x < cw; x++) {
+        const idx = (y * cw + x) * 4;
+        const r = data[idx], g = data[idx + 1], b = data[idx + 2], a = data[idx + 3];
+        if (a >= 28 && !(r >= 242 && g >= 242 && b >= 242)) {
+          if (y < cTop) cTop = y;
+          if (y > cBot) cBot = y;
+          if (x < cLeft) cLeft = x;
+          if (x > cRight) cRight = x;
+        }
+      }
+    }
+    const cH = cBot - cTop + 1, cW = cRight - cLeft + 1;
+    if (cH >= 16 && cW >= 16) {
+      let flatPairs = 0, totalPairs = 0;
+      let skyPx = 0, skyTotal = 0, midGreenPx = 0, midTotal = 0, waterBluePx = 0, waterTotal = 0;
+      for (let y = cTop; y <= cBot; y++) {
+        const relY = (y - cTop) / Math.max(1, cH - 1);
+        for (let x = cLeft; x <= cRight; x++) {
+          const idx = (y * cw + x) * 4;
+          const r = data[idx], g = data[idx + 1], b = data[idx + 2], a = data[idx + 3];
+          if (a < 28) continue;
+          if (x < cRight) {
+            const nIdx = idx + 4;
+            const diff = Math.abs(r - data[nIdx]) + Math.abs(g - data[nIdx + 1]) + Math.abs(b - data[nIdx + 2]);
+            totalPairs++;
+            if (diff <= 14) flatPairs++;
+          }
+          if (relY <= 0.38) {
+            skyTotal++;
+            if (b > r + 16 && b >= 155) skyPx++;
+          } else if (relY <= 0.74) {
+            midTotal++;
+            if (g > r + 6 && g >= b * 0.85) midGreenPx++;
+          } else {
+            waterTotal++;
+            if (b > r + 12 && b >= g * 0.92) waterBluePx++;
+          }
+        }
+      }
+      const flatRatio = totalPairs ? flatPairs / totalPairs : 0;
+      const skyR = skyTotal ? skyPx / skyTotal : 0;
+      const midR = midTotal ? midGreenPx / midTotal : 0;
+      const waterR = waterTotal ? waterBluePx / waterTotal : 0;
+      if (flatRatio >= 0.62 && skyR >= 0.38 && midR >= 0.18 && waterR >= 0.38) {
+        return { isJunk: true, reason: "landscape_placeholder_clipart" };
+      }
+    }
   } catch {} finally {
     if (bm && typeof bm.close === "function") {
       try { bm.close(); } catch {}
@@ -6973,7 +7024,7 @@ function classifyImageForFilterMode(url, label, w, h, meta, imgFilterMode = "ai"
 
   // 5) 判断是否为规格参数表/尺码表/箱规包装图 vs 品牌工厂证书等其他图 vs 纯商品展示图
   const isSpecChart = /(?:尺码|尺寸|规格|参数|装箱|外箱|包装|检测|报告|证书|size\s*chart|spec|parameter|dimension|packing|carton|certificate)/i.test(ctx + " " + u) || tallRatio >= 1.65;
-  const isOtherSceneOrFactory = /(?:工厂|车间|仓库|展会|公司介绍|品牌故事|营业执照|物流|团队|factory|workshop|warehouse|exhibition|company\s*profile|brand\s*story)/i.test(ctx + " " + u);
+  const isOtherSceneOrFactory = /(?:工厂|车间|仓库|展会|公司介绍|企业简介|品牌故事|营业执照|物流|团队|实力厂家|源头工厂|研发生产|潜心制作|好评如潮|品牌保障|售后无忧|订购须知|定制流程|factory|workshop|warehouse|exhibition|company\s*profile|brand\s*story|ordering\s*notice|rave\s*reviews|after\s*sales)/i.test(ctx + " " + u);
 
   if (imgFilterMode === "all") {
     // 「其他图也要（全部图片）」：商品图、参数表图、场景图、工厂图、包装图全部保存
@@ -7773,11 +7824,14 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
     }
 
     // 2) 若为商品页或开启参数/AI：双线程 Web Worker OCR -> 三步检索 -> AI并发生成
-    const JUNK_OCR_TEXT_RE = /(?:淘宝|天猫|抖音|拼多多|快手|小红书|京东|微信号|扫码加|加微信|二维码|铺货|已铺货|立即铺货|铺货下单|代发|一件代发|传淘宝|店管家|超级店长|一键下单|采源宝|微店|买家须知|购物须知|发货说明|物流说明|退换货说明|售后说明|诚招代理|关注店铺|收藏店铺|店铺首页|联系客服|掌柜推荐|跨店满减|直播间专享)/i;
-    const SPEC_OCR_GUARD_RE = /(?:箱规|装箱数|外箱尺寸|毛重|净重|产品尺寸|外形尺寸|规格参数|材质|容量)/i;
+    const HARD_JUNK_OCR_RE = /(?:源头工厂|实力厂家|实力工厂|工厂直营|工厂直销|厂家直销|研发生产|年专注|专注.*?生产|潜心制作|精益求精|品质值得信赖|产能与质量|Factory\s*Direct|Direct\s*Factory|Ordering\s*Notice|Rave\s*Reviews|好评如潮|客户评价|买家评价|买家秀|口碑见证|品牌保障|售后无忧|关于色差|物流运费|关于售后|关于物流|关于发货|订购须知|定制须知|定制流程|选好款式|确认样品|确认大货|购买须知|买家须知|购物须知|温馨提示|铺货|已铺货|立即铺货|铺货下单|一件代发|传淘宝|店管家|超级店长|一键下单|采源宝|企业简介|公司介绍|资质证书|营业执照|诚招代理)/i;
+    const JUNK_OCR_TEXT_RE = /(?:淘宝|天猫|抖音|拼多多|快手|小红书|京东|微信号|扫码加|加微信|二维码|代发|微店|发货说明|物流说明|退换货|售后说明|售后服务|关注店铺|收藏店铺|店铺首页|联系客服|掌柜推荐|跨店满减|直播间专享)/i;
+    const SPEC_OCR_GUARD_RE = /(?:箱规|装箱数|外箱尺寸|毛重.*净重|产品尺寸\s*[:：]\s*\d)/i;
     const isJunkOcrText = txt => {
       const s = String(txt || "");
       const compact = s.replace(/[\s·•.,，。!！?？:：\-—_|/\\]+/g, "");
+      if (/(?:箱规|装箱数|外箱尺寸)/.test(compact)) return false;
+      if (HARD_JUNK_OCR_RE.test(s) || HARD_JUNK_OCR_RE.test(compact)) return true;
       return (JUNK_OCR_TEXT_RE.test(s) || JUNK_OCR_TEXT_RE.test(compact)) && !SPEC_OCR_GUARD_RE.test(s) && !SPEC_OCR_GUARD_RE.test(compact);
     };
     if (!(isNonEcom && !doParams && !doAi)) {
@@ -7823,16 +7877,18 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
           });
         }
 
-        // 2b) 对尚未扫描到的详情图/主图/SKU图标徽章（如店管家/铺货代发/铺货下单方形标或横幅）做OCR杂图排查，绝不放行落盘
+        // 2b) 对详情图全量（尾部优先，精准命中底部工厂实力/订购流程/好评截图/售后保障等杂图）及主图/SKU角标徽章做OCR排查，绝不放行落盘
         if (imgFilterMode !== "all" && typeof ocrImg === "function") {
-          const suspectJunkAssets = [...detailAssets, ...mainAssets, ...skuAssets].filter(a => {
-            if (!a || !a.image || a.__dropJunkByOcr || ocrCheckedAssets.has(a)) return false;
+          const isBadgeShape = a => {
             const w = a.origW || a.image.w || 0, h = a.origH || a.image.h || 0;
             if (!w || !h) return false;
             const isSquareBadge = Math.abs(w - h) <= Math.max(w, h) * 0.35 && Math.max(w, h) <= 1200;
             const isWideBanner = h > 0 && (w / h) >= 1.8 && h <= 520;
             return isSquareBadge || isWideBanner;
-          }).slice(0, 18);
+          };
+          const tailDetails = [...detailAssets].reverse().filter(a => a && a.image && !a.__dropJunkByOcr && !ocrCheckedAssets.has(a));
+          const otherBadges = [...mainAssets, ...skuAssets].filter(a => a && a.image && !a.__dropJunkByOcr && !ocrCheckedAssets.has(a) && isBadgeShape(a));
+          const suspectJunkAssets = [...tailDetails, ...otherBadges].slice(0, 48);
           if (suspectJunkAssets.length) {
             await mapPool(suspectJunkAssets, OCR_POOL_SIZE, async (asset) => {
               await checkTaskControl(taskCtx);
