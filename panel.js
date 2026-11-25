@@ -5620,16 +5620,51 @@ async function aiExtractStageFields(stageKey, targetFields, data, sourceUrl, con
   return cache[cacheKey];
 }
 
-// 精简提炼商品核心标题（去除冗长SEO堆砌词与括号符号，只留最突出商品内容的精炼标题）
-function buildConciseProductTitle(rawTitle, attrs = {}, outLang = "zh") {
+// 从商品标题中剥离工厂名、店铺名、公司名与品牌/商标词，仅保留中性品类、材质与卖点描述
+const _TECH_TOKEN_KEEP_RE = /^(?:304|316|316L|410|430|201|PC|PP|PE|PET|PETG|PBT|ABS|TPR|TPE|TPU|PVC|PU|PA|PS|AS|PTFE|EVA|PLA|LDPE|HDPE|SUS|BPA|FDA|CE|ROHS|ISO|USB|TYPE-C|LED|LCD|OLED|RGB|UV|HD|2D|3D|4D|5D|DIY|OEM|ODM|IPX\d+|MINI|PRO|MAX|PLUS|LITE|ULTRA|WIFI|BT|NFC|DC|AC)$/i;
+function stripBrandAndFactoryFromTitle(rawTitle, attrs = {}) {
   let s = stripBracketsAndBoxes(String(rawTitle || "").trim());
+  if (!s) return "";
+  const brandCandidates = [];
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (/^(?:品牌|商标|工厂|厂家|供应商|店铺|公司|brand|manufacturer|supplier|store|shop|company)$/i.test(String(k || "").trim())) {
+      const val = String(v || "").trim();
+      if (val && !/^(?:无|暂无|自主品牌|中性|其他|other|none|no\s*brand|n\/a)$/i.test(val)) {
+        brandCandidates.push(val);
+        val.split(/[/／、,，\s|()（）]+/).map(x => x.trim()).filter(x => x.length >= 2).forEach(x => brandCandidates.push(x));
+      }
+    }
+  }
+  const uniqueBrands = [...new Set(brandCandidates)].sort((a, b) => b.length - a.length);
+  for (const b of uniqueBrands) {
+    if (_TECH_TOKEN_KEEP_RE.test(b) || /^\d+$/.test(b)) continue;
+    const esc = escRe(b);
+    const re = /^[a-z0-9._-]+$/i.test(b)
+      ? new RegExp(`(?:^|[^a-zA-Z0-9])${esc}(?:牌|系列|同款)?(?=$|[^a-zA-Z0-9])`, "gi")
+      : new RegExp(`${esc}(?:牌|旗舰店|专营店|官方店|品牌|系列|出品|直供|同款)?`, "gi");
+    s = s.replace(re, " ");
+  }
+  // 剔除工厂/公司/店铺名称片段与常见品牌词（不误伤“出厂检验”等正常产品描述）
+  s = s
+    .replace(/[\u4e00-\u9fa5A-Za-z0-9·]{2,18}(?:有限责任公司|股份有限公司|有限公司|制造厂|加工厂|用品厂|制品厂|塑料厂|五金厂|模具厂|工艺品厂|包装厂|玻璃厂|杯业厂|日用品厂|旗舰店|专营店|官方店|直销店|企业店|工贸|商贸|工作室|商行)(?:直供|直销|出品|自营)?/g, " ")
+    .replace(/\b(?:MUJI|Thermos|Lock&Lock|Tupperware|Zojirushi|Tiger|Stanley|Hydro\s*Flask|Owala|Contigo|Kinto|CamelBak|Nalgene|LinMU|Supor|Midea|Joyoung|Bear)\b/gi, " ")
+    .replace(/(?:无印良品|无印风|无印|品牌直供|品牌同款|大牌同款|源头厂|本厂|厂家)/gi, " ");
+  // 剔除开头残留的纯英文/混写品牌词（保留 PC/PP/ABS/304/USB 等材质与技术规格词）
+  s = s.replace(/^([A-Za-z][A-Za-z0-9&.\-_]{1,18})(?=[\u4e00-\u9fa5\s])/, (m, tok) => (_TECH_TOKEN_KEEP_RE.test(tok) ? m : " "));
+  return s.replace(/\s{2,}/g, " ").trim();
+}
+
+// 精简提炼商品核心标题（去除工厂/品牌名称、冗长SEO堆砌词与括号符号，只留最突出商品内容的精炼标题）
+function buildConciseProductTitle(rawTitle, attrs = {}, outLang = "zh") {
+  let s = stripBrandAndFactoryFromTitle(rawTitle, attrs);
   if (!s) return "";
   s = s
     .replace(/(?:202\d\s*年?|新款|新品|爆款|热卖|热销|跨境|外贸|出口|专供|工厂直销|厂家直销|源头厂家|源头工厂|批发|一件代发|代发|现货|特价|包邮|秒杀|抖音同款|小红书同款|网红|ins风|高颜值|亚马逊|amazon|temu|shein|tiktok|支持定制|可定制|定制logo|印logo|加印logo|礼盒装|批發|熱銷)/gi, " ")
     .replace(/[|｜/／\\,，、;；!！?？~～]+/g, " ")
     .replace(/\s{2,}/g, " ")
     .trim();
-  if (!s) s = stripBracketsAndBoxes(String(rawTitle || "").trim());
+  if (!s) s = stripBrandAndFactoryFromTitle(rawTitle, attrs) || stripBracketsAndBoxes(String(rawTitle || "").trim());
+  s = stripBrandAndFactoryFromTitle(s, attrs) || s;
   if (outLang === "zh") {
     const compact = s.replace(/\s+/g, "");
     return compact.length > 22 ? compact.slice(0, 22) : compact;
@@ -5647,35 +5682,44 @@ async function aiSummarizeProductTitle(rawTitle, attrs = {}, outLang = "zh", cac
         const providers = await getAiProviders();
         if (!providers.length) return fallback;
         const langPack = OUTPUT_LANG_PACKS[outLang] || OUTPUT_LANG_PACKS.zh;
+        const brandVal = Object.entries(attrs || {})
+          .filter(([k]) => /^(?:品牌|商标|brand|manufacturer|supplier)$/i.test(String(k || "").trim()))
+          .map(([, v]) => String(v || "").trim())
+          .filter(Boolean)
+          .join("、");
         const attrSummary = Object.entries(attrs || {})
-          .filter(([k, v]) => k && v && /^(?:材质|功能|容量|尺寸|颜色|款式|规格|品牌|material|feature|capacity|size|color|brand)/i.test(k))
+          .filter(([k, v]) => k && v && /^(?:材质|功能|容量|尺寸|颜色|款式|规格|material|feature|capacity|size|color)/i.test(k))
           .slice(0, 8)
           .map(([k, v]) => `${k}:${v}`)
           .join("，");
+        const cleanInputTitle = stripBrandAndFactoryFromTitle(rawTitle, attrs) || String(rawTitle || "");
         const messages = [
           {
             role: "system",
             content: [
-              `你是资深电商商品命名编辑。请把冗长的原始商品标题总结为 1 个简短、最突出商品核心卖点与品类的精炼标题。`,
+              `你是资深电商商品命名编辑。请把原始商品标题总结为 1 个简短、中性的精炼商品标题。`,
               `必须使用【${langPack.promptLang}】输出。`,
+              `铁律：绝对禁止包含任何品牌名、商标名、工厂名、店铺名或公司名${brandVal ? `（尤其剔除“${brandVal}”）` : ""}！只保留品类、材质、核心功能与容量等客观产品特征。`,
               outLang === "zh"
-                ? `长度控制在 8~18 个中文字；彻底去掉“跨境、爆款、新款、批发、工厂直销、一件代发、包邮、定制LOGO”等营销堆砌词；严禁括号、引号、冒号或任何前缀解释，直接输出标题本身。`
-                : `Keep it crisp (4 to 9 words); strip wholesale/promo spam; no brackets, quotes, or prefixes; output ONLY the title.`,
+                ? `长度控制在 8~18 个中文字；彻底去掉“跨境、爆款、新款、批发、工厂直销、一件代发、包邮、定制LOGO”等营销词与括号引号，直接输出标题本身。`
+                : `Keep it crisp (4 to 9 words); strip any brand/factory names and wholesale/promo spam; no brackets, quotes, or prefixes; output ONLY the title.`,
             ].join("\n"),
           },
           {
             role: "user",
-            content: `原始标题：${String(rawTitle).slice(0, 160)}\n核心属性：${attrSummary || "无"}\n请直接输出最突出该商品内容的精炼标题：`,
+            content: `原始标题：${cleanInputTitle.slice(0, 160)}\n核心属性：${attrSummary || "无"}\n请直接输出不含任何品牌或工厂名的精炼标题：`,
           },
         ];
         for (const p of providers) {
           if (p.isAdminTrial && Date.now() < llmCooldownUntil) continue;
           try {
             const r = await aiAgentRun(p, messages, { maxSteps: 1, webSearch: false, maxTokens: 80 });
-            const t = stripBracketsAndBoxes(String(r?.text || "").split(/\r?\n/)[0] || "")
+            let t = stripBracketsAndBoxes(String(r?.text || "").split(/\r?\n/)[0] || "")
               .replace(/^(?:商品标题|标题|title)\s*[:：]\s*/i, "")
               .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
               .trim();
+            t = stripBrandAndFactoryFromTitle(t, attrs) || t;
+            if (outLang === "zh") t = t.replace(/\s+/g, "");
             if (t && t.length >= 4 && t.length <= (outLang === "zh" ? 28 : 80)) {
               return t;
             }
@@ -7595,7 +7639,10 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
     const activeSourceTabId = tab?.id || data.sourceTabId || null;
     const titleFieldDef = COMMON_FIELDS.find(f => f.n === "商品标题");
     const customTitleInput = isNonEcom ? getNonEcomCoreVal("网页/视频标题") : (titleFieldDef?.v || "").trim();
-    const effectiveRawTitle = customTitleInput || data.title || (isNonEcom ? "未命名网页" : "未命名商品");
+    const effectiveRawTitle = customTitleInput
+      || (isNonEcom ? data.title : stripBrandAndFactoryFromTitle(data.title || "", data.attrs || {}))
+      || data.title
+      || (isNonEcom ? "未命名网页" : "未命名商品");
     const title = effectiveRawTitle
       .replace(/[\\/:*?"<>|\r\n\t]+/g, " ")
       .replace(/\s+/g, " ")
