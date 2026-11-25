@@ -1,11 +1,11 @@
 // 1688商品页深度内容提取：主图/详情图/SKU高清原图/视频/标题/全量商品属性与跨境箱规参数
 (function () {
-  const JUNK_IMG_RE = /(?:avatar|logo|icon|sprite|qrcode|qr-code|1x1|spacer|blank\.gif|lazyload|loading|tb1.*blank|payment|badge)/i;
+  const JUNK_IMG_RE = /(?:avatar|logo|icon|sprite|qrcode|qr-code|1x1|spacer|blank\.gif|lazyload|loading|tb1.*blank|payment|badge|\/(?:tfs|tps)\/|dianguanjia|puhuo|daifa|superboss|1688zs|no[-_]?image|default[-_]?img|placeholder)/i;
 
   function norm(u) {
     if (!u) return null;
     u = String(u).trim().replace(/^url\(["']?|["']?\)$/gi, "").trim();
-    if (!u || /^data:|^javascript:|^about:/i.test(u)) return null;
+    if (!u || /^(?:data:|javascript:|about:|chrome-extension:|edge-extension:|moz-extension:|safari-extension:)/i.test(u)) return null;
     if (u.startsWith("//")) u = "https:" + u;
     if (!/^https?:/i.test(u) || JUNK_IMG_RE.test(u)) return null;
 
@@ -134,8 +134,17 @@
       ".main-slider--wrap img", ".img-list-wrapper img", ".detail-gallery img",
       "[class*='mainGallery'] img", "[class*='gallery-img'] img", "[class*='gallery'] img"
     ];
+    const isUiIconImg = el => {
+      if (!el) return false;
+      if (el.closest("[class*='badge'], [class*='tag'], [class*='icon'], [class*='play'], [class*='video'], [class*='extension'], [class*='plugin'], [class*='toolbar'], [id*='dian'], [class*='dian'], [class*='puhuo'], [class*='daifa'], [class*='float'], [class*='fixed'], [class*='recommend'], [class*='related']")) return true;
+      const altTitle = `${el.getAttribute?.("alt") || ""} ${el.getAttribute?.("title") || ""} ${el.className || ""}`;
+      if (/(?:铺货|代发|店管家|角标|占位|icon|badge|logo|play|arrow|triangle|dianguanjia|puhuo)/i.test(altTitle)) return true;
+      const nw = el.naturalWidth || 0, nh = el.naturalHeight || 0;
+      if (nw > 0 && nh > 0 && Math.max(nw, nh) < 48) return true;
+      return false;
+    };
     for (const sel of mainSels) {
-      document.querySelectorAll(sel).forEach(el => push(main, imgSrc(el)));
+      document.querySelectorAll(sel).forEach(el => { if (!isUiIconImg(el)) push(main, imgSrc(el)); });
     }
     if (main.length === 0) {
       const m = html.match(/"(?:images|imageList|galleryImages)"\s*:\s*\[([^\]]{50,8000})\]/);
@@ -151,7 +160,14 @@
       ".od-pc-detail-description img"
     ];
     for (const sel of detSels) {
-      document.querySelectorAll(sel).forEach(el => push(detail, imgSrc(el)));
+      document.querySelectorAll(sel).forEach(el => {
+        if (isUiIconImg(el)) return;
+        const aHref = el.closest("a")?.getAttribute("href") || "";
+        if (/(?:dianguanjia|puhuo|daifa|taobao|tmall|douyin|jinritemai)/i.test(aHref)) return;
+        const rw = el.naturalWidth || el.width || 0, rh = el.naturalHeight || el.height || 0;
+        if (rw > 0 && rh > 0 && Math.max(rw, rh) < 120) return;
+        push(detail, imgSrc(el));
+      });
     }
     if (detail.length === 0) {
       const m = html.match(/"content"\s*:\s*"((?:\\.|[^"\\]){200,})"/);
@@ -243,14 +259,14 @@
       }
     }
 
-    // 2) 从 JSON 中带 imageUrl 的规格对象补充高清 SKU 原图
-    const skuImgJsonRe = /"(?:imageUrl|propImage|skuImageUrl)"\s*:\s*"((?:\\.|[^"\\]){12,300})"/g;
+    // 2) 仅从明确包含规格属性的 JSON 对象提取高清 SKU 图（绝不全文乱扫无关角标/店铺图标 imageUrl）
+    const skuPropObjRe = /\{[^{}]{0,220}"(?:skuId|specId|propPath|valueId|skuColor|skuName|skuImageUrl)"[^{}]{0,260}"(?:imageUrl|propImage|skuImageUrl)"\s*:\s*"((?:\\.|[^"\\]){12,300})"/g;
     let sim;
-    while ((sim = skuImgJsonRe.exec(html))) {
+    while ((sim = skuPropObjRe.exec(html))) {
       push(sku, decodeJsonString(sim[1]));
     }
 
-    // 3) 从 DOM 规格选择区提取图片（含 data-* 与 CSS background-image）及规格文字
+    // 3) 从 DOM 规格选择区提取图片（严格排除角标/扩展按钮/小于48px的UI小图标）
     const skuSels = [
       ".sku-item", ".sku-item-image", ".od-sku-property",
       "[class*='sku'] [class*='value']", "[class*='sku'] [class*='item']",
@@ -258,13 +274,20 @@
     ];
     for (const sel of skuSels) {
       document.querySelectorAll(sel).forEach(el => {
-        el.querySelectorAll("img").forEach(img => push(sku, imgSrc(img)));
-        if (el.tagName === "IMG") push(sku, imgSrc(el));
+        if (isUiIconImg(el)) return;
+        el.querySelectorAll("img").forEach(img => {
+          if (isUiIconImg(img)) return;
+          push(sku, imgSrc(img));
+        });
+        if (el.tagName === "IMG" && !isUiIconImg(el)) push(sku, imgSrc(el));
         const dataImg = el.getAttribute("data-image") || el.getAttribute("data-src") || el.getAttribute("data-large-image");
         if (dataImg) push(sku, dataImg);
         try {
           const bg = getComputedStyle(el).backgroundImage || el.style?.backgroundImage || "";
-          for (const match of bg.matchAll(/url\(["']?(.*?)["']?\)/g)) push(sku, match[1]);
+          const rect = el.getBoundingClientRect?.() || { width: 0, height: 0 };
+          if ((rect.width === 0 || rect.width >= 24) && !isUiIconImg(el)) {
+            for (const match of bg.matchAll(/url\(["']?(.*?)["']?\)/g)) push(sku, match[1]);
+          }
         } catch (e) {}
         const label = (el.getAttribute("title") || el.getAttribute("alt") || el.querySelector("[class*='name'], [class*='text'], span")?.innerText || "").replace(/\s+/g, " ").trim();
         if (label && label.length <= 40 && !/^(?:颜色|尺码|规格|款式|选择)/.test(label) && !skuNames.includes(label)) {
@@ -274,7 +297,7 @@
     }
     if (sku.length === 0) {
       (html.match(/https?:[^"'\\ ]+?\.(?:jpg|jpeg|png|webp)(?:\?[^"'\\ ]*)?/gi) || [])
-        .filter(u => /sku|prop|spec/i.test(u))
+        .filter(u => /(?:\/img\/ibank\/|\/imgextra\/).*?(?:sku|prop|spec)/i.test(u))
         .forEach(u => push(sku, decodeJsonString(u)));
     }
     if (skuNames.length && !attrs["规格"]) {
