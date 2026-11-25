@@ -946,11 +946,6 @@ if ($("skipCurrent")) {
     if (typeof skipCurrentTasks === "function") skipCurrentTasks();
   };
 }
-if ($("deleteCurrent")) {
-  $("deleteCurrent").onclick = () => {
-    if (typeof deleteAllPendingTasks === "function") deleteAllPendingTasks();
-  };
-}
 
 async function rateGate(maxMinute, maxHour, maxDay, isCurrentTabCapture = false) {
   const now = Date.now();
@@ -8462,7 +8457,6 @@ function updateQueueBtnState() {
   const stopBtn = $("stop");
   const resumeBtn = $("resume");
   const skipBtn = $("skipCurrent");
-  const delBtn = $("deleteCurrent");
   const busy = isCollectQueueRunning || activeTaskWorkers > 0 || collectTaskQueue.length > 0;
   if (clearBtn) {
     clearBtn.disabled = busy;
@@ -8471,7 +8465,6 @@ function updateQueueBtnState() {
   if (stopBtn) stopBtn.style.display = (busy && !pauseRequested) ? "" : "none";
   if (resumeBtn) resumeBtn.style.display = (busy && pauseRequested) ? "" : "none";
   if (skipBtn) skipBtn.style.display = busy ? "" : "none";
-  if (delBtn) delBtn.style.display = busy ? "" : "none";
   if (!btn) return;
   if (!goBtnOriginalLabel) goBtnOriginalLabel = btn.innerText || "开始采集";
   if (busy) {
