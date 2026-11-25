@@ -5956,7 +5956,7 @@ function detectDistinctMultiSpecs(data, attrs = {}) {
   return [];
 }
 
-async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMode, markupPct, baseCode, useSubModel = false, outLang }, cache = {}) {
+async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMode, markupPct, baseCode, useSubModel = false, outLang, allowRemoteAi = true }, cache = {}) {
   const attrs = data?.attrs || {};
   const detected = detectDistinctMultiSpecs(data, attrs);
   const capVal = String(attrs?.["容量"] || attrs?.["详细规格"] || "");
@@ -5970,8 +5970,9 @@ async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMod
     || packList.filter(p => p && (p.size || p.weight)).length >= 2;
   if (!hasMultiCapHint) return [];
 
-  if (!cache.aiMultiSpecs) {
-    cache.aiMultiSpecs = (async () => {
+  const cacheKey = allowRemoteAi ? "aiMultiSpecs" : "localMultiSpecs";
+  if (!cache[cacheKey]) {
+    cache[cacheKey] = (async () => {
       const catProfile = _getCategoryCartonProfile(data?.title || "", "", attrs);
       const cleanStr = v => {
         const s = stripBracketsAndBoxes(String(v ?? "").trim());
@@ -6047,6 +6048,7 @@ async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMod
         return baseFallback[idx] || null;
       };
       const distinctFbPrices = new Set(baseFallback.map(b => b.price).filter(Boolean));
+      if (!allowRemoteAi) return baseFallback;
       try {
         const providers = await getAiProviders();
         if (!providers.length) return baseFallback;
@@ -6129,7 +6131,7 @@ async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMod
       return baseFallback;
     })();
   }
-  return cache.aiMultiSpecs;
+  return cache[cacheKey];
 }
 
 // 插件 AI 依据市场价格指数自动给出预估报价（支持 B2B 批发 / B2C 零售）
@@ -6851,8 +6853,10 @@ async function inspectImageVisualNoise(im, label = "") {
     cv.height = 0;
 
     const total = cw * ch;
-    let pureWhite = 0, transparent = 0, strongContrast = 0;
+    let pureWhite = 0, pureBlack = 0, transparent = 0, strongContrast = 0, darkOrMid = 0;
     const buckets = new Map();
+    const nonWhiteBuckets = new Map();
+    let nonWhiteCount = 0;
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
       if (a < 28) {
@@ -6860,25 +6864,46 @@ async function inspectImageVisualNoise(im, label = "") {
         buckets.set(-1, (buckets.get(-1) || 0) + 1);
         continue;
       }
-      if (r >= 242 && g >= 242 && b >= 242) pureWhite++;
+      const isPureW = r >= 245 && g >= 245 && b >= 245;
+      if (isPureW) pureWhite++;
+      if (r <= 24 && g <= 24 && b <= 24) pureBlack++;
       const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
       if (minC < 200 || (maxC - minC) > 38) strongContrast++;
+      if (minC < 180 && maxC < 215) darkOrMid++;
       const bk = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
       buckets.set(bk, (buckets.get(bk) || 0) + 1);
+      if (!isPureW) {
+        nonWhiteCount++;
+        nonWhiteBuckets.set(bk, (nonWhiteBuckets.get(bk) || 0) + 1);
+      }
     }
 
     const whiteOrTransRatio = (pureWhite + transparent) / total;
     const strongRatio = strongContrast / total;
-    // 1) 空白占位图 / 极淡线框图（如 1688 定制模板白底淡蓝圆圈占位图）
+    const darkOrMidRatio = darkOrMid / total;
+    // 1) 空白占位图 / 极淡线框占位图（如 1688 定制模板白底淡蓝圆圈+浅灰轮廓图）
     if (whiteOrTransRatio >= 0.965) return { isJunk: true, reason: "nearly_blank" };
     if (whiteOrTransRatio >= 0.88 && strongRatio < 0.025) return { isJunk: true, reason: "faint_wireframe_placeholder" };
+    if (whiteOrTransRatio >= 0.72 && darkOrMidRatio < 0.012) return { isJunk: true, reason: "pale_outline_placeholder" };
 
-    // 2) 纯平矢量 UI 图标（背景纯白/透明 > 45%，且全图颜色几乎集中在 2~4 个色块内，无摄影光影过渡）
+    // 2) 纯平矢量 UI 图标 / 黑白图形 Logo（如店铺门头、三角 A 标、无摄影明暗过渡的单/双色徽标）
     const counts = [...buckets.values()].sort((a, b) => b - a);
     const top3Ratio = ((counts[0] || 0) + (counts[1] || 0) + (counts[2] || 0)) / total;
     const significantBuckets = counts.filter(c => c >= 3).length;
     if (whiteOrTransRatio >= 0.48 && top3Ratio >= 0.89 && significantBuckets <= 8) {
       return { isJunk: true, reason: "flat_vector_icon" };
+    }
+    if (whiteOrTransRatio >= 0.35 && nonWhiteCount >= 24) {
+      const nwCounts = [...nonWhiteBuckets.values()].filter(c => c >= 2).sort((a, b) => b - a);
+      const top2NwRatio = ((nwCounts[0] || 0) + (nwCounts[1] || 0)) / nonWhiteCount;
+      if (nwCounts.length <= 10 && top2NwRatio >= 0.78) {
+        return { isJunk: true, reason: "flat_two_tone_icon" };
+      }
+    }
+    const pureWOnlyRatio = pureWhite / total;
+    const pureBOnlyRatio = pureBlack / total;
+    if (pureWOnlyRatio >= 0.35 && pureBOnlyRatio >= 0.14 && (pureWOnlyRatio + pureBOnlyRatio) >= 0.72) {
+      return { isJunk: true, reason: "bimodal_black_white_logo" };
     }
   } catch {} finally {
     if (bm && typeof bm.close === "function") {
@@ -6897,8 +6922,8 @@ function classifyImageForFilterMode(url, label, w, h, meta, imgFilterMode = "ai"
   const ratio = h > 0 ? w / h : 1;
   const tallRatio = w > 0 ? h / w : 1;
 
-  // 1) 无论何种模式都剔除明显的 1x1 像素、追踪器、空白占位符、/tfs/ 与 /tps/ 平台 UI 图标
-  if (/(?:spacer|blank\.gif|1x1|pixel|track|beacon|lazyload\.gif|\/(?:tfs|tps)\/|dianguanjia|puhuo|daifa|superboss|no[-_]?image|default[-_]?img|placeholder)/i.test(u)) {
+  // 1) 无论何种模式都剔除明显的 1x1 像素、追踪器、空白占位符、/tfs/ 与 /tps/ 平台 UI 图标及矢量 .svg 图标
+  if (/(?:spacer|blank\.gif|1x1|pixel|track|beacon|lazyload\.gif|wait[-_]?load|default[-_]?pic|loading\.(?:gif|png)|\/(?:tfs|tps)\/|dianguanjia|puhuo|daifa|superboss|no[-_]?image|default[-_]?img|placeholder)/i.test(u) || /\.svg(?:$|\?)/i.test(u)) {
     return { keepSave: false, keepOcr: false, category: "noise" };
   }
 
@@ -7395,8 +7420,8 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
 
         // 0) 若检测到多规格商品（如多个容量/尺寸对应不同型号、价格、箱规），按 规格1 / 规格2 / 规格3 分组列清差异参数，下面再列通用参数
         const useSubModel = Boolean($("optSpecSubModel")?.checked ?? optSpecSubModelEnabled);
-        const multiSpecs = (doParams && allowRemoteAi)
-          ? await aiExtractMultiSpecVariants(data, ocrAll, { minQty, priceMode, markupPct, baseCode: slot.hasUserNo ? code : "", useSubModel, outLang }, cascadeCache)
+        const multiSpecs = doParams
+          ? await aiExtractMultiSpecVariants(data, ocrAll, { minQty, priceMode, markupPct, baseCode: slot.hasUserNo ? code : "", useSubModel, outLang, allowRemoteAi }, cascadeCache)
           : [];
         const hasMultiSpecLayout = multiSpecs.length >= 2;
         const specFieldsCovered = new Set();
@@ -7723,8 +7748,13 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
     }
 
     // 2) 若为商品页或开启参数/AI：双线程 Web Worker OCR -> 三步检索 -> AI并发生成
-    const JUNK_OCR_TEXT_RE = /(?:淘宝|天猫|抖音|拼多多|快手|小红书|京东|微信号|扫码加|加微信|二维码|铺货|代发|店管家|一键下单|采源宝|微店|买家须知|购物须知|发货说明|物流说明|退换货说明|售后说明|诚招代理|关注店铺|收藏店铺|店铺首页|联系客服|掌柜推荐|跨店满减|直播间专享)/i;
+    const JUNK_OCR_TEXT_RE = /(?:淘宝|天猫|抖音|拼多多|快手|小红书|京东|微信号|扫码加|加微信|二维码|铺货|已铺货|立即铺货|铺货下单|代发|一件代发|传淘宝|店管家|超级店长|一键下单|采源宝|微店|买家须知|购物须知|发货说明|物流说明|退换货说明|售后说明|诚招代理|关注店铺|收藏店铺|店铺首页|联系客服|掌柜推荐|跨店满减|直播间专享)/i;
     const SPEC_OCR_GUARD_RE = /(?:箱规|装箱数|外箱尺寸|毛重|净重|产品尺寸|外形尺寸|规格参数|材质|容量)/i;
+    const isJunkOcrText = txt => {
+      const s = String(txt || "");
+      const compact = s.replace(/[\s·•.,，。!！?？:：\-—_|/\\]+/g, "");
+      return (JUNK_OCR_TEXT_RE.test(s) || JUNK_OCR_TEXT_RE.test(compact)) && !SPEC_OCR_GUARD_RE.test(s) && !SPEC_OCR_GUARD_RE.test(compact);
+    };
     if (!(isNonEcom && !doParams && !doAi)) {
       try {
         const ocrTexts = [];
@@ -7753,7 +7783,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
             $("status").innerText = `双线程识别图片文字 (${ocrDoneCount}/${candidates.length})…`;
             const labelTag = `详情图${String(i + 1).padStart(3, "0")}`;
             if (t) {
-              if (JUNK_OCR_TEXT_RE.test(t) && !SPEC_OCR_GUARD_RE.test(t) && cand.assetRef) {
+              if (isJunkOcrText(t) && cand.assetRef) {
                 cand.assetRef.__dropJunkByOcr = true;
                 aiFilteredCount++;
               }
@@ -7774,16 +7804,16 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
             if (!a || !a.image || a.__dropJunkByOcr || ocrCheckedAssets.has(a)) return false;
             const w = a.origW || a.image.w || 0, h = a.origH || a.image.h || 0;
             if (!w || !h) return false;
-            const isSquareBadge = Math.abs(w - h) <= Math.max(w, h) * 0.35 && Math.max(w, h) <= 850;
-            const isWideBanner = h > 0 && (w / h) >= 1.8 && h <= 450;
+            const isSquareBadge = Math.abs(w - h) <= Math.max(w, h) * 0.35 && Math.max(w, h) <= 1200;
+            const isWideBanner = h > 0 && (w / h) >= 1.8 && h <= 520;
             return isSquareBadge || isWideBanner;
-          }).slice(0, 14);
+          }).slice(0, 18);
           if (suspectJunkAssets.length) {
             await mapPool(suspectJunkAssets, OCR_POOL_SIZE, async (asset) => {
               await checkTaskControl(taskCtx);
               if (stopRequested) return;
               const t = await ocrImg(asset.image);
-              if (t && JUNK_OCR_TEXT_RE.test(t) && !SPEC_OCR_GUARD_RE.test(t)) {
+              if (t && isJunkOcrText(t)) {
                 asset.__dropJunkByOcr = true;
                 aiFilteredCount++;
               }
