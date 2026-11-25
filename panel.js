@@ -4247,22 +4247,28 @@ function extractStoryProductProfile(ctx) {
     return "";
   };
 
-  // 提取口语化短商品名（去掉“跨境专供款/厂家直销/批发/2025新款”等电商噪音词，保留核心卖点名）
+  // 提取口语化完整短商品名（绝不按字数硬截断导致半个词断句）
   let cleanName = rawTitle
-    .replace(/(?:跨境专供款?|跨境热销|厂家直销|源头工厂|现货批发|一件代发|亚马逊爆款|外贸专供|新款|热卖|包邮|定制logo|可印logo)/gi, " ")
+    .replace(/(?:跨境专供款?|跨境热销|厂家直销|源头工厂|现货批发|一件代发|亚马逊爆款|外贸专供|202\d新款|新款|热卖|包邮|定制logo|可印logo|批发现货|代发)/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
   if (isEnLike) {
     const words = cleanName.split(/\s+/);
     if (words.length > 6) cleanName = words.slice(0, 6).join(" ");
   } else if (cleanName.length > 16) {
-    const tokens = cleanName.split(/\s+/);
-    if (tokens.length > 1) {
-      cleanName = tokens.slice(0, 3).join(" ").slice(0, 16);
+    const catRe = /([\u4e00-\u9fff]{0,8}(?:干湿分离)?[\u4e00-\u9fff]{0,6}(?:手提包|旅行包|健身包|运动包|双肩包|单肩包|斜挎包|胸包|腰包|书包|收纳包|化妆包|妈咪包|电脑包|托特包|帆布包|背包|行李箱|拉杆箱|保温杯|随行杯|马克杯|水杯|咖啡杯|水壶|茶杯|玻璃杯|塑料杯|牙刷|牙缝刷|护理刷|电动牙刷|收纳柜|收纳箱|折叠箱|置物架|餐盒|饭盒|保鲜盒|卫衣|外套|童装|长裤|T恤|连衣裙|运动鞋|台灯|夜灯|露营灯|灯具|吹风机|风扇|加湿器|剃须刀|耳机|充电宝|数据线|支架))/;
+    const catHit = cleanName.match(catRe);
+    if (catHit && catHit[1] && catHit[1].length >= 2) {
+      cleanName = catHit[1].trim();
     } else {
-      // 中文连续长标题：提取核心品类短名（如“小头正畸牙缝刷”、“双层不锈钢保温杯”）
-      const catHit = cleanName.match(/((?:单束|软毛|小头|尖头|正畸|牙套|智齿|窝沟|牙缝)?(?:牙刷|牙缝刷|护理刷|电动牙刷)|(?:双层|真空|不锈钢|陶瓷|玻璃|高硼硅|折叠|抽屉式)?(?:保温杯|随行杯|马克杯|水杯|咖啡杯|收纳柜|收纳箱|折叠箱|置物架|卫衣|外套|童装|长裤|背包|灯具))/);
-      cleanName = catHit ? catHit[1] : cleanName.slice(0, 14);
+      const tokens = cleanName.split(/[\s,，/／|+]+/).filter(Boolean);
+      let acc = "";
+      for (const tk of tokens) {
+        const next = acc ? `${acc}${tk}` : tk;
+        if (next.length > 16 && acc) break;
+        acc = next;
+      }
+      cleanName = acc || cleanName;
     }
   }
 
