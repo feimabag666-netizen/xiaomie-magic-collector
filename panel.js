@@ -3599,25 +3599,22 @@ async function loadActiveFieldProfile(mode = activeBizMode) {
     const filtered = prof.common
       .filter(f => f && f.n && f.n !== "货号" && f.n !== "包装规格" && f.n !== "产品类别" && f.n !== "产品参数" && f.n !== "专利类型" && f.n !== "版权" && f.n !== "电压" && f.n !== "功率")
       .map(f => ({ n: f.n === "规格" ? "详细规格" : f.n, c: Boolean(f.c), v: String(f.v || "") }));
-    // 保证核心常用字段排在最前面
-    const coreOrder = buildDefaultCommonFields(activeBizMode).filter(f => f.c).map(f => f.n);
-    const coreSet = new Set(coreOrder);
-    const byName = new Map(filtered.map(f => [f.n, f]));
+    // 保证所有系统内置常用与可选参数完整存在且按标准顺序排列；若昨日误点 ✕ 删掉了任意默认参数，自动补回（同时保留其余参数原有的勾选状态与手填默认值）
+    const defaultsAll = buildDefaultCommonFields(activeBizMode);
+    const defaultByName = new Map(defaultsAll.map(d => [d.n, d]));
+    const savedByName = new Map(filtered.map(f => [f.n, f]));
     const ordered = [];
-    for (const cn of coreOrder) {
-      if (byName.has(cn)) ordered.push(byName.get(cn));
-    }
-    for (const f of filtered) {
-      if (!coreSet.has(f.n)) ordered.push(f);
-    }
-    COMMON_FIELDS = ordered;
-    const existingSet = new Set(COMMON_FIELDS.map(f => f.n));
-    for (const sec of DEF_SECONDARY) {
-      if (!existingSet.has(sec.n)) {
-        COMMON_FIELDS.push({ n: sec.n, c: false, v: "" });
-        existingSet.add(sec.n);
+    for (const def of defaultsAll) {
+      if (savedByName.has(def.n)) {
+        ordered.push(savedByName.get(def.n));
+      } else {
+        ordered.push({ ...def });
       }
     }
+    for (const f of filtered) {
+      if (!defaultByName.has(f.n)) ordered.push(f);
+    }
+    COMMON_FIELDS = ordered;
   } else {
     COMMON_FIELDS = buildDefaultCommonFields(activeBizMode);
   }
