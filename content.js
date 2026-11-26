@@ -719,11 +719,16 @@
       const searchScope = title + " " + pageText.slice(0, 6000) + " " + descContainerText;
       const matMatch = searchScope.match(/(316L?不锈钢|304不锈钢|201不锈钢|食品级(?:硅胶|PP|PC|Tritan)|液态硅胶|高硼硅玻璃|铝合金|钛合金|纯钛|ABS|PP塑料|PC塑料|牛津布|帆布|真皮|PU皮|纯棉|涤纶|尼龙|陶瓷|实木|竹木|黄铜|碳纤维)/i);
       if (matMatch && !attrs["材质"]) putAttr("材质", matMatch[1]);
-      const capMatch = title.match(/\b(\d+(?:\.\d+)?\s*(?:ml|l|oz|毫升|升|加仑))\b/i);
+      const capMatch = title.match(/\b(\d+(?:\.\d+)?\s*(?:ml|l|oz|毫升|升|加仑))(?=$|[^a-zA-Z0-9])/i);
       if (capMatch && !attrs["容量"]) putAttr("容量", capMatch[1]);
-      const dimMatch = searchScope.match(/\b(\d+(?:\.\d+)?\s*[×xX*]\s*\d+(?:\.\d+)?(?:\s*[×xX*]\s*\d+(?:\.\d+)?)?\s*(?:cm|mm|厘米|毫米))\b/i);
+      // 先剔除箱规与整箱毛净重文本，绝不把外箱尺寸或整箱重量误写入「产品尺寸」「单件重量」而阻断 OCR 找图
+      const noCartonScope = searchScope
+        .replace(/(?:外箱|纸箱|箱规|整箱|大箱|包装箱)\s*[:：]?[^\n。；;]{0,80}/g, " ")
+        .replace(/数量\s*[:：]?\s*\d+\s*[件个只套支双条袋盒]?\/箱[^\n。；;]{0,80}/g, " ")
+        .replace(/(?:毛重|净重|毛净重|G\.?W\.?|N\.?W\.?)\s*[:：]?\s*\d+(?:\.\d+)?\s*(?:kg|g|千克|公斤)/gi, " ");
+      const dimMatch = noCartonScope.match(/\b(\d+(?:\.\d+)?\s*[×xX*]\s*\d+(?:\.\d+)?(?:\s*[×xX*]\s*\d+(?:\.\d+)?)?\s*(?:cm|mm|厘米|毫米))(?=$|[^a-zA-Z0-9])/i);
       if (dimMatch && !attrs["产品尺寸"]) putAttr("产品尺寸", dimMatch[1]);
-      const wtMatch = searchScope.match(/(?:重量|净重|克重|单重)\s*[:：]?\s*(\d+(?:\.\d+)?\s*(?:g|kg|克|千克|公斤))\b/i);
+      const wtMatch = noCartonScope.match(/(?:单件重量|单品重量|产品重量|单重|克重)\s*[:：]?\s*(\d+(?:\.\d+)?\s*(?:g|kg|克|千克|公斤))(?=$|[^a-zA-Z0-9])/i);
       if (wtMatch && !attrs["单件重量"]) putAttr("单件重量", wtMatch[1]);
       const packMatch = searchScope.match(/(?:包装方式|内包装|单品包装|包装)\s*[:：]\s*([^\n\r;；,，。]{2,24})/i)
         || searchScope.match(/((?:单个|独立|透明|加厚|定制)?(?:OPP袋|PE袋|CPE袋|自封袋|磨砂袋|气泡袋|防尘袋|无纺布袋|绒布袋|编织袋|彩盒|白盒|牛皮纸盒|瓦楞盒|天地盖盒|礼盒|纸盒|吸塑卡|吸塑盒|吊卡|纸箱|袋装|盒装|散装)(?:独立)?(?:包装|装)?)/i);

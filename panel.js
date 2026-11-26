@@ -2096,16 +2096,16 @@ async function extractUniversalPageInTab() {
     put("产品名称", title);
     const matMatch = (title + " " + pageText.slice(0, 3000)).match(/(316L?不锈钢|304不锈钢|201不锈钢|食品级(?:硅胶|PP|PC|Tritan)|液态硅胶|高硼硅玻璃|铝合金|钛合金|纯钛|ABS|PP塑料|PC塑料|牛津布|帆布|真皮|PU皮|纯棉|涤纶|尼龙|陶瓷|实木|竹木|黄铜|碳纤维)/i);
     if (matMatch && !attrs["材质"]) put("材质", matMatch[1]);
-    const capMatch = title.match(/\b(\d+(?:\.\d+)?\s*(?:ml|l|oz|毫升|升|加仑))\b/i);
+    const capMatch = title.match(/\b(\d+(?:\.\d+)?\s*(?:ml|l|oz|毫升|升|加仑))(?=$|[^a-zA-Z0-9])/i);
     if (capMatch && !attrs["容量"]) put("容量", capMatch[1]);
     // 剔除箱规区块文本（外箱尺寸/件每箱/整箱毛净重），绝不把箱规重量和外箱尺寸误当成单件重量和产品尺寸
     const noCartonText = pageText.slice(0, 4000)
       .replace(/(?:外箱|纸箱|箱规|整箱)\s*[:：]?[^\n]{0,80}/g, " ")
       .replace(/数量\s*[:：]?\s*\d+\s*[件个只套支双条袋盒]?\/箱[^\n]{0,80}/g, " ")
       .replace(/(?:毛重|净重)\s*[:：]?\s*\d+(?:\.\d+)?\s*(?:kg|g|千克|公斤)/gi, " ");
-    const dimMatch = (title + " " + noCartonText).match(/\b(\d+(?:\.\d+)?\s*[×xX*]\s*\d+(?:\.\d+)?(?:\s*[×xX*]\s*\d+(?:\.\d+)?)?\s*(?:cm|mm|厘米|毫米))\b/i);
+    const dimMatch = (title + " " + noCartonText).match(/\b(\d+(?:\.\d+)?\s*[×xX*]\s*\d+(?:\.\d+)?(?:\s*[×xX*]\s*\d+(?:\.\d+)?)?\s*(?:cm|mm|厘米|毫米))(?=$|[^a-zA-Z0-9])/i);
     if (dimMatch && !attrs["产品尺寸"]) put("产品尺寸", dimMatch[1]);
-    const wtMatch = noCartonText.match(/(?:单件重量|单品重量|产品重量|单重|克重)\s*[:：]?\s*(\d+(?:\.\d+)?\s*(?:g|kg|克|千克|公斤))\b/i);
+    const wtMatch = noCartonText.match(/(?:单件重量|单品重量|产品重量|单重|克重)\s*[:：]?\s*(\d+(?:\.\d+)?\s*(?:g|kg|克|千克|公斤))(?=$|[^a-zA-Z0-9])/i);
     if (wtMatch && !attrs["单件重量"]) put("单件重量", wtMatch[1]);
   }
   return {
@@ -8472,9 +8472,16 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         const ocrTexts = [];
         const ocrItems = [];
         const ocrCheckedAssets = new Set();
-        const stage1HasAllChecked = !(finalBundle.missingRequired && finalBundle.missingRequired.length);
+        const stage1DetailedMissing = isDetailedSpecModeActive() && (
+          !matchField("产品尺寸", data.attrs || {}, data.pageText || "") ||
+          !matchField("单件重量", data.attrs || {}, data.pageText || "")
+        );
+        const stage1HasAllChecked = !(finalBundle.missingRequired && finalBundle.missingRequired.length) && !stage1DetailedMissing;
         if (needOcr && !stage1HasAllChecked) {
-          const stillMissing = Array.isArray(finalBundle.missingRequired) ? finalBundle.missingRequired : [];
+          const baseMissing = Array.isArray(finalBundle.missingRequired) ? finalBundle.missingRequired : [];
+          const stillMissing = isDetailedSpecModeActive()
+            ? [...new Set([...baseMissing, "产品尺寸", "单件重量"])]
+            : baseMissing;
           const hasAllMissingNow = () => {
             if (!stillMissing.length) return true;
             const mergedSoFar = (data.pageText || "") + "\n" + ocrItems.map(x => x.text).join("\n");
@@ -8638,14 +8645,22 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
     const usedVideoNames = new Set();
     const sharedFlatNames = opts.subdir ? null : new Set();
     const namingCfg = opts.mediaNaming || readMediaNamingConfig();
+    const downloadAssetSafely = async (asset, relPath) => {
+      const blobObjUrl = asset?.image?.blob ? URL.createObjectURL(asset.image.blob) : "";
+      const source = blobObjUrl || asset.url;
+      try {
+        return await dl(source, relPath, saveDir, asset?.image?.blob);
+      } finally {
+        if (blobObjUrl) URL.revokeObjectURL(blobObjUrl);
+      }
+    };
     if (opts.detail) {
       const cleanDetailAssets = detailAssets.filter(a => !a.__dropJunkByOcr);
       for (let i = 0; i < cleanDetailAssets.length; i++) {
         await checkTaskControl(taskCtx);
         const asset = cleanDetailAssets[i];
         const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
-        const source = asset.image ? URL.createObjectURL(asset.image.blob) : asset.url;
-        if (await dl(source, mediaPath("详情图", mediaFilename(mediaBase, "detail", i, cleanDetailAssets.length, ext, asset.url, namingCfg, sharedFlatNames || usedDetailNames)), saveDir, asset.image?.blob)) nd++;
+        if (await downloadAssetSafely(asset, mediaPath("详情图", mediaFilename(mediaBase, "detail", i, cleanDetailAssets.length, ext, asset.url, namingCfg, sharedFlatNames || usedDetailNames)))) nd++;
       }
     }
     if (opts.main) {
@@ -8653,8 +8668,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       for (const [i, asset] of cleanMainAssets.entries()) {
         await checkTaskControl(taskCtx);
         const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
-        const source = asset.image ? URL.createObjectURL(asset.image.blob) : asset.url;
-        if (await dl(source, mediaPath("主图", mediaFilename(mediaBase, "main", i, cleanMainAssets.length, ext, asset.url, namingCfg, sharedFlatNames || usedMainNames)), saveDir, asset.image?.blob)) nm++;
+        if (await downloadAssetSafely(asset, mediaPath("主图", mediaFilename(mediaBase, "main", i, cleanMainAssets.length, ext, asset.url, namingCfg, sharedFlatNames || usedMainNames)))) nm++;
       }
     }
     if (doSku) {
@@ -8662,8 +8676,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       for (const [i, asset] of cleanSkuAssets.entries()) {
         await checkTaskControl(taskCtx);
         const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
-        const source = asset.image ? URL.createObjectURL(asset.image.blob) : asset.url;
-        if (await dl(source, mediaPath("SKU图", mediaFilename(mediaBase, "sku", i, cleanSkuAssets.length, ext, asset.url, namingCfg, sharedFlatNames || usedSkuNames)), saveDir, asset.image?.blob)) ns++;
+        if (await downloadAssetSafely(asset, mediaPath("SKU图", mediaFilename(mediaBase, "sku", i, cleanSkuAssets.length, ext, asset.url, namingCfg, sharedFlatNames || usedSkuNames)))) ns++;
       }
     }
     if (opts.video) {
@@ -8677,7 +8690,12 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
           const commaIdx = vUrl.indexOf(",");
           const rawSvg = commaIdx >= 0 ? decodeURIComponent(vUrl.slice(commaIdx + 1)) : "";
           const svgBlob = new Blob([rawSvg], { type: "image/svg+xml;charset=utf-8" });
-          if (await dl(URL.createObjectURL(svgBlob), targetPath, saveDir, svgBlob)) nv++;
+          const svgObjUrl = URL.createObjectURL(svgBlob);
+          try {
+            if (await dl(svgObjUrl, targetPath, saveDir, svgBlob)) nv++;
+          } finally {
+            URL.revokeObjectURL(svgObjUrl);
+          }
         } else {
           if (await dl(vUrl, targetPath, saveDir)) nv++;
         }
