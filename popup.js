@@ -870,12 +870,21 @@ async function extractCurrentPage() {
     put("产品名称", title);
     const matMatch = (title + " " + pageText.slice(0, 3000)).match(/(316L?不锈钢|304不锈钢|201不锈钢|食品级(?:硅胶|PP|PC|Tritan)|液态硅胶|高硼硅玻璃|铝合金|钛合金|纯钛|ABS|PP塑料|PC塑料|牛津布|帆布|真皮|PU皮|纯棉|涤纶|尼龙|陶瓷|实木|竹木|黄铜|碳纤维)/i);
     if (matMatch && !attrs["材质"]) put("材质", matMatch[1]);
-    const capMatch = title.match(/\b(\d+(?:\.\d+)?\s*(?:ml|l|oz|毫升|升|加仑))\b/i);
+    const capMatch = title.match(/\b(\d+(?:\.\d+)?\s*(?:ml|l|oz|毫升|升|加仑))(?=$|[^a-zA-Z0-9])/i);
     if (capMatch && !attrs["容量"]) put("容量", capMatch[1]);
-    const dimMatch = (title + " " + pageText.slice(0, 4000)).match(/\b(\d+(?:\.\d+)?\s*[×xX*]\s*\d+(?:\.\d+)?(?:\s*[×xX*]\s*\d+(?:\.\d+)?)?\s*(?:cm|mm|厘米|毫米))\b/i);
+    const noCartonText = pageText.slice(0, 4000)
+      .replace(/(?:外箱|纸箱|箱规|整箱|大箱|包装箱)\s*[:：]?[^\n。；;]{0,80}/g, " ")
+      .replace(/数量\s*[:：]?\s*\d+\s*[件个只套支双条袋盒]?\/箱[^\n。；;]{0,80}/g, " ")
+      .replace(/(?:毛重|净重|毛净重|G\.?W\.?|N\.?W\.?)\s*[:：]?\s*\d+(?:\.\d+)?\s*(?:kg|g|千克|公斤)/gi, " ");
+    const dimMatch = (title + " " + noCartonText).match(/\b(\d+(?:\.\d+)?\s*[×xX*]\s*\d+(?:\.\d+)?(?:\s*[×xX*]\s*\d+(?:\.\d+)?)?\s*(?:cm|mm|厘米|毫米))(?=$|[^a-zA-Z0-9])/i);
     if (dimMatch && !attrs["产品尺寸"]) put("产品尺寸", dimMatch[1]);
-    const wtMatch = pageText.slice(0, 4000).match(/(?:重量|净重|克重|单重)\s*[:：]?\s*(\d+(?:\.\d+)?\s*(?:g|kg|克|千克|公斤))\b/i);
+    const wtMatch = noCartonText.match(/(?:单件重量|单品重量|产品重量|单重|克重)\s*[:：]?\s*(\d+(?:\.\d+)?\s*(?:g|kg|克|千克|公斤))(?=$|[^a-zA-Z0-9])/i);
     if (wtMatch && !attrs["单件重量"]) put("单件重量", wtMatch[1]);
+    if (!attrs["单位"]) {
+      const um = pageText.slice(0, 2000).match(/(?:\d+\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)\s*(?:起批|起订|及以上)|(?:元|¥|￥)\s*[\d.]+\s*[/／]\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)(?=$|[^a-zA-Z\u4e00-\u9fa5]))/);
+      const pickedU = um ? (um[1] || um[2] || "").trim() : "";
+      if (pickedU) put("单位", pickedU);
+    }
   }
   return {
     url: location.href,
@@ -962,6 +971,7 @@ async function triggerCurrentTabCapture(autoStart = false) {
           videos: [...new Set([...(specialized.videos || []), ...(capture?.videos || [])])],
           attrs: { ...(capture?.attrs || {}), ...(specialized.attrs || {}) },
           imageDims: capture?.imageDims || {},
+          packSpecs: (specialized.packSpecs && specialized.packSpecs.length) ? specialized.packSpecs : (capture?.packSpecs || []),
           detailUrl: specialized.detailUrl || capture?.detailUrl || "",
         };
       }

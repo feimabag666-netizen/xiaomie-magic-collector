@@ -470,6 +470,8 @@ const _GLOSSARY_ZH2EN = {
   "交期": "Lead Time", "起订量": "MOQ", "数量": "Quantity", "电压": "Voltage", "功率": "Power", "保修": "Warranty",
   "适用场景": "Applicable Scenarios", "适用人群": "Applicable People", "适用节日": "Applicable Holidays",
   "加工定制": "Customization Service", "是": "Yes", "否": "No", "有": "Yes", "无": "None", "未查到": "Not Found",
+  "单位": "Unit", "详细规格": "Detailed Specifications",
+  "个": "pcs", "件": "pcs", "套": "set", "支": "pcs", "只": "pcs", "盒": "box", "双": "pair", "对": "pair", "条": "pcs", "袋": "bag", "瓶": "bottle", "杯": "cup", "把": "pcs", "张": "sheet", "片": "pcs",
   "不锈钢": "Stainless Steel", "塑料": "Plastic", "玻璃": "Glass", "陶瓷": "Ceramic", "硅胶": "Silicone",
   "棉": "Cotton", "涤纶": "Polyester", "皮革": "Leather", "铝合金": "Aluminum Alloy", "木质": "Wood", "纸质": "Paper",
 };
@@ -647,6 +649,15 @@ function translateCommonValue(val, lang) {
       [/现货\s*(\d+)[，,\s]*定制颜色\s*(\d+)/g, "In-stock: $1 pcs, Custom color: $2 pcs"],
       [/(\d+)\s*(?:个|件|只|套|支)\s*[/／每]?\s*箱/g, "$1 pcs/carton"],
       [/(\d+)\s*天/g, "$1 days"],
+      [/毛重\s*[:：]?/g, "G.W. "],
+      [/净重\s*[:：]?/g, "N.W. "],
+      [/^(?:个|件|只|支|条|把|片)$/g, "pcs"],
+      [/^套$/g, "set"],
+      [/^(?:双|对)$/g, "pair"],
+      [/^盒$/g, "box"],
+      [/^袋$/g, "bag"],
+      [/^瓶$/g, "bottle"],
+      [/^杯$/g, "cup"],
       [/304不锈钢/g, "304 Stainless Steel"],
       [/316不锈钢/g, "316 Stainless Steel"],
     ],
@@ -1020,7 +1031,9 @@ async function dl(url, filename, saveDir = "采集", blobObj = null) {
       const writer = await file.createWritable();
       try { await writer.write(blob); await writer.close(); }
       catch (error) { await writer.abort().catch(() => {}); throw error; }
-      scheduleRevoke(url);
+      if (typeof url === "string" && url.startsWith("blob:")) {
+        try { URL.revokeObjectURL(url); } catch {}
+      }
       return true;
     } catch {
       // 跨站 CDN 资源即使不能写入用户选定目录，也尽量交给浏览器下载器保存。
@@ -8657,13 +8670,9 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
     const sharedFlatNames = opts.subdir ? null : new Set();
     const namingCfg = opts.mediaNaming || readMediaNamingConfig();
     const downloadAssetSafely = async (asset, relPath) => {
-      const blobObjUrl = asset?.image?.blob ? URL.createObjectURL(asset.image.blob) : "";
-      const source = blobObjUrl || asset.url;
-      try {
-        return await dl(source, relPath, saveDir, asset?.image?.blob);
-      } finally {
-        if (blobObjUrl) URL.revokeObjectURL(blobObjUrl);
-      }
+      const source = asset?.image?.blob ? URL.createObjectURL(asset.image.blob) : asset.url;
+      // 注意：blob URL 的释放统一由 dl() 内部处理（自选目录写入完成后立刻释放，浏览器默认下载等待 onChanged 完成再释放），防止提前 revoke 导致默认下载失败
+      return await dl(source, relPath, saveDir, asset?.image?.blob);
     };
     if (opts.detail) {
       const cleanDetailAssets = detailAssets.filter(a => !a.__dropJunkByOcr);
@@ -8702,11 +8711,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
           const rawSvg = commaIdx >= 0 ? decodeURIComponent(vUrl.slice(commaIdx + 1)) : "";
           const svgBlob = new Blob([rawSvg], { type: "image/svg+xml;charset=utf-8" });
           const svgObjUrl = URL.createObjectURL(svgBlob);
-          try {
-            if (await dl(svgObjUrl, targetPath, saveDir, svgBlob)) nv++;
-          } finally {
-            URL.revokeObjectURL(svgObjUrl);
-          }
+          if (await dl(svgObjUrl, targetPath, saveDir, svgBlob)) nv++;
         } else {
           if (await dl(vUrl, targetPath, saveDir)) nv++;
         }
