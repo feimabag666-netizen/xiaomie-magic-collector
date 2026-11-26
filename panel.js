@@ -4317,8 +4317,8 @@ function isValidFieldValue(name, val) {
     return /\d/.test(v) || /^(?:XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL|均码)$/i.test(v);
   }
   if (name === "容量") {
-    if (/(?:人|好评|评价|付款|成交|销量|可售|库存|元|¥|￥|\$|折|天|小时)/.test(v)) return false;
-    return /(?:\d+(?:\.\d+)?\s*(?:ml|mL|l|L|cl|oz|gal|cc|升|毫升|加仑|立方|mah|ah|wh|gb|tb|寸|英寸|本|瓶|杯|个|只|pcs)|(?:大容量|小容量|中容量|\d+\s*L(?:以下|以上)?))/i.test(v);
+    if (/(?:\d+\+?\s*(?:人好评|人评价|人付款|人想买|人收藏|人关注|人看过|条评价|笔成交|件可售|件起批|小时发货|天无理由|天退货)|好评率|回头率|复购率|揽收率|[¥￥$€£]|折\b|包邮|运费|成交|销量|可售|库存)/.test(v)) return false;
+    return /(?:\d+(?:\.\d+)?\s*(?:ml|mL|l|L|cl|oz|gal|cc|升|毫升|加仑|立方|mah|ah|wh|gb|tb|寸|英寸|本|瓶|杯|个|只|件|pcs)|(?:大容量|小容量|中容量|\d+\s*L(?:以下|以上)?|A[345](?:书本|杂志|文件|文件夹|纸)?|(?:可放|可装|容纳)[^，。;；\n]{1,20}(?:电脑|笔记本|平板|ipad|书|A4|衣物)))/i.test(v);
   }
   if (name === "单件重量") {
     if (/(?:人|好评|评价|付款|成交|销量|¥|￥|\$)/.test(v)) return false;
@@ -5501,7 +5501,7 @@ function extractProductSearchKeywords(title, brand, attrs = {}, pageText = "") {
     /((?:单束|软毛|小头|尖头|正畸|牙套|智齿|窝沟|牙缝)?(?:牙刷|牙缝刷|电动牙刷|冲牙器|牙线棒|牙线|牙膏|梳子|化妆刷|美妆蛋|修眉刀|指甲刀))/,
     /((?:陶瓷|玻璃|塑料|不锈钢|双层|保温|骨瓷|搪瓷|硅胶)?(?:咖啡杯|马克杯|随行杯|随手杯|保温杯|陶瓷杯|玻璃杯|塑料水杯|塑料杯|水杯|茶杯|杯子|茶具套装|茶壶|保温壶|冷水壶))/,
     /((?:陶瓷|玻璃|不锈钢|塑料|木质|竹制|折叠|抽屉式)?(?:饭盒|便当盒|收纳柜|收纳箱|收纳盒|折叠箱|储物柜|保鲜盒|置物架|鞋架|衣架|垃圾桶|餐盘|碗碟|果盘|托盘|调料罐|储物罐|花瓶))/,
-    /((?:儿童|男童|女童|纯棉|加绒|宽松)?(?:卫衣|T恤|外套|夹克|毛衣|针织衫|衬衫|连衣裙|长裤|短裤|休闲裤|运动鞋|拖鞋|双肩包|手提包))/,
+    /((?:儿童|男童|女童|商务|旅行|休闲|真皮|帆布|牛津布|纯棉|加绒|宽松)?(?:卫衣|T恤|外套|夹克|毛衣|针织衫|衬衫|连衣裙|长裤|短裤|休闲裤|运动鞋|拖鞋|双肩包|单肩包|斜挎包|托特包|手提包|书包|背包|公文包|旅行包|电脑包|商务包|行李箱|拉杆箱|手袋))/,
     /\b((?:thermos|insulated|ceramic|glass|plastic|travel|coffee|water|orthodontic|interdental)\s+(?:cup|mug|bottle|tumbler|flask|toothbrush|brush))\b/i,
   ];
   let coreNoun = "";
@@ -5910,6 +5910,79 @@ async function aiExtractStageFields(stageKey, targetFields, data, sourceUrl, con
         } catch {}
       }
       return {};
+    })();
+  }
+  return cache[cacheKey];
+}
+
+// 从搜索摘要/同款网页正文里做字段语义兜底提取（兼容无“字段名：”冒号的自然语言表述，如“约18L”“20-35L”“可装15.6寸电脑”）
+function _extractFieldFromSearchSnippets(field, text) {
+  const s = String(text || "");
+  if (!s) return "";
+  if (field === "容量") {
+    const mLabeled = s.match(/(?:^|[\s，。;；(（【])(?:容量|容积|可容纳|capacity)\s*(?:[:：]|约为|是)\s*([^\n，。,;；]{2,28})/i);
+    if (mLabeled && isValidFieldValue("容量", mLabeled[1])) return mLabeled[1].trim();
+    const mVol = s.match(/(?:^|[^a-zA-Z0-9.])(\d+(?:\.\d+)?(?:\s*[-~]\s*\d+(?:\.\d+)?)?\s*(?:ml|mL|升|毫升|L)(?:以下|以上)?)(?![a-zA-Z0-9])/)
+      || s.match(/(可(?:放|装|容纳)[^，。;；\n]{2,18}(?:寸?(?:笔记本|电脑|平板|ipad)|A4(?:书本|杂志|文件)?))/i)
+      || s.match(/(\d{1,2}(?:\.\d)?\s*寸(?:笔记本|电脑|平板))/i);
+    if (mVol && isValidFieldValue("容量", mVol[1])) return mVol[1].trim();
+  }
+  if (field === "功能") {
+    const mFunc = s.match(/(?:^|[\s，。;；(（【])(?:功能|特点|特性|function|feature)\s*[:：]\s*([^\n，。;；]{2,40})/i);
+    if (mFunc && isValidFieldValue("功能", mFunc[1])) return mFunc[1].trim();
+  }
+  return "";
+}
+
+// 针对仍缺失的单个核心字段做精准 AI 检索提取（避免被多字段批量缓存的空结果吞掉）
+async function aiExtractSingleFieldFromEvidence(stageKey, field, data, sourceUrl, evidenceText, ocrText, allowWebSearch, cache) {
+  const cacheKey = `aiField_${stageKey}_${field}`;
+  if (!cache[cacheKey]) {
+    cache[cacheKey] = (async () => {
+      const providers = await getAiProviders();
+      if (!providers.length) return "";
+      const title = String(data?.title || "").slice(0, 120);
+      const attrs = Object.entries(data?.attrs || {}).slice(0, 40).map(([k, v]) => `${k}: ${v}`).join("\n").slice(0, 1500);
+      const ctxSlice = extractRelevantSpecWindow(evidenceText, 4500);
+      const ocrSlice = extractRelevantSpecWindow(ocrText, 2500);
+      const hintLine = field === "容量"
+        ? "提示：箱包类容量的常见写法为升数（如 18L、20-35L、20L以下）或可容纳规格（如 可装15.6寸电脑、A4书本）；杯壶容器类为 ml/升。"
+        : "";
+      const messages = [
+        {
+          role: "system",
+          content: [
+            `你是精准的电商商品参数提取助手。现在专门为你查找缺失字段「${field}」。`,
+            allowWebSearch ? `当前处于全网搜索阶段：如果下方资料中仍未写出「${field}」，请务必调用 SEARCH 工具用「${field}」同款关键词上网检索真实数值后再填写！` : "",
+            hintLine,
+            `铁律：只输出纯 JSON {"${field}": "真实值"}，有依据就填，完全查无依据返回 ""；严禁把评论/销量/价格混入。`,
+          ].filter(Boolean).join("\n"),
+        },
+        {
+          role: "user",
+          content: `商品标题：${title}\n来源URL：${sourceUrl}\n已有属性：\n${attrs || "无"}\n\n检索与同款网页资料：\n${ctxSlice || "无"}\n\n图片OCR文字：\n${ocrSlice || "无"}\n\n请只提取字段「${field}」的真实值：`,
+        },
+      ];
+      for (const p of providers) {
+        if (p.isAdminTrial && Date.now() < llmCooldownUntil) continue;
+        try {
+          const r = await aiAgentRun(p, messages, {
+            maxSteps: allowWebSearch ? 2 : 1,
+            webSearch: allowWebSearch,
+            maxTokens: 300,
+          });
+          const m = String(r?.text || "").match(/\{[\s\S]*\}/);
+          let rawVal = "";
+          if (m) {
+            try { rawVal = String(JSON.parse(m[0])[field] ?? "").trim(); } catch {}
+          }
+          if (!rawVal || /^(?:未查到|未提供|未知|不详|暂无|待定|无|n\/a|none|null)$/i.test(rawVal)) continue;
+          if (field === "价格") rawVal = normalizeRawPriceText(rawVal);
+          if (YES_NO_FIELDS.includes(field)) rawVal = normalizeYesNoFieldValue(rawVal);
+          if (rawVal && isValidFieldValue(field, rawVal)) return rawVal;
+        } catch {}
+      }
+      return "";
     })();
   }
   return cache[cacheKey];
@@ -7114,7 +7187,7 @@ async function getStage3SamePlatformPages(data, sourceUrl, cacheObj) {
 
   // 通过 site:本平台域名 搜索同平台其他页面（Bing + 360搜索双引擎）
   if (host) {
-    const q = `site:${host} ${kw.cleanBrand} ${kw.shortTitle || title.slice(0, 14)} ${kw.cleanModel} 规格 尺寸 材质 包装 箱规 装箱数`.replace(/\s+/g, " ").trim();
+    const q = `site:${host} ${kw.cleanBrand} ${kw.shortTitle || title.slice(0, 14)} ${kw.cleanModel} 规格 尺寸 容量 功能 材质 包装 箱规 装箱数`.replace(/\s+/g, " ").trim();
     try {
       const r = await fetch("https://cn.bing.com/search?q=" + encodeURIComponent(q), { signal: AbortSignal.timeout(fetchTimeoutMs) });
       if (r.ok) {
@@ -7241,11 +7314,11 @@ async function getStage4InternetPages(data, sourceUrl, cacheObj) {
 
   const queries = isBatchMode
     ? [
-        `${kw.cleanBrand} ${kw.shortTitle || title.slice(0, 16)} 规格 参数 尺寸 材质 包装 箱规 装箱数`.replace(/\s+/g, " ").trim(),
+        `${kw.cleanBrand} ${kw.shortTitle || title.slice(0, 16)} 规格 参数 尺寸 容量 功能 材质 包装 箱规 装箱数`.replace(/\s+/g, " ").trim(),
         `${kw.coreNoun} 装箱数 外箱尺寸 毛重 净重 个/箱`.replace(/\s+/g, " ").trim(),
       ]
     : [
-        `${kw.cleanBrand} ${kw.shortTitle || title.slice(0, 16)} ${kw.cleanModel} 规格 参数 尺寸 重量 材质 包装`.replace(/\s+/g, " ").trim(),
+        `${kw.cleanBrand} ${kw.shortTitle || title.slice(0, 16)} ${kw.cleanModel} 规格 参数 尺寸 容量 功能 重量 材质 包装`.replace(/\s+/g, " ").trim(),
         `${kw.cleanBrand} ${kw.shortTitle || title.slice(0, 16)} ${kw.cleanModel} 箱规 外箱尺寸 毛重 净重 装箱数`.replace(/\s+/g, " ").trim(),
         `${kw.coreNoun} 装箱数 外箱尺寸 毛重 净重 个/箱`.replace(/\s+/g, " ").trim(),
       ];
@@ -7357,25 +7430,46 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
     }
   }
 
-  // 3) 第二步：搜索本平台所有该商品页面的文字和图片 OCR + 插件 AI 提取
+  // 3) 第二步：搜索本平台所有该商品页面的文字和图片 OCR + 针对当前缺失字段的站内定向搜索 + 插件 AI 提取
   $("status").innerText = `插件 AI 正在搜索本平台同商品页面文字与图片查找「${field}」…`;
   const stage3Pages = await getStage3SamePlatformPages(data, sourceUrl, cascadeCache);
   for (const p of stage3Pages) {
-    const v = extractFn(p.attrs || {}, p.text || "");
+    const v = extractFn(p.attrs || {}, p.text || "") || (!isCarton && !isReqSpec ? _extractFieldFromSearchSnippets(field, p.text || "") : "");
     if (v) {
       return { value: v, source: "", stage: 3 };
     }
   }
-  if (!isCarton && stage3Pages.length) {
-    const s3Text = stage3Pages.map(p => [Object.entries(p.attrs || {}).map(([k, v]) => `${k}: ${v}`).join("\n"), p.text || ""].filter(Boolean).join("\n")).join("\n");
-    const s3Ocr = stage3Pages.map(p => p.ocrText || "").filter(Boolean).join("\n");
-    const aiStep2 = await aiExtractStageFields("step2", allCheckedTargets, data, sourceUrl, s3Text, s3Ocr, false, cascadeCache);
-    if (aiStep2 && aiStep2[field]) {
-      return { value: aiStep2[field], source: "本平台AI+图片", stage: 3 };
+  let s3Text = stage3Pages.map(p => [Object.entries(p.attrs || {}).map(([k, v]) => `${k}: ${v}`).join("\n"), p.text || ""].filter(Boolean).join("\n")).join("\n");
+  const s3Ocr = stage3Pages.map(p => p.ocrText || "").filter(Boolean).join("\n");
+  if (!isCarton && !isReqSpec) {
+    let host = "";
+    try { host = new URL(sourceUrl).hostname.replace(/^www\./i, ""); } catch {}
+    if (host) {
+      try {
+        const kw = extractProductSearchKeywords(data?.title || "", data?.attrs?.["品牌"] || "", data?.attrs || {}, data?.pageText || "");
+        const qSiteField = `site:${host} ${kw.cleanBrand} ${kw.shortTitle || String(data?.title || "").slice(0, 16)} ${field}`.replace(/\s+/g, " ").trim();
+        const siteHits = await aiWebSearch(qSiteField, 5, 4000);
+        if (siteHits.length) {
+          const siteHitText = siteHits.map(h => `${h.title}\n${h.snippet}`).join("\n");
+          const vSiteHit = extractFn({}, siteHitText) || _extractFieldFromSearchSnippets(field, siteHitText);
+          if (vSiteHit) return { value: vSiteHit, source: "本平台搜索", stage: 3 };
+          s3Text = [s3Text, siteHitText].filter(Boolean).join("\n");
+        }
+      } catch {}
+    }
+    if (s3Text || s3Ocr) {
+      const aiStep2 = await aiExtractStageFields("step2", allCheckedTargets, data, sourceUrl, s3Text, s3Ocr, false, cascadeCache);
+      if (aiStep2 && aiStep2[field]) {
+        return { value: aiStep2[field], source: "本平台AI+图片", stage: 3 };
+      }
+      const aiSingle2 = await aiExtractSingleFieldFromEvidence("step2", field, data, sourceUrl, s3Text, s3Ocr, false, cascadeCache);
+      if (aiSingle2) {
+        return { value: aiSingle2, source: "本平台AI定向", stage: 3 };
+      }
     }
   }
 
-  // 4) 第三步：搜索全网所有该商品页面的文字和图片 OCR + 插件 AI 全网深度搜索
+  // 4) 第三步：搜索全网所有该商品页面的文字和图片 OCR + 针对当前缺失字段的全网搜索 + 插件 AI 全网深度搜索
   $("status").innerText = `插件 AI 正在全网搜索「${field}」…`;
   const stage4Pages = await getStage4InternetPages(data, sourceUrl, cascadeCache);
   if (isCarton) {
@@ -7386,15 +7480,26 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
     }
   }
   for (const p of stage4Pages) {
-    const v = extractFn(p.attrs || {}, p.text || "");
+    const v = extractFn(p.attrs || {}, p.text || "") || (!isCarton && !isReqSpec ? _extractFieldFromSearchSnippets(field, p.text || "") : "");
     if (v) {
       return { value: v, source: "", stage: 4 };
     }
   }
   if (!isCarton && !isReqSpec) {
-    const mergedSnippets = stage4Pages.map(p => p.text || "").join("\n");
+    let fieldHitText = "";
+    try {
+      const kw = extractProductSearchKeywords(data?.title || "", data?.attrs?.["品牌"] || "", data?.attrs || {}, data?.pageText || "");
+      const qField = `${kw.cleanBrand} ${kw.shortTitle || String(data?.title || "").slice(0, 16)} ${field}`.replace(/\s+/g, " ").trim();
+      const hits = await aiWebSearch(qField, 6, 4500);
+      if (hits.length) {
+        fieldHitText = hits.map(h => `${h.title}\n${h.snippet}`).join("\n");
+        const vHit = extractFn({}, fieldHitText) || _extractFieldFromSearchSnippets(field, fieldHitText);
+        if (vHit) return { value: vHit, source: "全网搜索", stage: 4 };
+      }
+    } catch {}
+    const mergedSnippets = [stage4Pages.map(p => p.text || "").join("\n"), fieldHitText].filter(Boolean).join("\n");
     if (mergedSnippets) {
-      const vExtra = extractFn({}, mergedSnippets);
+      const vExtra = extractFn({}, mergedSnippets) || _extractFieldFromSearchSnippets(field, mergedSnippets);
       if (vExtra) return { value: vExtra, source: "全网搜索", stage: 4 };
     }
     const s4Ocr = stage4Pages.map(p => p.ocrText || "").filter(Boolean).join("\n");
@@ -7402,16 +7507,10 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
     if (aiStep3 && aiStep3[field]) {
       return { value: aiStep3[field], source: "全网AI+图片", stage: 4 };
     }
-    try {
-      const kw = extractProductSearchKeywords(data?.title || "", data?.attrs?.["品牌"] || "", data?.attrs || {}, data?.pageText || "");
-      const qField = `${kw.cleanBrand} ${kw.shortTitle || String(data?.title || "").slice(0, 16)} ${field}`.replace(/\s+/g, " ").trim();
-      const hits = await aiWebSearch(qField, 4, 4000);
-      if (hits.length) {
-        const hitText = hits.map(h => `${h.title}\n${h.snippet}`).join("\n");
-        const vHit = extractFn({}, hitText);
-        if (vHit) return { value: vHit, source: "全网搜索", stage: 4 };
-      }
-    } catch {}
+    const aiSingle3 = await aiExtractSingleFieldFromEvidence("step3", field, data, sourceUrl, mergedSnippets, `${mergedOcrText}\n${s4Ocr}`.trim(), true, cascadeCache);
+    if (aiSingle3) {
+      return { value: aiSingle3, source: "全网AI定向", stage: 4 };
+    }
   }
 
   // 5) 如果最终采集不到，则值为空
