@@ -237,7 +237,9 @@ async function extractCurrentPage() {
     if (/^https?:\/\//i.test(key) || /^[{[]/.test(key) || /^[{[]/.test(value)) return;
     if (JUNK_KEY_RE.test(key) || /^(?:登录|咨询客服|查看详情|展开|收起|更多|点击|立即|暂无|待定|未知|不详|无规格|无尺寸|见详情|见图片|详见详情|略|Please|Click|Sign in|javascript:|undefined|null|true|false|n\/a|none)$/i.test(value)) return;
     if (/^[/\\\-—–_.*·•~、，,.;:：|？?]+$/.test(value)) return;
+    if (/(?:\d+\+?\s*(?:人好评|人评价|人付款|人想买|人收藏|人关注|人看过|条评价|条评论|笔成交|件可售|件起批)|好评率|回头率|复购率|揽收率|物流体验|买家保障|先采后付|退货包运费|加入进货单|立即购买|加入购物车)/i.test(value)) return;
     if (/^(?:产品尺寸|单品尺寸|外形尺寸|规格尺寸|单件重量|单品重量|产品重量|单重|容量|容积)$/i.test(key) && !/\d/.test(value) && !/^(?:XS|S|M|L|XL|XXL|2XL|3XL|均码)$/i.test(value)) return;
+    if (/^(?:容量|容积)$/i.test(key) && /(?:人|好评|评价|付款|成交|销量|可售|库存|元|¥|￥|\$|折|天|小时)/.test(value)) return;
     if (!attrs[key]) attrs[key] = value;
   };
 

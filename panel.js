@@ -1348,7 +1348,9 @@ async function extractUniversalPageInTab() {
     if (/^https?:\/\//i.test(key) || /^[{[]/.test(key) || /^[{[]/.test(value)) return;
     if (JUNK_KEY_RE.test(key) || /^(?:登录|咨询客服|查看详情|展开|收起|更多|点击|立即|暂无|待定|未知|不详|无规格|无尺寸|见详情|见图片|详见详情|略|Please|Click|Sign in|javascript:|undefined|null|true|false|n\/a|none)$/i.test(value)) return;
     if (/^[/\\\-—–_.*·•~、，,.;:：|？?]+$/.test(value)) return;
+    if (/(?:\d+\+?\s*(?:人好评|人评价|人付款|人想买|人收藏|人关注|人看过|条评价|条评论|笔成交|件可售|件起批)|好评率|回头率|复购率|揽收率|物流体验|买家保障|先采后付|退货包运费|加入进货单|立即购买|加入购物车)/i.test(value)) return;
     if (/^(?:产品尺寸|单品尺寸|外形尺寸|规格尺寸|单件重量|单品重量|产品重量|单重|容量|容积)$/i.test(key) && !/\d/.test(value) && !/^(?:XS|S|M|L|XL|XXL|2XL|3XL|均码)$/i.test(value)) return;
+    if (/^(?:容量|容积)$/i.test(key) && /(?:人|好评|评价|付款|成交|销量|可售|库存|元|¥|￥|\$|折|天|小时)/.test(value)) return;
     if (!attrs[key]) attrs[key] = value;
   };
 
@@ -5880,14 +5882,21 @@ async function aiExtractStageFields(stageKey, targetFields, data, sourceUrl, con
           if (!m) continue;
           const parsed = JSON.parse(m[0]);
           const cleaned = {};
+          const stageCatProfile = _getCategoryCartonProfile(title, "", data?.attrs || {});
           for (const f of fields) {
             let v = String(parsed[f] ?? "").trim();
             if (!v || /^(?:未查到|未提供|未知|不详|暂无|待定|无|n\/a|none|null)$/i.test(v)) continue;
+            if (f === "价格") v = normalizeRawPriceText(v);
+            if (!v) continue;
             if (YES_NO_FIELDS.includes(f)) {
               v = normalizeYesNoFieldValue(v);
               if (!v) continue;
             } else if (CARTON_FIELDS.includes(f)) {
               if (!validCartonValue(f, v)) continue;
+              if (f === "每箱多少个") {
+                const qn = parseInt((v.match(/\d+/) || ["0"])[0], 10);
+                if (!_isPhysicallyValidCartonQty(qn, stageCatProfile)) continue;
+              }
             } else if (!isValidFieldValue(f, v)) {
               continue;
             }
@@ -6029,7 +6038,7 @@ function normalizeRawPriceText(raw) {
   const s = stripBracketsAndBoxes(String(raw || ""))
     .replace(/(\d)\s*\.\s*(\d)/g, "$1.$2")
     .replace(/([¥￥$€£])\s+(\d)/g, "$1$2")
-    .replace(/(?:^|\s)(?:新人价|活动价|秒杀价|促销价|优惠价|券后价?|预售价|到手价|团购价|拼单价|折扣价|会员价|参考价)\s*[:：]?\s*/gi, " ")
+    .replace(/(?:^|\s)(?:新人价|热销款|爆款价?|活动价|秒杀价|促销价|优惠价|券后价?|预售价|到手价|团购价|拼单价|折扣价|会员价|参考价|特价|直降价?|限时价?|惊喜价?|福利价?|清仓价?)\s*[:：]?\s*/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
   if (!s || !/\d/.test(s)) return "";
@@ -6874,23 +6883,23 @@ async function aiEstimateMarketPrice(rawPriceStr, data, sourceUrl, outLang = "zh
 function extractProductSpecs(attrs, text) {
   const specKeyRe = /^(?:(?:产品|商品|额定|单品|外形|展开|折叠|机身|净|内胆|电池|输入|输出|工作|最大|适用)|(?:product|item|net|overall|rated|working|max|input|output)[\s_]*)?(?:尺寸|规格|容量|重量|净重|克重|功率|电压|电流|直径|口径|内径|外径|长度|宽度|高度|厚度|深|长宽高|尺码|承重|转速|流量|续航|频率|规格参数|产品参数|dimensions?(?:[\s_]*l[\s_]*x[\s_]*w[\s_]*x[\s_]*h)?|size|capacity|volume|weight|power|wattage|voltage|current|specifications?|specs?|diameter|length|width|height|thickness|depth|размер|габариты|вес|объем|мощность|サイズ|寸法|重量|容量|크기|중량|용량|dimensiones|peso|capacidad|dimensões|poids|abmessungen|gewicht|kapazität)$/i;
   const cartonOrJunkKeyRe = /(?:外箱|箱子|纸箱|箱规|装箱|整箱|毛重|毛净重|起订|交期|货期|价格|运费|库存|carton|ctn|gross[\s_]*weight|g\.?w\.?|n\.?w\.?|package[\s_]*dimensions|packing|moq|lead[\s_]*time|вес брутто|габариты короба|外箱サイズ|박스 크기)/i;
-  const valid = v => /\d/.test(v) && !/未提供|未查到|不详|未知|暂无|待定|无参数|咨询客服/i.test(v);
+  const valid = (v, k = "") => /\d/.test(v) && !/未提供|未查到|不详|未知|暂无|待定|无参数|咨询客服|人好评|人评价|人付款|好评率|回头率|复购率|揽收率|件可售/i.test(v) && isValidFieldValue(k, v);
   const unitValueRe = /\d+(?:\.\d+)?\s*(?:cm|mm|m|ml|l|g|kg|oz|lb|inch|in|w|kw|v|mah|ah|nm|bar|厘米|毫米|毫升|升|克|千克|公斤|瓦|伏|毫安|英寸|см|мм|кг|г|мл|л|вт)\b/i;
 
   const rows = [];
   for (const [k, rawV] of Object.entries(attrs || {})) {
     const key = k.trim(), val = String(rawV ?? "").trim();
     if (!key || !val || cartonOrJunkKeyRe.test(key)) continue;
-    if (specKeyRe.test(key) && valid(val)) {
+    if (specKeyRe.test(key) && valid(val, key)) {
       rows.push(`${key}：${val}`);
-    } else if (unitValueRe.test(val) && valid(val) && !/^(?:型号|货号|编号|品牌|产地|SKU|ASIN)$/i.test(key)) {
+    } else if (unitValueRe.test(val) && valid(val, key) && !/^(?:型号|货号|编号|品牌|产地|SKU|ASIN)$/i.test(key)) {
       rows.push(`${key}：${val}`);
     }
   }
   for (const line of String(text || "").split(/[\n；;]/)) {
     if (/包装|外箱|箱子|装箱|毛重|毛净重|carton|gross weight/i.test(line)) continue;
     const m = line.match(/((?:产品|商品|额定|外形|单品)?(?:尺寸|容量|规格|重量|净重|功率|电压|直径|长度|宽度|高度|厚度|Dimensions?|Capacity|Weight|Power|Voltage|Size))\s*[:：]\s*([^\n；;]{1,100})/i);
-    if (m && valid(m[2])) rows.push(`${m[1].trim()}：${m[2].trim()}`);
+    if (m && valid(m[2], m[1].trim())) rows.push(`${m[1].trim()}：${m[2].trim()}`);
   }
   return [...new Set(rows)].slice(0, 12).join("；");
 }
@@ -8399,7 +8408,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
           for (const [k, rawV] of Object.entries(data.attrs || {})) {
             const key = k.trim(), val = String(rawV ?? "").trim();
             const kLow = key.toLowerCase();
-            if (!key || !val || existingKeys.has(kLow) || excludedNames.has(kLow) || isUncheckedKey(key)) continue;
+            if (!key || !val || existingKeys.has(kLow) || excludedNames.has(kLow) || isUncheckedKey(key) || !isValidFieldValue(key, val)) continue;
             let skip = false;
             for (const [stdName, aliases] of Object.entries(FIELD_ALIAS)) {
               if (aliases.some(a => a.toLowerCase() === kLow)) {
