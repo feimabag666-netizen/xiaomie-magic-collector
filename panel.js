@@ -3068,7 +3068,8 @@ async function ocrImg(imgAsset) {
     const linesOut = [];
     const seenLine = new Set();
     for (const seg of sliceOffsets) {
-      const scale = Math.min(1, 900 / Math.max(1, bw), 1350 / Math.max(1, seg.sh));
+      const targetScale = bw < 850 ? Math.min(1.8, 1050 / Math.max(1, bw)) : Math.min(1, 960 / Math.max(1, bw));
+      const scale = Math.min(targetScale, 1500 / Math.max(1, seg.sh));
       const dw = Math.max(1, Math.round(bw * scale));
       const dh = Math.max(1, Math.round(seg.sh * scale));
       const cv = document.createElement("canvas");
@@ -4311,16 +4312,85 @@ function matchField(name, attrs, text) {
     const BADVAL = new Set(["型号","名称","品牌","产地","尺寸","规格","重量","数量","参数","说明","详情","价格",
       "毛重","净重","装箱数","箱规","交期","起订量","装箱数量","外箱","箱子","包装","单位","备注","材质","颜色",
       "预览","查看","展开","收起","更多","图片","大图","视频","全部","选择","客服","评价","收藏","举报"]);
+    const buildLabelReStr = (c) => {
+      const isAsciiCand = /^[a-z0-9\s._/-]+$/i.test(c);
+      if (isAsciiCand) return `(?:^|\\b)${escRe(c)}`;
+      // 兼容 OCR 在中文标签字间插入空格（如 "尺 寸"）
+      if (/^[\u4e00-\u9fa5]{2,5}$/.test(c)) return [...c].map(ch => escRe(ch)).join("\\s*");
+      return escRe(c);
+    };
     const lenRange = isYesNo ? "{1,36}" : "{2,96}";
     for (const c of cand) {
-      const isAsciiCand = /^[a-z0-9\s._/-]+$/i.test(c);
-      const boundaryPrefix = isAsciiCand ? "(?:^|\\b)" : "";
-      const sepPattern = "\\s*[:：]\\s*";
-      const re = new RegExp(boundaryPrefix + escRe(c) + sepPattern + "([¥￥$€£0-9a-zA-Z一-龥.．/×xX*＊\\- 、，,+]" + lenRange + ")", "gi");
-      for (const m of text.matchAll(re)) {
+      const lblPat = buildLabelReStr(c);
+      // 1) 同行「标签: 值」匹配（避免跨行直接吞掉下一列标签如“尺寸: 材质:”）
+      const reSameLine = new RegExp(lblPat + "[ \\t]*[:：][ \\t]*([¥￥$€£0-9a-zA-Z一-龥.．/×xX*＊\\- 、，,+]" + lenRange + ")", "gi");
+      for (const m of text.matchAll(reSameLine)) {
+        const prefixCtx = text.slice(Math.max(0, (m.index || 0) - 8), m.index || 0);
+        if (name === "产品尺寸" && /(?:外箱|纸箱|箱子|整箱|大箱|包装|箱规|箱)\s*$/i.test(prefixCtx)) continue;
+        if (name === "单件重量" && /(?:外箱|纸箱|箱子|整箱|大箱|包装|毛净?|箱)\s*$/i.test(prefixCtx)) continue;
         const rawMatched = m && m[1] ? m[1].trim() : "";
         const v = norm(rawMatched);
         if (v && !BADVAL.has(v) && isValidFieldValue(name, v)) return v;
+      }
+    }
+    // 2) 兼容两栏双行图片排版（如上行「尺寸:  材质:」，下行「160x80mm  PP、硅胶」；或冒号缺失/换行的竖排框）
+    const lines = String(text).split(/\r?\n+/).map(l => l.trim()).filter(Boolean);
+    const dimTokenRe = /(\d{1,4}(?:\.\d+)?\s*[×xX*＊]\s*\d{1,4}(?:\.\d+)?(?:\s*[×xX*＊]\s*\d{1,4}(?:\.\d+)?)?\s*(?:mm|cm|m|毫米|厘米)?)/i;
+    const dimWithUnitRe = /(\d{1,4}(?:\.\d+)?\s*[×xX*＊]\s*\d{1,4}(?:\.\d+)?(?:\s*[×xX*＊]\s*\d{1,4}(?:\.\d+)?)?\s*(?:mm|cm|毫米|厘米))(?=$|[^a-zA-Z0-9])/i;
+    for (let li = 0; li < lines.length; li++) {
+      const curLine = lines[li];
+      if (name === "产品尺寸" && /(?:外箱|纸箱|箱规|整箱|箱子尺寸|carton|ctn)/i.test(curLine)) continue;
+      let matchedColIdx = -1;
+      let labelCols = [];
+      for (const c of cand) {
+        const lblRe = new RegExp(buildLabelReStr(c) + "(?:\\s*[:：]|\\s|$)", "i");
+        const hit = curLine.match(lblRe);
+        if (!hit) continue;
+        // 统计当前行有多少个形如「标签:」的列头，确定当前字段所在列序号
+        labelCols = [...curLine.matchAll(/([\u4e00-\u9fa5A-Za-z/]{2,12})\s*[:：]/g)].map(x => x[1].replace(/\s+/g, ""));
+        const cCompact = c.replace(/\s+/g, "").toLowerCase();
+        matchedColIdx = labelCols.findIndex(lc => lc.toLowerCase() === cCompact || lc.toLowerCase().includes(cCompact));
+        if (matchedColIdx < 0) matchedColIdx = 0;
+        break;
+      }
+      if (matchedColIdx < 0) continue;
+      // 先看同行无冒号紧跟值（如“尺寸 160x80mm”）
+      if (name === "产品尺寸") {
+        const sameDim = curLine.match(dimWithUnitRe);
+        if (sameDim && isValidFieldValue(name, sameDim[1])) return sameDim[1].replace(/\s+/g, "");
+      }
+      for (let off = 1; off <= 2 && li + off < lines.length; off++) {
+        const nextLine = lines[li + off];
+        if (!nextLine) continue;
+        // 若下一行仍是纯标签行（例如只有“品名: 容量:”），继续看下一行
+        if (/^(?:[\u4e00-\u9fa5A-Za-z]{1,10}\s*[:：]\s*)+$/.test(nextLine)) continue;
+        if (name === "产品尺寸") {
+          if (/(?:外箱|纸箱|箱规|整箱|箱子尺寸|carton|ctn)/i.test(nextLine)) continue;
+          const dm = nextLine.match(dimWithUnitRe) || nextLine.match(dimTokenRe);
+          if (dm && /\d/.test(dm[1]) && isValidFieldValue(name, dm[1])) {
+            return dm[1].replace(/\s*([×xX*＊])\s*/g, "$1").replace(/\s+(mm|cm|m|毫米|厘米)$/i, "$1").trim();
+          }
+        }
+        // 把带空格的尺寸合并后再按列拆分匹配
+        const mergedDimNext = nextLine.replace(/(\d+(?:\.\d+)?)\s*([×xX*＊])\s*(\d+(?:\.\d+)?)(?:\s*([×xX*＊])\s*(\d+(?:\.\d+)?))?\s*(mm|cm|m|毫米|厘米)?/gi, (_, a, op1, b, op2, c2, u) =>
+          `${a}${op1}${b}${op2 && c2 ? op2 + c2 : ""}${u || ""}`
+        );
+        const cells = mergedDimNext.split(/\s{1,}|\t+/).map(x => x.trim()).filter(Boolean);
+        const pickedCell = cells[matchedColIdx] || (cells.length === 1 ? cells[0] : "");
+        const vCell = norm(pickedCell);
+        if (vCell && !BADVAL.has(vCell) && !/[:：]$/.test(vCell) && isValidFieldValue(name, vCell)) {
+          return vCell;
+        }
+        break;
+      }
+    }
+    // 3) 「产品尺寸」终极兜底：剔除外箱/箱规行后，匹配任意带单位的 2D/3D 商品尺寸（如 160x80mm / 16×8×8cm）或“高160mm 直径80mm”
+    if (name === "产品尺寸") {
+      const noCartonText = String(text)
+        .replace(/(?:外箱|纸箱|箱规|整箱|箱子尺寸|装箱|毛重|净重|carton|ctn|meas)[^\n。；;]{0,80}/gi, " ");
+      const mFallback = noCartonText.match(/\b(\d{1,4}(?:\.\d+)?\s*[×xX*＊]\s*\d{1,4}(?:\.\d+)?(?:\s*[×xX*＊]\s*\d{1,4}(?:\.\d+)?)?\s*(?:mm|cm|毫米|厘米))(?=$|[^a-zA-Z0-9])/i);
+      if (mFallback && isValidFieldValue(name, mFallback[1])) {
+        return mFallback[1].replace(/\s*([×xX*＊])\s*/g, "$1").replace(/\s+(mm|cm|毫米|厘米)$/i, "$1").trim();
       }
     }
     // 针对「包装方式」支持详情介绍中的自然语言描述（如 单个OPP袋包装、独立PE袋、彩盒装、牛皮纸盒、吸塑卡装、防尘袋包装 等）
@@ -7792,7 +7862,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         .replace(/数量\s*[:：]?\s*\d+\s*[件个只套支双条袋盒]?\/箱[^\n]{0,80}/g, " ")
         .replace(/(?:毛重|净重)\s*[:：]?\s*\d+(?:\.\d+)?\s*(?:kg|g|千克|公斤)/gi, " ");
       if (!hasAttrAlias("产品尺寸", "尺寸", "product dimensions", "item dimensions", "dimensions", "size")) {
-        const mDim = noCartonFallback.match(/\b(\d{1,3}(?:\.\d+)?\s*[×xX*]\s*\d{1,3}(?:\.\d+)?(?:\s*[×xX*]\s*\d{1,3}(?:\.\d+)?)?\s*(?:cm|mm|厘米|毫米))\b/i);
+        const mDim = noCartonFallback.match(/\b(\d{1,3}(?:\.\d+)?\s*[×xX*]\s*\d{1,3}(?:\.\d+)?(?:\s*[×xX*]\s*\d{1,3}(?:\.\d+)?)?\s*(?:cm|mm|厘米|毫米))(?=$|[^a-zA-Z0-9])/i);
         if (mDim) data.attrs[outLang === "zh" ? "产品尺寸" : "Product Dimensions"] = mDim[1].trim();
       }
       if (!hasAttrAlias("单件重量", "产品重量", "重量", "item weight", "unit weight", "weight")) {
@@ -8402,40 +8472,68 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         const ocrItems = [];
         const ocrCheckedAssets = new Set();
         const stage1HasAllChecked = !(finalBundle.missingRequired && finalBundle.missingRequired.length);
-        if (needOcr && ocrCandidatePool.length && !stage1HasAllChecked) {
+        if (needOcr && !stage1HasAllChecked) {
+          const stillMissing = Array.isArray(finalBundle.missingRequired) ? finalBundle.missingRequired : [];
+          const hasAllMissingNow = () => {
+            if (!stillMissing.length) return true;
+            const mergedSoFar = (data.pageText || "") + "\n" + ocrItems.map(x => x.text).join("\n");
+            return stillMissing.every(mf => Boolean(CARTON_FIELDS.includes(mf) ? extractCartonValue(mf, data.attrs || {}, mergedSoFar) : matchField(mf, data.attrs || {}, mergedSoFar)));
+          };
           const sortedPool = [...ocrCandidatePool]
             .filter(b => b.w >= 200 && b.h >= 100 && (b.w / Math.max(1, b.h)) < 8)
             .sort((a, b) => (b.isSpecChart ? 1 : 0) - (a.isSpecChart ? 1 : 0));
-          const candidates = sortedPool.slice(0, 8);
-          const stillMissing = Array.isArray(finalBundle.missingRequired) ? finalBundle.missingRequired : [];
+          const candidates = sortedPool.slice(0, 20);
           let ocrDoneCount = 0;
           let allFoundEarly = false;
-          reportProg(42, `🔍 双线程OCR识别 (0/${candidates.length})…`);
-          await mapPool(candidates, OCR_POOL_SIZE, async (cand, i) => {
-            await checkTaskControl(taskCtx);
-            if (stopRequested || allFoundEarly) return;
-            if (cand.assetRef) ocrCheckedAssets.add(cand.assetRef);
-            const t = await ocrImg(cand);
-            await checkTaskControl(taskCtx);
-            ocrDoneCount++;
-            const pctNow = 42 + Math.round((ocrDoneCount / Math.max(1, candidates.length)) * 23);
-            reportProg(pctNow, `🔍 双线程OCR识别 (${ocrDoneCount}/${candidates.length})…`);
-            $("status").innerText = `双线程识别图片文字 (${ocrDoneCount}/${candidates.length})…`;
-            const labelTag = `详情图${String(i + 1).padStart(3, "0")}`;
-            if (t) {
-              if (isJunkOcrText(t) && cand.assetRef) {
-                cand.assetRef.__dropJunkByOcr = true;
-                aiFilteredCount++;
+          if (candidates.length) {
+            reportProg(42, `🔍 双线程OCR识别 (0/${candidates.length})…`);
+            await mapPool(candidates, OCR_POOL_SIZE, async (cand, i) => {
+              await checkTaskControl(taskCtx);
+              if (stopRequested || allFoundEarly) return;
+              if (cand.assetRef) ocrCheckedAssets.add(cand.assetRef);
+              const t = await ocrImg(cand);
+              await checkTaskControl(taskCtx);
+              ocrDoneCount++;
+              const pctNow = 42 + Math.round((ocrDoneCount / Math.max(1, candidates.length)) * 23);
+              reportProg(pctNow, `🔍 双线程OCR识别 (${ocrDoneCount}/${candidates.length})…`);
+              $("status").innerText = `双线程识别图片文字 (${ocrDoneCount}/${candidates.length})…`;
+              const labelTag = `详情图${String(i + 1).padStart(3, "0")}`;
+              if (t) {
+                if (isJunkOcrText(t) && cand.assetRef) {
+                  cand.assetRef.__dropJunkByOcr = true;
+                  aiFilteredCount++;
+                }
+                ocrItems.push({ label: labelTag, text: t });
+                ocrTexts.push(`【${labelTag} OCR】\n${t}`);
+                ocrCount++;
+                if (hasAllMissingNow()) allFoundEarly = true;
               }
-              ocrItems.push({ label: labelTag, text: t });
-              ocrTexts.push(`【${labelTag} OCR】\n${t}`);
-              ocrCount++;
-              const mergedSoFar = (data.pageText || "") + "\n" + ocrItems.map(x => x.text).join("\n");
-              if (stillMissing.length && stillMissing.every(mf => Boolean(CARTON_FIELDS.includes(mf) ? extractCartonValue(mf, data.attrs || {}, mergedSoFar) : matchField(mf, data.attrs || {}, mergedSoFar)))) {
-                allFoundEarly = true;
+            });
+          }
+          // 若扫描完详情图后仍有勾选参数（如主图里的尺寸表/参数卡）未找到，补充扫描前 6 张主图（即图一所在位置兜底）
+          if (!allFoundEarly && !stopRequested && !hasAllMissingNow() && (data.main || []).length) {
+            const mainPool = [];
+            if (mainAssets.length) {
+              for (const ma of mainAssets.slice(0, 6)) {
+                if (ma?.image && !ma.visualJunk && !ma.__dropJunkByOcr) mainPool.push({ img: ma.image, asset: ma });
+              }
+            } else {
+              for (const u of (data.main || []).slice(0, 6)) {
+                const im = await fetchImg(u, activeSourceTabId, data.imageMeta?.[u]?.rawUrl || "");
+                if (im) mainPool.push({ img: im, asset: null });
               }
             }
-          });
+            for (let mi = 0; mi < mainPool.length; mi++) {
+              await checkTaskControl(taskCtx);
+              if (stopRequested || hasAllMissingNow()) break;
+              const t = await ocrImg(mainPool[mi].img);
+              if (t) {
+                ocrItems.push({ label: `主图${String(mi + 1).padStart(3, "0")}`, text: t });
+                ocrTexts.push(`【主图${String(mi + 1).padStart(3, "0")} OCR】\n${t}`);
+                ocrCount++;
+              }
+            }
+          }
         }
 
         // 2b) 对末尾详情图、可疑彩条角标与中小方形徽章做完整 OCR + 彩底白字反色增强扫描（覆盖第42张等末尾铺货·下单图标）
