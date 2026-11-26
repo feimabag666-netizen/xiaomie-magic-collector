@@ -752,19 +752,22 @@ function syncMediaNameModelFromTop(force = false) {
 }
 
 async function loadSettings() {
-  const s = await chrome.storage.local.get(SET_IDS.concat(["nextNo", "imgFilterMode", "userSetStartNo", "skipDoneDefaultV2"]));
+  const s = await chrome.storage.local.get(SET_IDS.concat(["nextNo", "imgFilterMode", "userSetStartNo", "skipDoneDefaultV3"]));
   for (const id of SET_IDS) {
     if (id === "startNo" && !s.userSetStartNo) continue;
-    if (id === "skipDone" && !s.skipDoneDefaultV2) continue;
+    if (id === "skipDone" && !s.skipDoneDefaultV3) continue;
     if (s[id] === undefined) continue;
     const el = $(id);
     if (!el) continue;
     if (el.type === "checkbox") el.checked = !!s[id]; else el.value = s[id];
   }
-  if (!s.skipDoneDefaultV2) {
-    if ($("skipDone")) $("skipDone").checked = true;
-    chrome.storage.local.set({ skipDone: true, skipDoneDefaultV2: true }).catch(() => {});
+  if (!s.skipDoneDefaultV3) {
+    if ($("skipDone")) $("skipDone").checked = false;
+    chrome.storage.local.set({ skipDone: false, skipDoneDefaultV3: true }).catch(() => {});
   }
+  $("skipDone")?.addEventListener("change", () => {
+    chrome.storage.local.set({ skipDone: Boolean($("skipDone")?.checked), skipDoneDefaultV3: true }).catch(() => {});
+  });
   if (s.imgFilterMode) {
     const r = document.querySelector(`input[name="imgFilterMode"][value="${s.imgFilterMode}"]`);
     if (r) r.checked = true;
@@ -920,7 +923,16 @@ $("txtFile").addEventListener("change", async e => {
   const old = $("urls").value.trim();
   $("urls").value = [old, ...lines].filter(Boolean).join(" ");
   syncUrlsInputState();
-  $("status").innerText = `已导入TXT：${lines.length} 条链接，点击「开始采集」进入下方队列`;
+  let skipHint = "";
+  if ($("skipDone")?.checked) {
+    const doneSet = new Set(await getStore("doneUrls", []));
+    const { urls: parsedUrls } = parseUrlInput(lines.join(" "));
+    const dupCount = parsedUrls.filter(u => doneSet.has(u)).length;
+    if (dupCount > 0) {
+      skipHint = `（注意：已勾选「跳过已采链接」，其中 ${dupCount} 条历史链接将被跳过；取消勾选或点「清除记录」即可重采）`;
+    }
+  }
+  $("status").innerText = `已导入TXT：${lines.length} 条链接${skipHint || "，点击「开始采集」进入下方队列"}`;
   e.target.value = "";
 });
 
@@ -935,11 +947,11 @@ if ($("clearDone")) {
     taskRowSeq = 0;
     if (typeof syncTaskBucketsUI === "function") syncTaskBucketsUI();
     if ($("bar")?.firstElementChild) $("bar").firstElementChild.style.width = "0%";
+    queueDoneUrls = [];
     sessionUsedCodes.clear();
     sessionUsedFolders.clear();
-    // 保留 doneUrls，确保「跳过已采链接（包括已清除的）」对已清除记录依然生效
-    await chrome.storage.local.remove(["collectTimes", "usedFolderCodes", "usedFolderNames"]).catch(() => {});
-    $("status").innerText = "准备就绪";
+    await chrome.storage.local.remove(["doneUrls", "collectTimes", "usedFolderCodes", "usedFolderNames"]).catch(() => {});
+    $("status").innerText = "已清除列表与历史查重记录，可重新采集任意链接";
   };
 }
 if ($("stop")) {
