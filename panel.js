@@ -6046,7 +6046,7 @@ const SPEC_VARYING_FIELDS = new Set(["型号", "详细规格", "规格", "容量
 
 // 提取纯物理规格名（剥离颜色词，颜色绝不能单独成为规格；仅容量/尺寸/单件重量/功率/电压/大小号等物理规格可独立成规格）
 const _PHYSICAL_SPEC_RE = /(?:\d+(?:\.\d+)?\s*(?:ml|l|oz|cm|mm|m|g|kg|w|kw|v|mah|ah|寸|英寸|号|升|毫升|克|千克|公斤|瓦|伏|件套|支装|个装|层|格)|大号|中号|小号|特大号|加大号|迷你|mini|\b(?:xs|s|m|l|xl|xxl|2xl|3xl)\b)/i;
-const _COLOR_WORD_RE = /(?:^|[\s\-—_\/／|,+]+)(?:(?:浅|深|亮|暗|哑光|磨砂|香槟|玫瑰|樱花|雾霾|克莱因|天|藏|宝|军|草|橄榄|墨|酒|枣|蜜桃|奶油|象牙|珍珠|星耀|曜石|炫酷|经典|纯)?(?:黑|白|红|粉|蓝|绿|灰|黄|橙|橘|紫|棕|咖|咖啡|金|银|青|茶|米|卡其|杏|驼|透明)色?|(?:black|white|red|pink|blue|green|gray|grey|yellow|orange|purple|brown|gold|silver|beige|khaki|navy|cyan|ivory|transparent|clear))(?=$|[\s\-—_\/／|,+]+)/gi;
+const _COLOR_WORD_RE = /(?:^|[\s\-—_\/／|,+]+)(?:(?:浅|深|亮|暗|哑光|磨砂|香槟|玫瑰|樱花|雾霾|克莱因|天|藏|宝|军|草|橄榄|墨|酒|枣|蜜桃|奶油|象牙|珍珠|星耀|曜石|炫酷|经典|纯)?(?:(?:黑|白|红|粉|蓝|绿|灰|黄|橙|橘|紫|棕|咖|咖啡|金|银|青|茶|米|卡其|杏|驼|透明)色(?=\d|$|[\s\-—_\/／|,+]+)|(?:黑|白|红|粉|蓝|绿|灰|黄|橙|橘|紫|棕|咖|咖啡|金|银|青|茶|米|卡其|杏|驼|透明)(?=$|[\s\-—_\/／|,+]+))|(?:black|white|red|pink|blue|green|gray|grey|yellow|orange|purple|brown|gold|silver|beige|khaki|navy|cyan|ivory|transparent|clear)(?=\d|$|[\s\-—_\/／|,+]+))/gi;
 
 function normalizePhysicalSpecName(rawSpec) {
   const s = stripBracketsAndBoxes(String(rawSpec || "").trim());
@@ -6441,7 +6441,7 @@ function adaptMultiSpecCorrespondence(items, data, { minQty = 0, priceMode = "ra
       const refIdx = sizedIdxs.reduce((best, idx) => Math.abs(mags[idx] - mags[i]) < Math.abs(mags[best] - mags[i]) ? idx : best, sizedIdxs[0]);
       const refDims = String(list[refIdx].size).match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number) || [];
       if (refDims.length >= 2) {
-        const unit = (String(list[refIdx].size).match(/(cm|mm|m)\s*$/i) || ["", "cm"])[1];
+        const unit = (String(list[refIdx].size).match(/(cm|mm|m|厘米|毫米)\s*$/i) || ["", "cm"])[1];
         const f = Math.pow(Math.max(0.4, Math.min(2.5, mags[i] / (mags[refIdx] || 1))), 1 / 3);
         list[i].size = `${refDims.map(n => Number((n * f).toFixed(1))).join("×")}${unit}`;
       }
@@ -8064,8 +8064,9 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         let specData = data;
         if (doParams) {
           const preAttrs = { ...(data.attrs || {}) };
-          for (const fn of ["产品尺寸", "容量", "单件重量", "价格"]) {
-            const curV = matchField(fn, preAttrs, "");
+          for (const fn of ["产品尺寸", "容量", "单件重量", "价格", "每箱多少个", "箱子毛净重", "箱子尺寸"]) {
+            const isCtnPre = CARTON_FIELDS.includes(fn);
+            const curV = isCtnPre ? extractCartonValue(fn, preAttrs, "") : matchField(fn, preAttrs, "");
             if (!curV || !/\d/.test(curV)) {
               const localPre = await findSpecsByFourStageCascade(data, url, stageOcrItems, fn, cascadeCache, false, false);
               if (localPre?.value && /\d/.test(localPre.value)) preAttrs[fn] = localPre.value;
