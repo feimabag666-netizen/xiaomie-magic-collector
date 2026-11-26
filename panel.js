@@ -752,29 +752,43 @@ function syncMediaNameModelFromTop(force = false) {
 }
 
 async function loadSettings() {
-  const s = await chrome.storage.local.get(SET_IDS.concat(["nextNo", "imgFilterMode", "userSetStartNo", "skipDoneDefaultV3"]));
+  const s = await chrome.storage.local.get(SET_IDS.concat(["nextNo", "imgFilterMode", "userSetStartNo", "skipDoneDefaultV2", "skipDoneDefaultV3", "skipDoneUserSet"]));
   for (const id of SET_IDS) {
     if (id === "startNo" && !s.userSetStartNo) continue;
-    if (id === "skipDone" && !s.skipDoneDefaultV3) continue;
+    if (id === "skipDone") {
+      if (s.skipDoneUserSet) {
+        if ($("skipDone")) $("skipDone").checked = Boolean(s.skipDone);
+      } else if (s.skipDoneDefaultV3) {
+        if (s.skipDone !== undefined && $("skipDone")) $("skipDone").checked = Boolean(s.skipDone);
+      } else if (s.skipDoneDefaultV2) {
+        // 仅迁移此前被 V2 自动开启（非用户手动勾选）的遗留标记，绝不覆盖用户主动设定
+        if ($("skipDone")) $("skipDone").checked = false;
+        chrome.storage.local.set({ skipDone: false, skipDoneDefaultV3: true }).catch(() => {});
+      } else if (s.skipDone !== undefined && $("skipDone")) {
+        $("skipDone").checked = Boolean(s.skipDone);
+      }
+      continue;
+    }
     if (s[id] === undefined) continue;
     const el = $(id);
     if (!el) continue;
     if (el.type === "checkbox") el.checked = !!s[id]; else el.value = s[id];
   }
-  if (!s.skipDoneDefaultV3) {
-    if ($("skipDone")) $("skipDone").checked = false;
-    chrome.storage.local.set({ skipDone: false, skipDoneDefaultV3: true }).catch(() => {});
-  }
   $("skipDone")?.addEventListener("change", () => {
-    chrome.storage.local.set({ skipDone: Boolean($("skipDone")?.checked), skipDoneDefaultV3: true }).catch(() => {});
+    chrome.storage.local.set({ skipDone: Boolean($("skipDone")?.checked), skipDoneUserSet: true, skipDoneDefaultV3: true }).catch(() => {});
   });
+  const directPersistIds = ["prefix","step","suffix","maxMinute","maxHour","maxDay","optSubdir","optParams","optUrl","optMain","optProduct","optDetail","optSku","optVideo","optCopy","optMinSize","minSize"];
+  for (const id of directPersistIds) {
+    const el = $(id);
+    if (!el) continue;
+    el.addEventListener("change", () => {
+      if (nonEcomOverrideActive && ["optParams","optSku","optCopy","optMain","optDetail","optVideo"].includes(id)) return;
+      chrome.storage.local.set({ [id]: el.type === "checkbox" ? !!el.checked : el.value }).catch(() => {});
+    });
+  }
   if (s.imgFilterMode) {
     const r = document.querySelector(`input[name="imgFilterMode"][value="${s.imgFilterMode}"]`);
     if (r) r.checked = true;
-  }
-  // 若旧缓存中每分钟上限为 2，自动升级为 10，防止多条链接连续采集时被卡顿漏采
-  if ($("maxMinute") && (parseInt($("maxMinute").value, 10) || 0) <= 2) {
-    $("maxMinute").value = "10";
   }
   if (s.userSetStartNo && s.nextNo !== undefined && String(s.nextNo).trim()) {
     $("startNo").value = String(s.nextNo).trim();
@@ -2173,6 +2187,10 @@ function applyCaptureModeUI(isEcommerce) {
     savedEcomState = {
       optParams: $("optParams") ? $("optParams").checked : true,
       optSku: $("optSku") ? $("optSku").checked : true,
+      optCopy: $("optCopy") ? $("optCopy").checked : true,
+      optMain: $("optMain") ? $("optMain").checked : true,
+      optDetail: $("optDetail") ? $("optDetail").checked : true,
+      optVideo: $("optVideo") ? $("optVideo").checked : true,
       aiChecks: AI_FIELDS.map(f => ({ n: f.n, c: !!f.c })),
     };
     nonEcomOverrideActive = true;
@@ -2190,6 +2208,10 @@ function applyCaptureModeUI(isEcommerce) {
     if (savedEcomState) {
       if ($("optParams")) $("optParams").checked = savedEcomState.optParams;
       if ($("optSku")) $("optSku").checked = savedEcomState.optSku;
+      if ($("optCopy")) $("optCopy").checked = savedEcomState.optCopy;
+      if ($("optMain")) $("optMain").checked = savedEcomState.optMain;
+      if ($("optDetail")) $("optDetail").checked = savedEcomState.optDetail;
+      if ($("optVideo")) $("optVideo").checked = savedEcomState.optVideo;
       savedEcomState.aiChecks.forEach(item => {
         const target = AI_FIELDS.find(f => f.n === item.n);
         if (target) target.c = item.c;
@@ -3248,33 +3270,15 @@ async function loadFields(key, defNames, defChecked) {
   const o = await chrome.storage.local.get(key);
   const defaults = defNames.map(d => typeof d === "string" ? ({ n: d, c: defChecked, v: "" }) : ({ ...d }));
   if (Array.isArray(o[key]) && o[key].length) {
-    let arr = o[key].filter(f => f.n !== "货号");
-    if (key === "commonFields") {
-      arr = arr.filter(f => f.n !== "装箱数" && f.n !== "箱子毛重" && f.n !== "箱子净重" && f.n !== "电压" && f.n !== "功率");
-    }
+    let arr = o[key].map(f => ({ ...f }));
     if (key === "secondaryFields") {
-      const removedNames = new Set(["包装规格", "价格区间", "主要下游平台", "是否进口", "是否一次性", "24h揽收率", "48h揽收率", "代发品质达标率", "近7天代发数量", "近30天代发数量", "下游铺货数", "铺货分销商数", "商家代发热度", "电压", "功率"]);
-      arr = arr.map(f => (f.n === "规格" ? { ...f, n: "详细规格" } : f)).filter(f => !removedNames.has(f.n));
-    }
-    for (const d of defaults) if (!arr.some(f => f.n === d.n)) arr.push(d);
-    if (key === "commonFields") {
-      const defOrder = new Map(defaults.map((d, idx) => [d.n, idx]));
-      const builtIn = arr.filter(f => defOrder.has(f.n)).sort((a, b) => defOrder.get(a.n) - defOrder.get(b.n));
-      const custom = arr.filter(f => !defOrder.has(f.n));
-      arr = [...builtIn, ...custom];
-      await chrome.storage.local.set({ [key]: arr }).catch(() => {});
+      arr = arr.map(f => (f.n === "规格" ? { ...f, n: "详细规格" } : f));
     }
     for (const f of arr) {
       if (f.n === "商品标题" && f.v === "自动提取网页商品标题") f.v = "";
       if (f.n === "型号") f.v = "";
-      if (f.n === "产地" && !String(f.v || "").trim()) f.v = "永康市，浙江省，中国";
-      if (f.n === "起订量" && !String(f.v || "").trim()) f.v = "现货500，定制颜色1000";
       if (f.n === "独特卖点" && !f.group) f.group = "point";
       if (f.n === "独特故事" && !f.group) f.group = "story";
-    }
-    if (key === "aiFields" && arr.every(f => !f.c)) {
-      arr.forEach(f => { f.c = true; });
-      await chrome.storage.local.set({ [key]: arr }).catch(() => {});
     }
     return arr;
   }
@@ -3625,26 +3629,22 @@ async function loadActiveFieldProfile(mode = activeBizMode) {
   const legacyKey = `${key}_tpl1`;
   const stored = await chrome.storage.local.get([key, legacyKey]);
   const prof = stored?.[key] || stored?.[legacyKey];
-  if (prof && Array.isArray(prof.common) && prof.common.length) {
-    const filtered = prof.common
-      .filter(f => f && f.n && f.n !== "货号" && f.n !== "包装规格" && f.n !== "产品类别" && f.n !== "产品参数" && f.n !== "专利类型" && f.n !== "版权" && f.n !== "电压" && f.n !== "功率")
+  const hasSavedProfile = Boolean(prof && Array.isArray(prof.common) && prof.common.length);
+  if (hasSavedProfile) {
+    // 完整保留用户已保存的参数顺序、勾选状态与默认值，绝不强行重置/改写/删减用户设定
+    const savedList = prof.common
+      .filter(f => f && f.n)
       .map(f => ({ n: f.n === "规格" ? "详细规格" : f.n, c: Boolean(f.c), v: String(f.v || "") }));
-    // 保证所有系统内置常用与可选参数完整存在且按标准顺序排列；若昨日误点 ✕ 删掉了任意默认参数，自动补回（同时保留其余参数原有的勾选状态与手填默认值）
+    const savedNames = new Set(savedList.map(f => f.n));
     const defaultsAll = buildDefaultCommonFields(activeBizMode);
-    const defaultByName = new Map(defaultsAll.map(d => [d.n, d]));
-    const savedByName = new Map(filtered.map(f => [f.n, f]));
-    const ordered = [];
     for (const def of defaultsAll) {
-      if (savedByName.has(def.n)) {
-        ordered.push(savedByName.get(def.n));
-      } else {
-        ordered.push({ ...def });
+      if (!savedNames.has(def.n)) {
+        // 仅把缺失的内置字段以“未勾选且空值”的形态追加到末尾供选用，绝不强行勾选或注入默认文本
+        savedList.push({ n: def.n, c: false, v: "" });
+        savedNames.add(def.n);
       }
     }
-    for (const f of filtered) {
-      if (!defaultByName.has(f.n)) ordered.push(f);
-    }
-    COMMON_FIELDS = ordered;
+    COMMON_FIELDS = savedList;
   } else {
     COMMON_FIELDS = buildDefaultCommonFields(activeBizMode);
   }
@@ -3659,12 +3659,12 @@ async function loadActiveFieldProfile(mode = activeBizMode) {
       ? secSavedMap.get(d.n)
       : (activeBizMode === "b2b" ? Boolean(d.b2b) : Boolean(d.b2c)),
   }));
-  // 确保常用参数中已有的自定义项若曾属于可选，不重复；若启用「详细规格」则自动锁定尺寸/容量/单重
   for (const sf of SECONDARY_FIELDS) {
     if (commonNames.has(sf.n)) sf.c = false;
   }
-  enforceDetailedSpecExclusion();
-  await saveActiveFieldProfile();
+  if (!hasSavedProfile) {
+    await saveActiveFieldProfile();
+  }
 }
 
 async function promoteOptionalToCommon(fieldName) {
@@ -3931,11 +3931,17 @@ async function getStoryDirection() {
   return { angles: angle, soul: $("soulLine")?.value?.trim() || s.soulLine || "用心服务，一对一全程跟进，扣细节扣隐患，极致仔细，想客户所想，独家的预防出错机制，经验丰富，大量避坑，守住质量底线" };
 }
 async function initFields() {
-  const modeInit = await chrome.storage.local.get(["secPresetMode", "optSpecSubModel"]);
+  const modeInit = await chrome.storage.local.get(["secPresetMode", "optSpecSubModel", "optIncludeUnlistedAttrs", "activeFieldTabMode"]);
   activeBizMode = modeInit?.secPresetMode === "b2c" ? "b2c" : "b2b";
   optSpecSubModelEnabled = Boolean(modeInit?.optSpecSubModel);
+  if ($("optIncludeUnlistedAttrs") && modeInit?.optIncludeUnlistedAttrs !== undefined) {
+    $("optIncludeUnlistedAttrs").checked = Boolean(modeInit.optIncludeUnlistedAttrs);
+  }
   await loadActiveFieldProfile(activeBizMode);
   await loadNonEcomFields();
+  if (modeInit?.activeFieldTabMode === "non_ecom") {
+    switchFieldTab("non_ecom", false);
+  }
   AI_FIELDS = await loadFields("aiFields", DEF_AI, true);
   renderAllFieldBoxes();
   if ($("tabBtnEcom")) {
@@ -3981,9 +3987,7 @@ async function initFields() {
     const isB2C = presetMode === "b2c";
     if (!uiOnly && (isB2B || isB2C)) {
       await loadActiveFieldProfile(presetMode);
-      DYNAMIC_SECONDARY_FIELDS.forEach(f => { f.c = false; });
-      if ($("optIncludeUnlistedAttrs")) $("optIncludeUnlistedAttrs").checked = false;
-      await chrome.storage.local.set({ optIncludeUnlistedAttrs: false, secPresetMode: presetMode });
+      await chrome.storage.local.set({ secPresetMode: presetMode });
       renderAllFieldBoxes();
       if (pendingCapture?.attrs) renderDynamicSecondaryFields(pendingCapture.attrs);
     }
@@ -4149,7 +4153,7 @@ async function initFields() {
   $("addCommon").onclick = () => {
     const n = prompt("新字段名称："); if (!n || !n.trim()) return;
     COMMON_FIELDS.push({ n: n.trim().slice(0, 20), c: true, v: "" });
-    saveFields("commonFields", COMMON_FIELDS);
+    saveActiveFieldProfile();
     renderFields("commonFields", "commonFields", COMMON_FIELDS, false);
   };
   $("customAngles").onchange = () => chrome.storage.local.set({ customAngles: $("customAngles").value.slice(0, 180) });
