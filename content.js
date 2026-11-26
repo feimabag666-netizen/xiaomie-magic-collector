@@ -683,15 +683,27 @@
       [/"(?:packageSize|boxSize|cartonSize)"\s*:\s*"([0-9.xX*×\s]+(?:cm|mm)?)"/i, "箱子尺寸", v => v],
       [/"(?:packingQuantity|pcsPerCarton|cartonQty)"\s*:\s*"?(\d+)"?/i, "装箱数", v => `${v}个/箱`],
       [/"(?:sendGoodsAddressText|location|AddressText)"\s*:\s*"((?:\\.|[^"\\]){2,40})"/i, "产地", v => decodeJsonString(v)],
+      [/"(?:offerUnit|sellUnit|pricingUnit|measureUnit|unitName)"\s*:\s*"((?:\\.|[^"\\]){1,12})"/i, "单位", v => decodeJsonString(v)],
     ];
     for (const hSrc of scanHtmlVariants) {
       for (const [re, key, fmt] of logisticsPatterns) {
         if (attrs[key]) continue;
         const m = hSrc.match(re);
-        if (m && m[1] && Number(String(m[1]).replace(/[^\d.]/g, "")) > 0) {
-          putAttr(key, fmt(m[1].trim()));
+        if (m && m[1]) {
+          const rawVal = m[1].trim();
+          const needPositiveNum = key !== "产地" && key !== "单位";
+          if (!needPositiveNum || Number(rawVal.replace(/[^\d.]/g, "")) > 0) {
+            if (key === "单位" && /^(?:px|em|rem|vw|vh|%|ms|s|mm|cm|m|g|kg|ml|l)$/i.test(rawVal)) continue;
+            putAttr(key, fmt(rawVal));
+          }
         }
       }
+    }
+    if (!attrs["单位"]) {
+      const unitScope = `${(document.querySelector(".od-pc-offer-price-contain, .price-comp, [class*='price-info'], [class*='offer-price'], [class*='unit-text']")?.innerText || "")}\n${(document.body?.innerText || "").slice(0, 2000)}`;
+      const um = unitScope.match(/(?:\d+\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)\s*(?:起批|起订|及以上)|(?:元|¥|￥)\s*[\d.]+\s*[/／]\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)(?=$|[^a-zA-Z\u4e00-\u9fa5]))/);
+      const pickedU = um ? (um[1] || um[2] || "").trim() : "";
+      if (pickedU) putAttr("单位", pickedU);
     }
 
     let descContainerText = "";

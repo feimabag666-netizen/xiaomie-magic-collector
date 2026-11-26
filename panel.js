@@ -4283,6 +4283,10 @@ function isValidFieldValue(name, val) {
     if (!/\d/.test(v)) return false;
     if (v.length > 60 && !/[¥￥$€£]/.test(v)) return false;
   }
+  if (name === "单位") {
+    if (v.length > 16) return false;
+    if (/^(?:mm|cm|dm|km|m|mg|g|kg|ml|cl|l|px|em|rem|ms|元|角|分|人民币|美元|rmb|cny|usd)$/i.test(v)) return false;
+  }
   return true;
 }
 function matchField(name, attrs, text) {
@@ -4319,7 +4323,7 @@ function matchField(name, attrs, text) {
       if (/^[\u4e00-\u9fa5]{2,5}$/.test(c)) return [...c].map(ch => escRe(ch)).join("\\s*");
       return escRe(c);
     };
-    const lenRange = isYesNo ? "{1,36}" : "{2,96}";
+    const lenRange = (isYesNo || name === "单位") ? "{1,36}" : "{2,96}";
     for (const c of cand) {
       const lblPat = buildLabelReStr(c);
       // 1) 同行「标签: 值」匹配（避免跨行直接吞掉下一列标签如“尺寸: 材质:”）
@@ -4328,6 +4332,7 @@ function matchField(name, attrs, text) {
         const prefixCtx = text.slice(Math.max(0, (m.index || 0) - 8), m.index || 0);
         if (name === "产品尺寸" && /(?:外箱|纸箱|箱子|整箱|大箱|包装|箱规|箱)\s*$/i.test(prefixCtx)) continue;
         if (name === "单件重量" && /(?:外箱|纸箱|箱子|整箱|大箱|包装|毛净?|箱)\s*$/i.test(prefixCtx)) continue;
+        if (name === "单位" && /(?:尺寸|重量|容量|货币|金额|价格|计量长度|长度)\s*$/i.test(prefixCtx)) continue;
         const rawMatched = m && m[1] ? m[1].trim() : "";
         const v = norm(rawMatched);
         if (v && !BADVAL.has(v) && isValidFieldValue(name, v)) return v;
@@ -4397,6 +4402,12 @@ function matchField(name, attrs, text) {
     if (name === "包装方式") {
       const pm = text.match(/(?:单个|独立|透明|加厚|定制|内)?(?:OPP袋|PE袋|CPE袋|自封袋|磨砂袋|气泡袋|防尘袋|无纺布袋|绒布袋|编织袋|彩盒|白盒|牛皮纸盒|瓦楞盒|天地盖盒|礼盒|纸盒|吸塑卡|吸塑盒|吊卡|纸箱|袋装|盒装|散装)(?:独立)?(?:包装|装)?/i);
       if (pm && pm[0] && pm[0].trim().length >= 2) return pm[0].trim();
+    }
+    // 针对「单位」支持从起批量、标价（如 1个起批、¥7.50/个）及整箱单位（48个/箱）反推销售计量单位
+    if (name === "单位") {
+      const um = String(text).match(/(?:\d+\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)\s*(?:起批|起订|及以上)|(?:元|¥|￥)\s*[\d.]+\s*[/／]\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)(?=$|[^a-zA-Z\u4e00-\u9fa5])|\d+\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)\s*[/／]\s*箱)/);
+      const pickedU = um ? (um[1] || um[2] || um[3] || "").trim() : "";
+      if (pickedU && isValidFieldValue(name, pickedU)) return pickedU;
     }
   }
   return "";
