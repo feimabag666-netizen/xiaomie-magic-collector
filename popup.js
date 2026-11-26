@@ -442,8 +442,14 @@ async function extractCurrentPage() {
     } else {
       const priceDom = document.querySelector(".price-text, .od-pc-offer-price-contain, .a-price .a-offscreen, .p-price .price, [itemprop='price'], .product-price, [class*='product-price']");
       if (priceDom) {
-        const pVal = (priceDom.getAttribute("content") || priceDom.innerText || "").replace(/\s+/g, " ").trim().slice(0, 60);
-        if (/\d/.test(pVal)) put("价格", pVal);
+        const rawP = (priceDom.getAttribute("content") || priceDom.innerText || "")
+          .replace(/(\d)\s*\.\s*(\d)/g, "$1.$2")
+          .replace(/([¥￥$€£])\s+(\d)/g, "$1$2")
+          .replace(/(?:^|\s)(?:新人价|新人专享|热销款|热卖款|爆款价?|活动价|秒杀价|促销价|优惠价|券后价?|预售价|到手价|团购价|拼单价|拼团价|折后价|折扣价|会员价|会员专享|参考价|特价|限时特惠|直降价?|限时价?|惊喜价?|福利价?|清仓价?|百亿补贴|补贴价?)\s*[:：]?\s*/gi, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 60);
+        if (/\d/.test(rawP) && !/(?:指商家|专柜价|吊牌价|划线价格|未划线价格|价格说明|仅供参考|已售|成交|评价|人付款)/.test(rawP)) put("价格", rawP);
       }
     }
 
@@ -885,8 +891,8 @@ async function extractCurrentPage() {
     const wtMatch = noCartonText.match(/(?:单件重量|单品重量|产品重量|单重|克重)\s*[:：]?\s*(\d+(?:\.\d+)?\s*(?:g|kg|克|千克|公斤))(?=$|[^a-zA-Z0-9])/i);
     if (wtMatch && !attrs["单件重量"]) put("单件重量", wtMatch[1]);
     if (!attrs["单位"]) {
-      const um = pageText.slice(0, 2000).match(/(?:\d+\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)\s*(?:起批|起订|及以上)|(?:元|¥|￥)\s*[\d.]+\s*[/／]\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)(?=$|[^a-zA-Z\u4e00-\u9fa5]))/);
-      const pickedU = um ? (um[1] || um[2] || "").trim() : "";
+      const um = pageText.slice(0, 2000).match(/(?:(?:≥|>=|满)?\d+\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)\s*(?:起批|起订|及以上|起(?=$|[^a-zA-Z\u4e00-\u9fa5]))|(?:元|¥|￥)\s*[\d.]+\s*[/／]\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)(?=$|[^a-zA-Z\u4e00-\u9fa5])|(?:按|计价|销售单位|计量单位)\s*[:：]?\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)(?=$|[^a-zA-Z\u4e00-\u9fa5]))/);
+      const pickedU = um ? (um[1] || um[2] || um[3] || "").trim() : "";
       if (pickedU) put("单位", pickedU);
     }
   }

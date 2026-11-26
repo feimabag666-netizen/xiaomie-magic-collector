@@ -4211,7 +4211,7 @@ const FIELD_ALIAS = {
   "包装方式": ["包装方式", "包装", "包装类型", "内包装", "package", "packaging"],
   "功能": ["功能", "产品功能", "特点", "核心功能", "用途", "function", "feature", "special feature"],
   "价格": ["价格", "单价", "批发价", "参考价", "零售价", "售价", "price"],
-  "单位": ["单位", "计价单位", "计量单位", "unit"],
+  "单位": ["单位", "计价单位", "计量单位", "销售单位", "售卖单位", "包装单位", "unit"],
   "风格": ["风格", "款式风格", "设计风格", "style"],
   "适用人群": ["适用人群", "人群", "适用对象", "target audience"],
   "主要销售地区": ["主要销售地区", "销售地区", "main sales regions"],
@@ -4459,10 +4459,10 @@ function matchField(name, attrs, text) {
       const pm = text.match(/(?:单个|独立|透明|加厚|定制|内)?(?:OPP袋|PE袋|CPE袋|自封袋|磨砂袋|气泡袋|防尘袋|无纺布袋|绒布袋|编织袋|彩盒|白盒|牛皮纸盒|瓦楞盒|天地盖盒|礼盒|纸盒|吸塑卡|吸塑盒|吊卡|纸箱|袋装|盒装|散装)(?:独立)?(?:包装|装)?/i);
       if (pm && pm[0] && pm[0].trim().length >= 2) return pm[0].trim();
     }
-    // 针对「单位」支持从起批量、标价（如 1个起批、¥7.50/个）及整箱单位（48个/箱）反推销售计量单位
+    // 针对「单位」支持从起批量、标价（如 1个起批、¥7.50/个、1件起、按件计价）及整箱单位（48个/箱）反推销售计量单位
     if (name === "单位") {
-      const um = String(text).match(/(?:\d+\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)\s*(?:起批|起订|及以上)|(?:元|¥|￥)\s*[\d.]+\s*[/／]\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)(?=$|[^a-zA-Z\u4e00-\u9fa5])|\d+\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)\s*[/／]\s*箱)/);
-      const pickedU = um ? (um[1] || um[2] || um[3] || "").trim() : "";
+      const um = String(text).match(/(?:(?:≥|>=|满)?\d+\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)\s*(?:起批|起订|及以上|起(?=$|[^a-zA-Z\u4e00-\u9fa5]))|(?:元|¥|￥)\s*[\d.]+\s*[/／]\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)(?=$|[^a-zA-Z\u4e00-\u9fa5])|(?:按|计价|销售单位|计量单位)\s*[:：]?\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)(?=$|[^a-zA-Z\u4e00-\u9fa5])|\d+\s*(个|件|套|支|只|盒|条|袋|瓶|杯|把|双|对|张|片|卷|本|副|组|台)\s*[/／]\s*箱)/);
+      const pickedU = um ? (um[1] || um[2] || um[3] || um[4] || "").trim() : "";
       if (pickedU && isValidFieldValue(name, pickedU)) return pickedU;
     }
   }
@@ -5930,6 +5930,8 @@ function _extractFieldFromSearchSnippets(field, text) {
   if (field === "功能") {
     const mFunc = s.match(/(?:^|[\s，。;；(（【])(?:功能|特点|特性|function|feature)\s*[:：]\s*([^\n，。;；]{2,40})/i);
     if (mFunc && isValidFieldValue("功能", mFunc[1])) return mFunc[1].trim();
+    const feats = [...new Set((s.match(/(?:防泼水|防水|耐磨|减负|透气|扩容|抗震|防盗|USB充电|保温|保冷|可折叠|折叠|便携|大容量|轻便|防漏|防滑|防摔|防尘|抗菌|隔热|耐高温|干湿分离)/gi) || []).map(x => x.trim()))];
+    if (feats.length) return feats.slice(0, 4).join("、");
   }
   return "";
 }
@@ -6115,7 +6117,7 @@ function normalizeRawPriceText(raw) {
   const s = stripBracketsAndBoxes(String(raw || ""))
     .replace(/(\d)\s*\.\s*(\d)/g, "$1.$2")
     .replace(/([¥￥$€£])\s+(\d)/g, "$1$2")
-    .replace(/(?:^|\s)(?:新人价|热销款|爆款价?|活动价|秒杀价|促销价|优惠价|券后价?|预售价|到手价|团购价|拼单价|折扣价|会员价|参考价|特价|直降价?|限时价?|惊喜价?|福利价?|清仓价?)\s*[:：]?\s*/gi, " ")
+    .replace(/(?:^|\s)(?:新人价|新人专享|热销款|热卖款|爆款价?|活动价|秒杀价|促销价|优惠价|券后价?|预售价|到手价|团购价|拼单价|拼团价|折后价|折扣价|会员价|会员专享|参考价|特价|限时特惠|直降价?|限时价?|惊喜价?|福利价?|清仓价?|百亿补贴|补贴价?)\s*[:：]?\s*/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
   if (!s || !/\d/.test(s)) return "";
@@ -7006,7 +7008,7 @@ function validCartonValue(name, value) {
     const n = Number(nums[0]);
     if (/(?:^|\d)\s*(?:g|克)$/i.test(text) && !/kg|千克|公斤/i.test(text) && n < 2000) return false;
     if (!/[a-zA-Z\u4e00-\u9fa5]/.test(text) && n >= 100) return false;
-    return n >= 0.5 && n <= 65;
+    return nums.slice(0, 2).every(x => Number(x) >= 0.5 && Number(x) <= 65);
   }
   return nums.length > 0 && Number(nums[0]) > 0 && Number(nums[0]) < 5000;
 }
