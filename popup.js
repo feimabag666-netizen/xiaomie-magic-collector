@@ -235,7 +235,9 @@ async function extractCurrentPage() {
     let value = String(rawVal ?? "").replace(/[\u200e\u200f]/g, "").replace(/\s+/g, " ").trim();
     if (!key || !value || key.length > 42 || value.length > 360 || key === value) return;
     if (/^https?:\/\//i.test(key) || /^[{[]/.test(key) || /^[{[]/.test(value)) return;
-    if (JUNK_KEY_RE.test(key) || /^(?:登录|咨询客服|查看详情|展开|收起|更多|点击|立即|Please|Click|Sign in|javascript:|undefined|null|true|false)/i.test(value)) return;
+    if (JUNK_KEY_RE.test(key) || /^(?:登录|咨询客服|查看详情|展开|收起|更多|点击|立即|暂无|待定|未知|不详|无规格|无尺寸|见详情|见图片|详见详情|略|Please|Click|Sign in|javascript:|undefined|null|true|false|n\/a|none)$/i.test(value)) return;
+    if (/^[/\\\-—–_.*·•~、，,.;:：|？?]+$/.test(value)) return;
+    if (/^(?:产品尺寸|单品尺寸|外形尺寸|规格尺寸|单件重量|单品重量|产品重量|单重|容量|容积)$/i.test(key) && !/\d/.test(value) && !/^(?:XS|S|M|L|XL|XXL|2XL|3XL|均码)$/i.test(value)) return;
     if (!attrs[key]) attrs[key] = value;
   };
 

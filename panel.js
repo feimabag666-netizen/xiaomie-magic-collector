@@ -1334,7 +1334,9 @@ async function extractUniversalPageInTab() {
     let value = String(rawVal ?? "").replace(/[\u200e\u200f]/g, "").replace(/\s+/g, " ").trim();
     if (!key || !value || key.length > 42 || value.length > 360 || key === value) return;
     if (/^https?:\/\//i.test(key) || /^[{[]/.test(key) || /^[{[]/.test(value)) return;
-    if (JUNK_KEY_RE.test(key) || /^(?:登录|咨询客服|查看详情|展开|收起|更多|点击|立即|Please|Click|Sign in|javascript:|undefined|null|true|false)/i.test(value)) return;
+    if (JUNK_KEY_RE.test(key) || /^(?:登录|咨询客服|查看详情|展开|收起|更多|点击|立即|暂无|待定|未知|不详|无规格|无尺寸|见详情|见图片|详见详情|略|Please|Click|Sign in|javascript:|undefined|null|true|false|n\/a|none)$/i.test(value)) return;
+    if (/^[/\\\-—–_.*·•~、，,.;:：|？?]+$/.test(value)) return;
+    if (/^(?:产品尺寸|单品尺寸|外形尺寸|规格尺寸|单件重量|单品重量|产品重量|单重|容量|容积)$/i.test(key) && !/\d/.test(value) && !/^(?:XS|S|M|L|XL|XXL|2XL|3XL|均码)$/i.test(value)) return;
     if (!attrs[key]) attrs[key] = value;
   };
 
@@ -4248,7 +4250,8 @@ function normalizeUnitWeight(rawVal, attrs = {}) {
 function sanitizeProductAttrs(rawAttrs) {
   if (!rawAttrs || typeof rawAttrs !== "object") return {};
   const entries = Object.entries(rawAttrs);
-  const badKeyOrValRe = /^(?:预览|查看|展开|收起|更多|查看详情|详情|商品属性|跨境属性|包装信息|物流参数|数量|客服|评价|收藏|举报|登录|注册|选择|立即购买|加入购物车|全部|操作|图片|大图|视频|说明|参数)$/i;
+  const badKeyOrValRe = /^(?:预览|查看|展开|收起|更多|查看详情|详情|商品属性|跨境属性|包装信息|物流参数|数量|客服|评价|收藏|举报|登录|注册|选择|立即购买|加入购物车|全部|操作|图片|大图|视频|说明|参数|暂无|待定|未知|不详|无规格|无尺寸|见详情|见图片|详见详情|见描述|略|null|undefined|none|n\/a)$/i;
+  const pureSymbolRe = /^[/\\\-—–_.*·•~、，,.;:：|？?]+$/;
   const pureValueAsKeyRe = /^(?:是|否|无|有|支持|不支持|可|不可|不限|通用|\d+(?:\.\d+)?%?)$/;
   const skuOptionSet = new Set();
   for (const [k, v] of entries) {
@@ -4270,7 +4273,8 @@ function sanitizeProductAttrs(rawAttrs) {
   ]);
   const clean = {};
   for (const [k, v] of rawMap.entries()) {
-    if (badKeyOrValRe.test(k) || badKeyOrValRe.test(v)) continue;
+    if (badKeyOrValRe.test(k) || badKeyOrValRe.test(v) || pureSymbolRe.test(v)) continue;
+    if (/^(?:产品尺寸|尺寸|单品尺寸|外形尺寸|规格尺寸|单件重量|单品重量|产品重量|单重|容量|容积)$/i.test(k) && !/\d/.test(v) && !/^(?:XS|S|M|L|XL|XXL|2XL|3XL|均码)$/i.test(v)) continue;
     if (pureValueAsKeyRe.test(k)) continue;
     if (rawMap.get(v) === k && (knownFieldNames.has(v) || /^是否|^适用|率$|数$|量$|度$/.test(v))) continue;
     if (knownFieldNames.has(v) && !knownFieldNames.has(k) && v.length >= 2) continue;
@@ -4286,7 +4290,14 @@ function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function isValidFieldValue(name, val) {
   const v = String(val || "").trim();
   if (!v) return false;
-  if (/^(?:预览|查看|展开|收起|更多|查看详情|详情|图片|大图|视频|暂无|待定|未知|不详|说明|参数|全部|选择|客服|评价|收藏|举报|登录|注册)$/i.test(v)) return false;
+  if (/^[/\\\-—–_.*·•~、，,.;:：|？?]+$/.test(v)) return false;
+  if (/^(?:预览|查看|展开|收起|更多|查看详情|详情|图片|大图|视频|暂无|待定|未知|不详|无规格|无尺寸|无|见详情|见图片|详见详情|见描述|咨询客服|联系客服|略|说明|参数|全部|选择|客服|评价|收藏|举报|登录|注册|null|undefined|none|n\/a)$/i.test(v)) return false;
+  if (name === "产品尺寸") {
+    return /\d/.test(v) || /^(?:XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL|均码)$/i.test(v);
+  }
+  if (name === "单件重量" || name === "容量" || name === "电压" || name === "功率") {
+    return /\d/.test(v);
+  }
   if (name === "交期") {
     if (/(?:给力|杠杠|很快|超快|神速|好评|满意|态度|服务|物流体验)/.test(v)) return false;
     return /(?:\d|天|日|周|月|小时|时|现货|当天|次日|即发|协商|days?|weeks?|hours?|months?|stock|immediate)/i.test(v);
