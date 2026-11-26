@@ -4263,6 +4263,7 @@ function sanitizeProductAttrs(rawAttrs) {
   if (!rawAttrs || typeof rawAttrs !== "object") return {};
   const entries = Object.entries(rawAttrs);
   const badKeyOrValRe = /^(?:预览|查看|展开|收起|更多|查看详情|详情|商品属性|跨境属性|包装信息|物流参数|数量|客服|评价|收藏|举报|登录|注册|选择|立即购买|加入购物车|全部|操作|图片|大图|视频|说明|参数|暂无|待定|未知|不详|无规格|无尺寸|见详情|见图片|详见详情|见描述|略|null|undefined|none|n\/a)$/i;
+  const statNoiseRe = /(?:\d+\+?\s*(?:人好评|人评价|人付款|人想买|人收藏|人关注|人看过|条评价|条评论|笔成交|件可售|件起批)|好评率|回头率|复购率|揽收率|物流体验|买家保障|先采后付|退货包运费|加入进货单|立即购买|加入购物车)/i;
   const pureSymbolRe = /^[/\\\-—–_.*·•~、，,.;:：|？?]+$/;
   const pureValueAsKeyRe = /^(?:是|否|无|有|支持|不支持|可|不可|不限|通用|\d+(?:\.\d+)?%?)$/;
   const skuOptionSet = new Set();
@@ -4285,7 +4286,7 @@ function sanitizeProductAttrs(rawAttrs) {
   ]);
   const clean = {};
   for (const [k, v] of rawMap.entries()) {
-    if (badKeyOrValRe.test(k) || badKeyOrValRe.test(v) || pureSymbolRe.test(v)) continue;
+    if (badKeyOrValRe.test(k) || badKeyOrValRe.test(v) || pureSymbolRe.test(v) || statNoiseRe.test(v)) continue;
     if (/^(?:产品尺寸|尺寸|单品尺寸|外形尺寸|规格尺寸|单件重量|单品重量|产品重量|单重|容量|容积)$/i.test(k) && !/\d/.test(v) && !/^(?:XS|S|M|L|XL|XXL|2XL|3XL|均码)$/i.test(v)) continue;
     if (pureValueAsKeyRe.test(k)) continue;
     if (rawMap.get(v) === k && (knownFieldNames.has(v) || /^是否|^适用|率$|数$|量$|度$/.test(v))) continue;
@@ -4304,10 +4305,20 @@ function isValidFieldValue(name, val) {
   if (!v) return false;
   if (/^[/\\\-—–_.*·•~、，,.;:：|？?]+$/.test(v)) return false;
   if (/^(?:预览|查看|展开|收起|更多|查看详情|详情|图片|大图|视频|暂无|待定|未知|不详|无规格|无尺寸|无|见详情|见图片|详见详情|见描述|咨询客服|联系客服|略|说明|参数|全部|选择|客服|评价|收藏|举报|登录|注册|null|undefined|none|n\/a)$/i.test(v)) return false;
+  if (/(?:\d+\+?\s*(?:人好评|人评价|人付款|人想买|人收藏|人关注|人看过|条评价|条评论|笔成交|件可售|件起批)|好评率|回头率|复购率|揽收率|物流体验|买家保障|先采后付|退货包运费|加入进货单|立即购买|加入购物车)/i.test(v)) return false;
   if (name === "产品尺寸") {
+    if (/(?:人好评|人评价|人付款|销量|成交|[¥￥$€£])/.test(v)) return false;
     return /\d/.test(v) || /^(?:XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL|均码)$/i.test(v);
   }
-  if (name === "单件重量" || name === "容量" || name === "电压" || name === "功率") {
+  if (name === "容量") {
+    if (/(?:人|好评|评价|付款|成交|销量|可售|库存|元|¥|￥|\$|折|天|小时)/.test(v)) return false;
+    return /(?:\d+(?:\.\d+)?\s*(?:ml|mL|l|L|cl|oz|gal|cc|升|毫升|加仑|立方|mah|ah|wh|gb|tb|寸|英寸|本|瓶|杯|个|只|pcs)|(?:大容量|小容量|中容量|\d+\s*L(?:以下|以上)?))/i.test(v);
+  }
+  if (name === "单件重量") {
+    if (/(?:人|好评|评价|付款|成交|销量|¥|￥|\$)/.test(v)) return false;
+    return /\d/.test(v);
+  }
+  if (name === "电压" || name === "功率") {
     return /\d/.test(v);
   }
   if (name === "交期") {
@@ -4387,6 +4398,9 @@ function matchField(name, attrs, text) {
         const lblRe = new RegExp(buildLabelReStr(c) + "(?:\\s*[:：]|\\s|$)", "i");
         const hit = curLine.match(lblRe);
         if (!hit) continue;
+        // 无冒号的孤立词（如网页导航/折叠区里的“容量”），仅允许“产品尺寸”在下一行精准命中带单位维度，防止抓到相邻UI评价文案（如 40+人好评）
+        const hasColon = /[:：]/.test(curLine);
+        if (!hasColon && name !== "产品尺寸") continue;
         // 统计当前行有多少个形如「标签:」的列头，确定当前字段所在列序号
         labelCols = [...curLine.matchAll(/([\u4e00-\u9fa5A-Za-z/]{2,12})\s*[:：]/g)].map(x => x[1].replace(/\s+/g, ""));
         const cCompact = c.replace(/\s+/g, "").toLowerCase();
@@ -6015,6 +6029,7 @@ function normalizeRawPriceText(raw) {
   const s = stripBracketsAndBoxes(String(raw || ""))
     .replace(/(\d)\s*\.\s*(\d)/g, "$1.$2")
     .replace(/([¥￥$€£])\s+(\d)/g, "$1$2")
+    .replace(/(?:^|\s)(?:新人价|活动价|秒杀价|促销价|优惠价|券后价?|预售价|到手价|团购价|拼单价|折扣价|会员价|参考价)\s*[:：]?\s*/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
   if (!s || !/\d/.test(s)) return "";
