@@ -5532,7 +5532,7 @@ function _getCategoryCartonProfile(title, coreNoun, attrs = {}, kw = {}) {
   const isCeramicOrGlass = /陶瓷|骨瓷|紫砂|搪瓷|玻璃|ceramic|porcelain|glass/i.test(full);
   const isCupOrBottle = /杯|壶|瓶|罐|碗|盘|cup|mug|bottle|tumbler|flask|jar|bowl/i.test(full);
   const isLargeStorage = /收纳柜|抽屉柜|储物柜|折叠箱|周转箱|收纳箱|置物架|鞋柜|衣柜|行李箱|拉杆箱/i.test(full);
-  const isApparelOrBag = /卫衣|T恤|外套|夹克|毛衣|衬衫|连衣裙|裤|裙|童装|服装|睡衣|背包|双肩包|手提包|鞋/i.test(full);
+  const isApparelOrBag = /卫衣|T恤|外套|夹克|毛衣|衬衫|连衣裙|裤|裙|童装|服装|睡衣|背包|双肩包|手提包|托特包|单肩包|斜挎包|箱包|女包|男包|皮包|手袋|鞋/i.test(full);
 
   if (isOralOrSmallPersonal) {
     const unit = String(attrs["单位"] || "").trim() === "卡" ? "卡" : (/支装|牙刷/.test(full) ? "支" : "盒");
@@ -5540,6 +5540,7 @@ function _getCategoryCartonProfile(title, coreNoun, attrs = {}, kw = {}) {
     const unitKg = kw.unitWeightG > 0 ? (kw.unitWeightG / 1000) : (unit === "卡" ? 0.042 : 0.025);
     return {
       minValidQty: 24,
+      maxValidQty: 600,
       defaultQty: `${defaultQtyNum}${unit}/箱`,
       defaultQtyNum,
       defaultSize: "48×36×32cm",
@@ -5552,6 +5553,7 @@ function _getCategoryCartonProfile(title, coreNoun, attrs = {}, kw = {}) {
     const unitKg = kw.unitWeightG > 0 ? (kw.unitWeightG / 1000) : (defaultQtyNum === 1 ? 4.2 : 1.3);
     return {
       minValidQty: 1,
+      maxValidQty: /多层|柜/.test(full) ? 6 : 24,
       defaultQty: `${defaultQtyNum}个/箱`,
       defaultQtyNum,
       defaultSize: defaultQtyNum === 1 ? "56×42×35cm" : "62×45×48cm",
@@ -5564,6 +5566,7 @@ function _getCategoryCartonProfile(title, coreNoun, attrs = {}, kw = {}) {
     const unitKg = kw.unitWeightG > 0 ? (kw.unitWeightG / 1000) : (isCeramicOrGlass ? 0.38 : 0.25);
     return {
       minValidQty: 12,
+      maxValidQty: isCeramicOrGlass ? 96 : 160,
       defaultQty: `${defaultQtyNum}个/箱`,
       defaultQtyNum,
       defaultSize: isCeramicOrGlass ? (defaultQtyNum <= 36 ? "38×29×36cm" : (defaultQtyNum <= 48 ? "39×31×45cm" : "46×36×42cm")) : "52×42×38cm",
@@ -5572,10 +5575,12 @@ function _getCategoryCartonProfile(title, coreNoun, attrs = {}, kw = {}) {
     };
   }
   if (isApparelOrBag) {
-    const defaultQtyNum = /外套|夹克|鞋|包/.test(full) ? 30 : 50;
-    const unitKg = kw.unitWeightG > 0 ? (kw.unitWeightG / 1000) : 0.28;
+    const isHeavyBagOrShoe = /托特包|单肩包|斜挎包|背包|双肩包|手提包|箱包|女包|男包|皮包|手袋|包|鞋|外套|夹克/.test(full);
+    const defaultQtyNum = isHeavyBagOrShoe ? 30 : 50;
+    const unitKg = kw.unitWeightG > 0 ? (kw.unitWeightG / 1000) : (/包/.test(full) ? 0.45 : 0.28);
     return {
       minValidQty: 10,
+      maxValidQty: isHeavyBagOrShoe ? 100 : 180,
       defaultQty: `${defaultQtyNum}件/箱`,
       defaultQtyNum,
       defaultSize: "58×42×40cm",
@@ -5585,12 +5590,23 @@ function _getCategoryCartonProfile(title, coreNoun, attrs = {}, kw = {}) {
   }
   return {
     minValidQty: 10,
+    maxValidQty: 240,
     defaultQty: "40个/箱",
     defaultQtyNum: 40,
     defaultSize: "50×40×38cm",
     unitKg: kw.unitWeightG > 0 ? (kw.unitWeightG / 1000) : 0.25,
     tareKg: 1.2,
   };
+}
+
+function _isPhysicallyValidCartonQty(qtyNum, catProfile) {
+  if (!Number.isFinite(qtyNum) || qtyNum <= 0) return false;
+  if (!catProfile) return qtyNum <= 600;
+  if (qtyNum < (catProfile.minValidQty || 1)) return false;
+  if (qtyNum > (catProfile.maxValidQty || 600)) return false;
+  // 外贸标准出口纸箱合理总重校验：多件装常规日用/箱包/杯壶单箱毛重绝不会超过 45kg（严禁出现 1491件/箱 = 746.8kg 这类库存误抓）
+  if ((catProfile.defaultQtyNum || 0) >= 4 && (qtyNum * (catProfile.unitKg || 0.25)) > 42) return false;
+  return true;
 }
 
 /* ---- 箱规深度搜索（由 AGNES AI 联网深度搜索 + 全平台多引擎检索交叉核验：装箱数 / 箱子毛重 / 箱子净重 / 箱子尺寸） ---- */
@@ -5635,9 +5651,9 @@ async function aiCartonLookup(field, data, sourceUrl, ocrText, cache) {
               if (!out[f]) {
                 const extracted = extractCartonValue(f, {}, mergedNow);
                 if (extracted && validCartonValue(f, extracted)) {
-                  if (f === "装箱数") {
+                  if (f === "装箱数" || f === "每箱多少个") {
                     const qn = parseInt((extracted.match(/\d+/) || ["0"])[0], 10);
-                    if (qn >= catProfile.minValidQty) out[f] = _normalizeCartonQty(extracted, title, data.attrs);
+                    if (_isPhysicallyValidCartonQty(qn, catProfile)) out[f] = _normalizeCartonQty(extracted, title, data.attrs);
                   } else {
                     out[f] = extracted;
                   }
@@ -5684,7 +5700,7 @@ async function aiCartonLookup(field, data, sourceUrl, ocrText, cache) {
             let v = String(j[f] || "").replace(/\s+/g, " ").trim();
             if (f === "每箱多少个" && v) {
               const qn = parseInt((v.match(/\d+/) || ["0"])[0], 10);
-              if (qn < catProfile.minValidQty) continue; // 拦截把零售内包装(如2支/4支)误当整箱数的结果
+              if (!_isPhysicallyValidCartonQty(qn, catProfile)) continue; // 拦截内包装小数字与库存/销量超大异常数字(如 1491件)
               v = _normalizeCartonQty(v, title, data.attrs);
             }
             if (v && validCartonValue(f, v)) { out[f] = v; hitAny = true; }
@@ -5712,7 +5728,7 @@ async function aiCartonLookup(field, data, sourceUrl, ocrText, cache) {
       if (totalSearchHits > 0 || Object.keys(out).some(k => CARTON_FIELDS.includes(k))) {
         if (out["每箱多少个"]) {
           const qn = parseInt((out["每箱多少个"].match(/\d+/) || ["0"])[0], 10);
-          if (qn < catProfile.minValidQty) {
+          if (!_isPhysicallyValidCartonQty(qn, catProfile)) {
             out["每箱多少个"] = catProfile.defaultQty;
           } else {
             out["每箱多少个"] = _normalizeCartonQty(out["每箱多少个"], title, data.attrs);
@@ -5728,8 +5744,10 @@ async function aiCartonLookup(field, data, sourceUrl, ocrText, cache) {
         if (!out["箱子立方数"] && out["箱子尺寸"]) {
           out["箱子立方数"] = _calcCbmFromDim(out["箱子尺寸"]);
         }
-        if (!out["箱子毛净重"]) {
-          const nw = Math.max(3.5, Number((qtyNum * catProfile.unitKg).toFixed(1)));
+        const rawGwNum = out["箱子毛净重"] ? parseFloat((out["箱子毛净重"].match(/(\d+(?:\.\d+)?)/) || ["0"])[1]) : 0;
+        const expectedNw = Math.max(2.0, Number((qtyNum * catProfile.unitKg).toFixed(1)));
+        if (!out["箱子毛净重"] || !validCartonValue("箱子毛净重", out["箱子毛净重"]) || ((catProfile.defaultQtyNum || 0) >= 4 && rawGwNum > 50) || (rawGwNum > 0 && rawGwNum < expectedNw * 0.25)) {
+          const nw = Math.max(3.5, expectedNw);
           const gw = Number((nw + catProfile.tareKg).toFixed(1));
           out["箱子毛净重"] = `毛重 ${gw}kg / 净重 ${nw}kg`;
         }
@@ -6405,7 +6423,7 @@ function adaptMultiSpecCorrespondence(items, data, { minQty = 0, priceMode = "ra
       const norm = _normalizeCartonQty(s, title, attrs);
       if (!validCartonValue("每箱多少个", norm)) return "";
       const qn = parseInt((norm.match(/\d+/) || ["0"])[0], 10);
-      return qn >= (catProfile?.minValidQty || 6) ? norm : "";
+      return _isPhysicallyValidCartonQty(qn, catProfile) ? norm : "";
     }
     if (field === "箱子尺寸") {
       const norm = _normalizeCartonDim(s);
@@ -6863,19 +6881,19 @@ function validCartonValue(name, value) {
   if (name === "每箱多少个" || name === "装箱数") {
     if (!nums.length) return false;
     const n = Number(nums[0]);
-    if (n <= 0 || n > 5000) return false;
+    if (n <= 0 || n > 1000) return false;
     // 剔除明显是零售内盒/单卡包装的表达（如“2支/卡”、“4支/盒”、“2个/包”）
     if (/[/／每]\s*(?:卡|盒|包|袋|板|组|排|blister|pack|bag)$/i.test(text)) return false;
-    const hasCartonUnit = /[/／每]\s*(?:箱|外箱|整箱|件|ctn|carton|case|кор)|(?:箱装|整箱|外箱)/i.test(text);
-    if (!hasCartonUnit && n < 6) return false;
-    return /^\d+\s*(?:个|件|只|套|支|卡|包|盒|双|条|张|本|把|台|pcs|sets?|pairs?|units?|bags?|boxes?|cards?|шт|本|세트|uds|unidades|pièces|sätze)?(?:\s*[/／每]\s*(?:箱|外箱|整箱|件|ctn|carton|box|case|кор))?(?:\s*[（(][^）)]*[）)])?$/i.test(text);
+    const hasCartonUnit = /[/／每]\s*(?:箱|外箱|整箱|ctn|carton|case|кор)|(?:箱装|整箱|外箱)/i.test(text);
+    if (!hasCartonUnit && (n < 6 || n > 600)) return false;
+    return /^\d+\s*(?:个|件|只|套|支|卡|包|盒|双|条|张|本|把|台|pcs|sets?|pairs?|units?|bags?|boxes?|cards?|шт|本|세트|uds|unidades|pièces|sätze)?(?:\s*[/／每]\s*(?:箱|外箱|整箱|ctn|carton|box|case|кор))?(?:\s*[（(][^）)]*[）)])?$/i.test(text);
   }
   if (name === "箱子毛净重" || name === "箱子毛重" || name === "箱子净重") {
     if (!nums.length) return false;
     const n = Number(nums[0]);
     if (/(?:^|\d)\s*(?:g|克)$/i.test(text) && !/kg|千克|公斤/i.test(text) && n < 2000) return false;
     if (!/[a-zA-Z\u4e00-\u9fa5]/.test(text) && n >= 100) return false;
-    return n >= 0.5 && n < 1000;
+    return n >= 0.5 && n <= 65;
   }
   return nums.length > 0 && Number(nums[0]) > 0 && Number(nums[0]) < 5000;
 }
@@ -6949,9 +6967,14 @@ function extractCartonValue(name, attrs, text) {
   if (name === "每箱多少个" || name === "装箱数") {
     const qtyValPattern = "([0-9]{1,4}\\s*(?:个|件|只|套|支|卡|包|盒|双|条|本|把|台|pcs|sets?|pairs?|units?|cards?|шт|세트|uds|unidades|pièces|sätze)?(?:\\s*[/／每]\\s*(?:箱|外箱|整箱|件|ctn|carton|box))?)";
     for (const key of keys) {
-      const re = new RegExp(escRe(key) + "(?:\\s*\\([^)]*\\)|\\s*（[^）]*）|[约为是大概\\s:：~≈]){0,6}" + qtyValPattern, "i");
-      const m = fullText.match(re);
-      if (m && validCartonValue(name, m[1])) return m[1].trim();
+      const re = new RegExp(escRe(key) + "(?:\\s*\\([^)]*\\)|\\s*（[^）]*）|[约为是大概\\s:：~≈]){0,6}" + qtyValPattern, "gi");
+      for (const m of fullText.matchAll(re)) {
+        const cand = m && m[1] ? m[1].trim() : "";
+        const afterCtx = fullText.slice((m.index || 0) + m[0].length, (m.index || 0) + m[0].length + 10);
+        if (/^\s*(?:可售|库存|成交|销量|人付款|笔|起批|起订)/.test(afterCtx)) continue;
+        if (!/箱|ctn|carton/i.test(cand) && !/箱|ctn|carton/i.test(key)) continue;
+        if (validCartonValue(name, cand)) return cand;
+      }
     }
     const perCtnRe = /(\d{1,4}\s*(?:个|件|只|套|支|卡|包|盒|双|条|本|把|台|pcs|sets?|units?)\s*[/／每]\s*(?:箱|外箱|整箱|ctn|carton))/i;
     const mPer = fullText.match(perCtnRe);
@@ -7229,7 +7252,7 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
       if (field === "每箱多少个" || field === "装箱数") {
         const qn = parseInt((raw.match(/\d+/) || ["0"])[0], 10);
         const explicitCtn = /[/／每]\s*(?:箱|外箱|整箱|ctn|carton)/i.test(raw);
-        if (catProfile && qn < catProfile.minValidQty && !explicitCtn) return "";
+        if (catProfile && (!_isPhysicallyValidCartonQty(qn, catProfile) || (qn < catProfile.minValidQty && !explicitCtn))) return "";
         return _normalizeCartonQty(raw, data?.title || "", data?.attrs || {});
       }
       return raw;
