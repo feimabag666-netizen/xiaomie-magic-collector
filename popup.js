@@ -253,6 +253,22 @@ async function extractCurrentPage() {
   const ldSkuImages = [];
   const ldVideos = [];
   const skuNames = [];
+  const variantsData = [];
+  const priceTiers = [];
+  const pushPopupVariant = (spec, model = "", priceVal = 0, currency = "¥", extra = {}) => {
+    const sp = String(spec || "").replace(/\s+/g, " ").trim();
+    if (!sp || sp === "Default Title") return;
+    if (!skuNames.includes(sp)) skuNames.push(sp);
+    const p = parseFloat(priceVal);
+    variantsData.push({
+      spec: sp,
+      model: String(model || "").trim(),
+      price: Number.isFinite(p) && p > 0 ? p : 0,
+      currency: currency || "¥",
+      weight: String(extra.weight || "").trim(),
+      size: String(extra.size || "").trim(),
+    });
+  };
   const walkProduct = node => {
     if (!node || typeof node !== "object") return;
     if (Array.isArray(node)) { node.forEach(walkProduct); return; }
@@ -288,7 +304,11 @@ async function extractCurrentPage() {
       });
       (Array.isArray(node.additionalProperty) ? node.additionalProperty : []).forEach(x => put(x?.name, x?.value));
       (Array.isArray(node.hasVariant) ? node.hasVariant : []).forEach(v => {
-        if (v?.name && !skuNames.includes(v.name)) skuNames.push(v.name);
+        if (v?.name) {
+          const vOffer = Array.isArray(v?.offers) ? v.offers[0] : v?.offers;
+          const vCur = vOffer?.priceCurrency === "USD" ? "$" : (vOffer?.priceCurrency === "CNY" || vOffer?.priceCurrency === "RMB" ? "¥" : (vOffer?.priceCurrency || "¥"));
+          pushPopupVariant(v.name, v.sku || v.mpn || v.model || "", vOffer?.price || v.price || 0, vCur);
+        }
         const vImg = typeof v?.image === "string" ? v.image : v?.image?.url;
         if (vImg) ldSkuImages.push(vImg);
       });
@@ -313,8 +333,13 @@ async function extractCurrentPage() {
           if (typeof u === "string") ldMainImages.push(u);
           else if (u?.src) ldMainImages.push(u.src);
         });
+        const shopCur = prod.currency === "CNY" || prod.currency === "RMB" ? "¥" : "$";
         (Array.isArray(prod.variants) ? prod.variants : []).forEach(v => {
-          if (v?.title && v.title !== "Default Title" && !skuNames.includes(v.title)) skuNames.push(v.title);
+          if (v?.title && v.title !== "Default Title") {
+            const rawP = v.price;
+            const numP = typeof rawP === "string" ? parseFloat(rawP) : (typeof rawP === "number" && Number.isInteger(rawP) && rawP >= 100 ? rawP / 100 : parseFloat(rawP || 0));
+            pushPopupVariant(v.title, v.sku || "", numP, shopCur, { weight: v.grams > 0 ? `${v.grams}g` : "" });
+          }
           const vImg = v?.featured_image?.src || v?.featured_media?.preview_image?.src || (typeof v?.image === "string" ? v.image : "");
           if (vImg) ldSkuImages.push(vImg);
         });
@@ -331,7 +356,12 @@ async function extractCurrentPage() {
           if (imgUrl) ldSkuImages.push(imgUrl);
           if (v?.attributes && typeof v.attributes === "object") {
             const label = Object.values(v.attributes).filter(Boolean).join(" / ");
-            if (label && !skuNames.includes(label)) skuNames.push(label);
+            if (label) {
+              const pVal = parseFloat(v.display_price ?? v.display_regular_price ?? 0);
+              const wRaw = v.weight_html ? String(v.weight_html).replace(/<[^>]+>/g, "").trim() : (v.weight ? `${v.weight}kg` : "");
+              const sRaw = v.dimensions_html ? String(v.dimensions_html).replace(/<[^>]+>/g, "").trim() : "";
+              pushPopupVariant(label, v.sku || "", pVal, "$", { weight: wRaw, size: sRaw });
+            }
           }
         });
       }
@@ -908,6 +938,9 @@ async function extractCurrentPage() {
     sku,
     videos,
     attrs,
+    variantsData: variantsData.slice(0, 80),
+    priceTiers,
+    packSpecs: [],
     imageDims,
     imageMeta,
     samePlatformLinks,
@@ -981,6 +1014,8 @@ async function triggerCurrentTabCapture(autoStart = false) {
           videos: [...new Set([...(specialized.videos || []), ...(capture?.videos || [])])],
           attrs: { ...(capture?.attrs || {}), ...(specialized.attrs || {}) },
           imageDims: capture?.imageDims || {},
+          priceTiers: (specialized.priceTiers && specialized.priceTiers.length) ? specialized.priceTiers : (capture?.priceTiers || []),
+          variantsData: (specialized.variantsData && specialized.variantsData.length) ? specialized.variantsData : (capture?.variantsData || []),
           packSpecs: (specialized.packSpecs && specialized.packSpecs.length) ? specialized.packSpecs : (capture?.packSpecs || []),
           detailUrl: specialized.detailUrl || capture?.detailUrl || "",
         };
