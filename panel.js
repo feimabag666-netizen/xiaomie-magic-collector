@@ -7934,42 +7934,108 @@ async function inspectImageVisualNoise(im, label = "") {
   return { isJunk: false, reason: "", isSuspectBadge: false };
 }
 
-// 专门裁剪并二值化徽标底部/顶部白字彩底横条（如红底白字「铺货·下单」、蓝底白字「店管家」），大幅提高 OCR 识别率
-async function _makeBannerOcrImage(im) {
-  if (!im || !im.blob || typeof createImageBitmap !== "function" || typeof document === "undefined") return null;
+// 提取图片顶部 38% 与底部 38% 的高对比文字条（分别为：1. 彩底/深底白字角标与横幅如“实力厂家/铺货下单”；2. 白底黑字标题与说明如“实力仓库”）
+async function _makeBannerOcrImages(im) {
+  if (!im || !im.blob || typeof createImageBitmap !== "function" || typeof document === "undefined") return [];
   let bm = null;
   try {
     bm = await createImageBitmap(im.blob);
     const w = bm.width || im.w || 0, h = bm.height || im.h || 0;
-    if (w < 40 || h < 40) return null;
-    const stripH = Math.max(24, Math.round(h * 0.40));
-    const scale = w < 320 ? 2 : 1;
-    const outW = Math.round(w * scale), outH = Math.round(stripH * scale);
-    const cv = document.createElement("canvas");
-    cv.width = outW;
-    cv.height = outH;
-    const ctx = cv.getContext("2d", { willReadFrequently: true });
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, outW, outH);
-    ctx.drawImage(bm, 0, Math.max(0, h - stripH), w, stripH, 0, 0, outW, outH);
-    const imgData = ctx.getImageData(0, 0, outW, outH);
-    const d = imgData.data;
-    // 提取彩底上的无色相/低色差白字（同时剔除金黄皇冠/橙色图标的高饱和亮点），反色成白底黑字
-    for (let i = 0; i < d.length; i += 4) {
-      const r = d[i], g = d[i + 1], b = d[i + 2];
-      const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
-      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-      const val = (lum >= 165 && (maxC - minC) <= 75) ? 0 : 255;
-      d[i] = val; d[i + 1] = val; d[i + 2] = val; d[i + 3] = 255;
+    if (w < 40 || h < 40) return [];
+    const stripH = Math.max(24, Math.round(h * 0.38));
+    const hasTwoStrips = h >= stripH * 1.45;
+    const regions = hasTwoStrips
+      ? [{ sy: 0, sh: stripH }, { sy: Math.max(0, h - stripH), sh: stripH }]
+      : [{ sy: 0, sh: h }];
+    const scale = w < 640 ? Math.min(2.0, Math.round((800 / w) * 100) / 100) : 1;
+    const gap = hasTwoStrips ? Math.round(16 * scale) : 0;
+    const outW = Math.round(w * scale);
+    const partHeights = regions.map(rg => Math.max(1, Math.round(rg.sh * scale)));
+    const outH = partHeights.reduce((a, b) => a + b, 0) + gap;
+
+    const srcCv = document.createElement("canvas");
+    srcCv.width = outW;
+    srcCv.height = outH;
+    const sctx = srcCv.getContext("2d", { willReadFrequently: true });
+    sctx.fillStyle = "#ffffff";
+    sctx.fillRect(0, 0, outW, outH);
+    let curY = 0;
+    for (let idx = 0; idx < regions.length; idx++) {
+      const rg = regions[idx];
+      sctx.drawImage(bm, 0, rg.sy, w, rg.sh, 0, curY, outW, partHeights[idx]);
+      curY += partHeights[idx] + gap;
     }
-    ctx.putImageData(imgData, 0, 0);
-    const outBlob = await new Promise(resolve => cv.toBlob(resolve, "image/png"));
-    cv.width = 0; cv.height = 0;
-    return outBlob ? { blob: outBlob, w: outW, h: outH } : null;
+    const rawData = sctx.getImageData(0, 0, outW, outH).data;
+    srcCv.width = 0; srcCv.height = 0;
+
+    const totalPx = outW * outH;
+    const lumArr = new Uint8Array(totalPx);
+    const satArr = new Uint8Array(totalPx);
+    for (let p = 0; p < totalPx; p++) {
+      const i = p * 4;
+      const r = rawData[i], g = rawData[i + 1], b = rawData[i + 2];
+      const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
+      lumArr[p] = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+      satArr[p] = maxC - minC;
+    }
+    const isColorOrDarkBg = (x, y) => {
+      const cx = x < 0 ? 0 : (x >= outW ? outW - 1 : x);
+      const cy = y < 0 ? 0 : (y >= outH ? outH - 1 : y);
+      const p = cy * outW + cx;
+      return lumArr[p] < 185 || satArr[p] >= 32;
+    };
+
+    const renderMode = async (mode) => {
+      const cv = document.createElement("canvas");
+      cv.width = outW; cv.height = outH;
+      const ctx = cv.getContext("2d", { willReadFrequently: true });
+      const imgData = ctx.createImageData(outW, outH);
+      const d = imgData.data;
+      const stepNear = Math.max(4, Math.round(6 * scale));
+      const stepFar = Math.max(8, Math.round(14 * scale));
+      for (let y = 0; y < outH; y++) {
+        for (let x = 0; x < outW; x++) {
+          const p = y * outW + x;
+          const lum = lumArr[p], sat = satArr[p];
+          let val = 255;
+          if (mode === "badge") {
+            // 仅把“左右或上下两侧存在彩色/深色底”的白字反转为黑字，绝不把整片白底页边涂黑
+            if (lum >= 175 && sat <= 58) {
+              const hasHorizBg = (isColorOrDarkBg(x - stepNear, y) || isColorOrDarkBg(x - stepFar, y))
+                && (isColorOrDarkBg(x + stepNear, y) || isColorOrDarkBg(x + stepFar, y));
+              const hasVertBg = (isColorOrDarkBg(x, y - stepNear) || isColorOrDarkBg(x, y - stepFar))
+                && (isColorOrDarkBg(x, y + stepNear) || isColorOrDarkBg(x, y + stepFar));
+              if (hasHorizBg || hasVertBg) val = 0;
+            }
+          } else {
+            // 浅底/白底上的深色文字高对比二值化（如底部“实力仓库”或顶部黑字说明）
+            if (lum <= 145 && sat <= 85) val = 0;
+          }
+          const i = p * 4;
+          d[i] = val; d[i + 1] = val; d[i + 2] = val; d[i + 3] = 255;
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+      const outBlob = await new Promise(resolve => cv.toBlob(resolve, "image/png"));
+      cv.width = 0; cv.height = 0;
+      return outBlob ? { blob: outBlob, w: outW, h: outH } : null;
+    };
+
+    const results = [];
+    const badgeIm = await renderMode("badge");
+    if (badgeIm) results.push(badgeIm);
+    const darkIm = await renderMode("dark");
+    if (darkIm) results.push(darkIm);
+    return results;
   } catch {} finally {
     if (bm && typeof bm.close === "function") { try { bm.close(); } catch {} }
   }
-  return null;
+  return [];
+}
+
+async function _makeBannerOcrImage(im) {
+  const arr = await _makeBannerOcrImages(im);
+  return arr[0] || null;
 }
 
 // ================= Issue #6：AI 智能判断「仅商品图」还是「其他图也要」=================
@@ -8872,6 +8938,10 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
           accepted.push(item);
           continue;
         }
+        if (!item.image && !isNonEcom) {
+          unverifiedImageCount++;
+          continue;
+        }
         if (!w && !h && effectiveMinSize > 0) {
           if (isNonEcom || label === "主图" || (item.image?.blob?.size || 0) >= 4096) {
             accepted.push(item);
@@ -8901,8 +8971,8 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
     }
 
     // 2) 若为商品页或开启参数/AI：双线程 Web Worker OCR -> 三步检索 -> AI并发生成
-    const FACTORY_OCR_RE = /(?:工厂占地|占地面积|工厂实拍|源头工厂|实力工厂|自有工厂|工厂直供|源头厂家|实力厂家|生产基地|生产车间|车间实拍|厂房面积|完整生产线|生产线|流水线|日产量|月产量|年产量|仓储量|仓库实景|研发团队|企业实力|公司简介|关于我们|荣誉资质|营业执照|增值税专票|可开专票|生产经验|定制生产|加工生产|OEM\s*[/／]?\s*ODM|贴牌定制|品牌贴牌|来图定制|来样定制|来图来样|私模定制|开模定制|全流程代工|全流程定制|定制流程|合作流程|采购流程|下单流程|咨询客服.*确定需求|确定需求.*提供报价|提供报价.*支付款项|支付款项.*加工生产|factory\s*(?:area|building|tour|strength|profile)|production\s*line|manufacturing\s*(?:base|workshop)|warehouse\s*capacity|custom\s*process|company\s*profile)/i;
-    const JUNK_OCR_TEXT_RE = /(?:淘宝|天猫|抖音|拼多多|快手|小红书|京东|微信号|扫码加|加微信|二维码|铺货|铺贷|代发|店管家|一键下单|一键铺|采源宝|微店|超级店长|店小秘|马帮|买家须知|购物须知|发货说明|物流说明|退换货说明|售后说明|诚招代理|关注店铺|收藏店铺|店铺首页|联系客服|掌柜推荐|跨店满减|直播间专享)/i;
+    const FACTORY_OCR_RE = /(?:工厂占地|占地面积|工厂实拍|源头工厂|实力工厂|自有工厂|工厂直供|工厂直销|厂商直供|源头厂家|实力厂家|实力仓库|自有仓库|大型仓库|成品仓库|现货仓库|发货仓库|仓储中心|物流仓库|仓储配送|生产基地|生产车间|车间实拍|车间.{0,12}(?:分工|生产|制造|效率|流水)|缝纫车间|裁剪车间|质检车间|专注生产|生产效率|生产我们更专业|品质检测|出货实拍|出货流程|线下展厅|公司展厅|厂房面积|完整生产线|生产线|流水线|日产量|月产量|年产量|仓储量|仓库实景|研发团队|企业实力|公司简介|关于我们|荣誉资质|营业执照|增值税专票|可开专票|生产经验|定制生产|加工生产|OEM\s*[/／]?\s*ODM|贴牌定制|品牌贴牌|来图定制|来样定制|来图来样|私模定制|开模定制|全流程代工|全流程定制|定制流程|合作流程|采购流程|下单流程|咨询客服.*确定需求|确定需求.*提供报价|提供报价.*支付款项|支付款项.*加工生产|factory\s*(?:area|building|tour|strength|profile)|production\s*line|manufacturing\s*(?:base|workshop)|warehouse\s*capacity|custom\s*process|company\s*profile)/i;
+    const JUNK_OCR_TEXT_RE = /(?:淘宝|天猫|抖音|拼多多|快手|小红书|京东|微信号|扫码加|加微信|二维码|铺货|铺贷|代发|店管家|一键下单|一键铺|采源宝|微店|超级店长|店小秘|马帮|买家须知|购物须知|发货说明|物流说明|退换货说明|售后说明|诚招.{0,12}代理(?:商)?|招募.{0,10}代理(?:商)?|渠道代理商|关注店铺|收藏店铺|店铺首页|联系客服|掌柜推荐|跨店满减|直播间专享)/i;
     const SPEC_OCR_GUARD_RE = /(?:箱规|装箱数|外箱尺寸|毛重|净重|产品尺寸|外形尺寸|规格参数)\s*[:：]?\s*\d/i;
     const isJunkOcrText = rawText => {
       const t = String(rawText || "");
@@ -9030,13 +9100,16 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
                 aiFilteredCount++;
                 return;
               }
-              if (asset.suspectBadge || tailDetailSet.has(asset) || tailMainSet.has(asset)) {
-                const bannerIm = await _makeBannerOcrImage(asset.image);
-                if (bannerIm) {
+              if (asset.suspectBadge || headDetailSet.has(asset) || tailDetailSet.has(asset) || tailMainSet.has(asset)) {
+                const bannerImgs = await _makeBannerOcrImages(asset.image);
+                for (const bannerIm of bannerImgs) {
+                  await checkTaskControl(taskCtx);
+                  if (stopRequested) break;
                   const t2 = await ocrImg(bannerIm);
                   if (t2 && isJunkOcrText(t2)) {
                     asset.__dropJunkByOcr = true;
                     aiFilteredCount++;
+                    break;
                   }
                 }
               }
