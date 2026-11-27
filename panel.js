@@ -2648,7 +2648,7 @@ function requestAssetPermissions(capture) {
   ]);
 }
 
-function waitTabLoaded(tabId, signal = null) {
+function waitTabLoaded(tabId, signal = null, timeoutMs = 60000) {
   // 忽略建标签时的空白页 complete，只认 http(s) 页面加载完成；支持外部取消立即退出
   if (signal?.aborted) return Promise.resolve(false);
   return new Promise(resolve => {
@@ -2667,7 +2667,7 @@ function waitTabLoaded(tabId, signal = null) {
       resolve(ok);
     };
     const onAbort = () => finish(false);
-    const to = setTimeout(() => finish(false), 60000);
+    const to = setTimeout(() => finish(false), timeoutMs);
     async function f(id, info) {
       if (id !== tabId || info.status !== "complete") return;
       try {
@@ -4649,12 +4649,14 @@ function matchField(name, attrs, text) {
 }
 
 // 打开后台标签页提取属性（通用支持1688与全网同平台页面，遇风控立刻停止）
-async function probeAttrs(url) {
-  if (!chrome.tabs?.create) return null;
+async function probeAttrs(url, signal = null) {
+  if (!chrome.tabs?.create || signal?.aborted) return null;
   const tab = await chrome.tabs.create({ url, active: false });
   try {
-    await waitTabLoaded(tab.id);
-    await sleep(1100);
+    await waitTabLoaded(tab.id, signal, 22000);
+    if (signal?.aborted) return null;
+    await interruptibleSleep(1100, signal);
+    if (signal?.aborted) return null;
     const t = await chrome.tabs.get(tab.id).catch(() => null);
     if (!t || !t.url || t.url.includes("punish") || t.url.includes("login")) return null;
     if (is1688OfferUrl(t.url)) {
@@ -7646,27 +7648,35 @@ async function getStage3SamePlatformPages(data, sourceUrl, cacheObj) {
     } catch {}
     if (!pushed && !isBatchMode && is1688OfferUrl(link) && typeof probeAttrs === "function") {
       try {
-        const probed = await probeAttrs(link);
+        await checkTaskControl(cacheObj.__taskCtx);
+        cacheObj.__taskCtx?._touch?.();
+        const probed = await probeAttrs(link, cacheObj.__taskCtx?.abortCtrl?.signal || null);
         if (probed && (Object.keys(probed.attrs || {}).length || (probed.text || "").length > 100) && isSameProductText(`${Object.entries(probed.attrs || {}).map(([k, v]) => `${k} ${v}`).join(" ")} ${probed.text || ""}`, title, brand, model)) {
           const imgOcr = await ocrImageUrlList(probed.images || [], 3);
           const mergedText = imgOcr ? `${probed.text || ""}\n${imgOcr}` : (probed.text || "");
           cacheObj.stage3Pages.push({ link: probed.url || link, attrs: probed.attrs || {}, text: mergedText, ocrText: imgOcr });
         }
-      } catch {}
+      } catch (err) {
+        if (err instanceof TaskControlError) throw err;
+      }
     }
   }
 
   // 若为单条 1688 商品且直接 fetch 未命中，可调用 1688 站内同款检索（批量采集 10+ 商品时不开额外搜索标签页，防止触发 1688 风控导致第10个商品被拦截）
   if (!isBatchMode && !cacheObj.stage3Pages.length && is1688OfferUrl(sourceUrl) && chrome.tabs?.create && typeof window.__captured === "undefined") {
     try {
+      await checkTaskControl(cacheObj.__taskCtx);
       const searchKw = [kw.cleanBrand, kw.coreNoun || title.slice(0, 10)].filter(Boolean).join(" ").trim();
       if (searchKw) {
+        const sig = cacheObj.__taskCtx?.abortCtrl?.signal || null;
         const tab = await chrome.tabs.create({ url: "https://s.1688.com/selloffer/offer_search.htm?keywords=" + encodeURIComponent(searchKw), active: false });
         let links = [];
         try {
-          await waitTabLoaded(tab.id);
-          await sleep(1800);
-          const t = await chrome.tabs.get(tab.id).catch(() => null);
+          await waitTabLoaded(tab.id, sig, 22000);
+          if (!sig?.aborted) {
+            await interruptibleSleep(1800, sig);
+          }
+          const t = sig?.aborted ? null : await chrome.tabs.get(tab.id).catch(() => null);
           if (t && t.url && !t.url.includes("punish") && !t.url.includes("login")) {
             const r = await chrome.scripting.executeScript({
               target: { tabId: tab.id },
@@ -7677,10 +7687,12 @@ async function getStage3SamePlatformPages(data, sourceUrl, cacheObj) {
         } finally { chrome.tabs.remove(tab.id).catch(() => {}); }
         const selfId = (sourceUrl.match(/offer\/(\d+)\.html/) || [])[1];
         for (const l of links) {
+          await checkTaskControl(cacheObj.__taskCtx);
+          cacheObj.__taskCtx?._touch?.();
           const id = (l.match(/offer\/(\d+)\.html/) || [])[1];
           if (!id || id === selfId || seenLinks.has(l)) continue;
           seenLinks.add(l);
-          const probed = await probeAttrs(l);
+          const probed = await probeAttrs(l, sig);
           if (!probed) break;
           const imgOcr = await ocrImageUrlList(probed.images || [], 3);
           const mergedText = imgOcr ? `${probed.text || ""}\n${imgOcr}` : (probed.text || "");
@@ -7822,7 +7834,12 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
   }
   if (!isCarton && !allCheckedTargets.includes(field)) allCheckedTargets.push(field);
 
+  const taskCtx = cascadeCache?.__taskCtx || null;
+  const touchStep = () => { try { taskCtx?._touch?.(); } catch {} };
+
   // 2b) 第一步兜底：插件 AI 综合检索本网页文字 + 本网页图片 OCR 文字
+  await checkTaskControl(taskCtx);
+  touchStep();
   if (!isCarton) {
     $("status").innerText = `插件 AI 正在搜索本网页文字与图片提取「${field}」…`;
     const pagePlusCopy = `${data.pageText || ""}\n${data.copyText || ""}`;
@@ -7833,6 +7850,8 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
   }
 
   // 3) 第二步：搜索本平台所有该商品页面的文字和图片 OCR + 针对当前缺失字段的站内定向搜索 + 插件 AI 提取
+  await checkTaskControl(taskCtx);
+  touchStep();
   $("status").innerText = `插件 AI 正在搜索本平台同商品页面文字与图片查找「${field}」…`;
   const stage3Pages = await getStage3SamePlatformPages(data, sourceUrl, cascadeCache);
   for (const p of stage3Pages) {
@@ -7844,6 +7863,8 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
   let s3Text = stage3Pages.map(p => [Object.entries(p.attrs || {}).map(([k, v]) => `${k}: ${v}`).join("\n"), p.text || ""].filter(Boolean).join("\n")).join("\n");
   const s3Ocr = stage3Pages.map(p => p.ocrText || "").filter(Boolean).join("\n");
   if (!isCarton && !isReqSpec) {
+    await checkTaskControl(taskCtx);
+    touchStep();
     let host = "";
     try { host = new URL(sourceUrl).hostname.replace(/^www\./i, ""); } catch {}
     if (host) {
@@ -7860,10 +7881,14 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
       } catch {}
     }
     if (s3Text || s3Ocr) {
+      await checkTaskControl(taskCtx);
+      touchStep();
       const aiStep2 = await aiExtractStageFields("step2", allCheckedTargets, data, sourceUrl, s3Text, s3Ocr, false, cascadeCache);
       if (aiStep2 && aiStep2[field]) {
         return { value: aiStep2[field], source: "本平台AI+图片", stage: 3 };
       }
+      await checkTaskControl(taskCtx);
+      touchStep();
       const aiSingle2 = await aiExtractSingleFieldFromEvidence("step2", field, data, sourceUrl, s3Text, s3Ocr, false, cascadeCache);
       if (aiSingle2) {
         return { value: aiSingle2, source: "本平台AI定向", stage: 3 };
@@ -7872,6 +7897,8 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
   }
 
   // 4) 第三步：搜索全网所有该商品页面的文字和图片 OCR + 针对当前缺失字段的全网搜索 + 插件 AI 全网深度搜索
+  await checkTaskControl(taskCtx);
+  touchStep();
   $("status").innerText = `插件 AI 正在全网搜索「${field}」…`;
   const stage4Pages = await getStage4InternetPages(data, sourceUrl, cascadeCache);
   if (isCarton) {
@@ -7905,10 +7932,14 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
       if (vExtra) return { value: vExtra, source: "全网搜索", stage: 4 };
     }
     const s4Ocr = stage4Pages.map(p => p.ocrText || "").filter(Boolean).join("\n");
+    await checkTaskControl(taskCtx);
+    touchStep();
     const aiStep3 = await aiExtractStageFields("step3", allCheckedTargets, data, sourceUrl, mergedSnippets, `${mergedOcrText}\n${s4Ocr}`.trim(), true, cascadeCache);
     if (aiStep3 && aiStep3[field]) {
       return { value: aiStep3[field], source: "全网AI+图片", stage: 4 };
     }
+    await checkTaskControl(taskCtx);
+    touchStep();
     const aiSingle3 = await aiExtractSingleFieldFromEvidence("step3", field, data, sourceUrl, mergedSnippets, `${mergedOcrText}\n${s4Ocr}`.trim(), true, cascadeCache);
     if (aiSingle3) {
       return { value: aiSingle3, source: "全网AI定向", stage: 4 };
@@ -8662,7 +8693,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
     const onAi = doAi ? (checkedAi.length ? checkedAi : DEF_AI) : [];
     const preStoryDir = onAi.length ? await getStoryDirection() : { angles: "服务细节故事", soul: "" };
     const preStyleText = onAi.length ? await getAiStyleText() : AI_STYLE_PRESETS.btb;
-    const cascadeCache = { stage3Loaded: false, stage3Pages: [], stage4Loaded: false, stage4Pages: [] };
+    const cascadeCache = { stage3Loaded: false, stage3Pages: [], stage4Loaded: false, stage4Pages: [], __taskCtx: taskCtx };
 
     // 统一字段文档构建器：严格按照「字段名：字段内容」一行一个排列（包含所有基础参数、箱规参数、常见字段与独特卖点/独特故事，绝不重复、绝不杂乱分行）
     let aiFilteredCount = 0;
@@ -9752,13 +9783,14 @@ async function runSingleQueuedTask(task) {
   updateTaskRow(rowRef, { status: "🚀 启动采集…", cls: "run", pct: 5 });
   updateQueueBtnState();
 
-  // 单条任务看门狗：避免某条商品卡死在网页/OCR/AI或写入阶段导致并发槽位永久耗尽（暂停时不计时）
+  // 单条任务看门狗：避免某条商品真正卡死时死占并发槽位（每次三步检索/AI/OCR有进展时自动续期，暂停时不计时）
   let watchdogTimer = null;
   let activeRunMs = 0;
   let activeIdleMs = 0;
   let lastTickAt = Date.now();
   let lastPctSeen = -1;
   let lastLabelSeen = "";
+  task._touch = () => { activeIdleMs = 0; };
   const abortRacePromise = new Promise((_, reject) => {
     const onSigAbort = () => reject(new TaskControlError(task.aborted || task.abortCtrl?.signal?.reason || "abort"));
     if (task.abortCtrl?.signal) {
@@ -9773,7 +9805,7 @@ async function runSingleQueuedTask(task) {
     if (pauseRequested || task.aborted) return;
     activeRunMs += dt;
     activeIdleMs += dt;
-    if (activeIdleMs >= 105000 || activeRunMs >= 210000) {
+    if (activeIdleMs >= 150000 || activeRunMs >= 420000) {
       clearInterval(watchdogTimer);
       watchdogTimer = null;
       abortTaskNow(task, "timeout");
