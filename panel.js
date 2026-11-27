@@ -4487,6 +4487,14 @@ function matchField(name, attrs, text) {
     const isAsciiCand = /^[a-z0-9\s._/-]+$/i.test(cLow);
     for (const k of keys) {
       const kLow = k.toLowerCase();
+      if (name === "产品尺寸" && /(?:外箱|纸箱|箱子|整箱|大箱|箱规|carton|ctn)/i.test(kLow)) continue;
+      if (name === "单件重量" && /(?:外箱|纸箱|箱子|整箱|大箱|装箱|毛净|箱|carton|ctn)/i.test(kLow)) continue;
+      if (name === "单件重量" && (kLow === "净重" || kLow === "net weight")) {
+        const valStr = String(attrs[k] || "").trim();
+        const kgM = valStr.match(/(\d+(?:\.\d+)?)\s*(?:kg|千克|公斤)/i);
+        const hasCartonAttrs = keys.some(ak => /(?:外箱|箱子|每箱|装箱数|箱规|毛重)/i.test(ak));
+        if (kgM && parseFloat(kgM[1]) >= 3 && hasCartonAttrs) continue;
+      }
       if (kLow === cLow) {
         const v = norm(String(attrs[k] || "").trim());
         if (v && isValidFieldValue(name, v)) return v;
@@ -5417,14 +5425,32 @@ async function aiChatRaw(provider, messages, maxTokens = 700, timeoutMs = 0) {
 
 /* ---- 联网工具：搜索 / 打开网页 ---- */
 function _stripHtml(s) {
-  return String(s || "").replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ")
+  return String(s || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
+    .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
+    .replace(/<(?:br|\/p|\/div|\/li|\/tr|\/h[1-6])\b[^>]*>/gi, "\n")
     .replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&[a-z#0-9]+;/gi, " ").replace(/\s+/g, " ").trim();
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&[a-z#0-9]+;/gi, " ")
+    .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
+function _extractCleanDomText(doc) {
+  if (!doc || !doc.body) return "";
+  try {
+    doc.querySelectorAll("script,style,noscript,iframe,svg,footer,header,nav,aside,[class*='footer'],[id*='footer'],[class*='copyright'],[id*='copyright'],[class*='icp'],[class*='sidebar']").forEach(el => el.remove());
+  } catch {}
+  return String(doc.body.textContent || "")
+    .split(/\r?\n+/)
+    .map(l => l.replace(/\s+/g, " ").trim())
+    .filter(l => l && !/(?:京|粤|浙|沪|苏)?ICP[证备]|公网安备|经营许可证|营业性演出许可证|^Copyright\b/i.test(l))
+    .join("\n");
 }
 function _isBingDecoyItem(title, url) {
   const u = String(url || "").toLowerCase();
   const t = String(title || "").trim();
-  if (/(?:chatgpt\.com|zdic\.net|bing\.com\/dict|fanyi\.baidu\.com|hao\.360\.com|360kan\.com)/i.test(u)) return true;
+  if (/(?:chatgpt\.com|zdic\.net|bing\.com\/dict|fanyi\.baidu\.com|hao\.360\.com|360kan\.com|smzdm\.com|zhihu\.com|tieba\.baidu\.com|baijiahao\.baidu\.com|docin\.com|book118\.com|renrendoc\.com|360doc\.com)/i.test(u)) return true;
   if (/^.{1,2}\s*[-_—|]\s*(?:百度百科|汉典|词典|Bing)/i.test(t)) return true;
   if (/baike\.baidu\.com\/item\/%[0-9a-f]{2}%[0-9a-f]{2}%[0-9a-f]{2}$/i.test(u)) return true;
   return false;
@@ -7610,8 +7636,7 @@ async function getStage3SamePlatformPages(data, sourceUrl, cacheObj) {
       const r = await fetch(link, { credentials: "include", signal: AbortSignal.timeout(fetchTimeoutMs) });
       if (r.ok) {
         const page = new DOMParser().parseFromString(await r.text(), "text/html");
-        page.querySelectorAll("script,style").forEach(el => el.remove());
-        const text = (page.body?.textContent || "").replace(/\s+/g, " ");
+        const text = _extractCleanDomText(page);
         if (isSameProductText(text, title, brand, model)) {
           const imgOcr = await ocrFetchedPageImages(page, link, 3);
           cacheObj.stage3Pages.push({ link, attrs: {}, text: imgOcr ? `${text}\n${imgOcr}` : text, ocrText: imgOcr });
@@ -7701,15 +7726,14 @@ async function getStage4InternetPages(data, sourceUrl, cacheObj) {
       if (snippetText && isSameProductText(snippetText, title, brand, model)) {
         cacheObj.stage4Pages.push({ link: `https://www.so.com/s?q=${encodeURIComponent(query)}（全网搜索摘要核验）`, attrs: {}, text: snippetText });
       }
-      const links = hits.map(h => h.url).filter(u => /^https?:\/\//i.test(u) && !seenLinks.has(u) && !/(?:1688\.com|taobao\.com|tmall\.com)/i.test(u)).slice(0, isBatchMode ? 1 : 2);
+      const links = hits.map(h => h.url).filter(u => /^https?:\/\//i.test(u) && !seenLinks.has(u) && !/(?:1688\.com|taobao\.com|tmall\.com|smzdm\.com|zhihu\.com|tieba\.baidu\.com|baijiahao\.baidu\.com|docin\.com|book118\.com|renrendoc\.com|360doc\.com)/i.test(u)).slice(0, isBatchMode ? 1 : 2);
       for (const link of links) {
         seenLinks.add(link);
         try {
           const r = await fetch(link, { signal: AbortSignal.timeout(fetchTimeoutMs) });
           if (!r.ok) continue;
           const page = new DOMParser().parseFromString(await r.text(), "text/html");
-          page.querySelectorAll("script,style").forEach(el => el.remove());
-          const text = (page.body?.textContent || "").replace(/\s+/g, " ");
+          const text = _extractCleanDomText(page);
           if (isSameProductText(text, title, brand, model)) {
             const imgOcr = await ocrFetchedPageImages(page, link, 2);
             cacheObj.stage4Pages.push({ link, attrs: {}, text: imgOcr ? `${text}\n${imgOcr}` : text, ocrText: imgOcr });
@@ -9132,20 +9156,32 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
         const ocrTexts = [];
         const ocrItems = [];
         const ocrCheckedAssets = new Set();
-        const stage1DetailedMissing = isDetailedSpecModeActive() && (
-          !matchField("产品尺寸", data.attrs || {}, data.pageText || "") ||
-          !matchField("单件重量", data.attrs || {}, data.pageText || "")
+        const isCompleteProductDim = val => {
+          const sv = String(val || "").trim();
+          return /\d+(?:\.\d+)?\s*[×xX*＊]\s*\d+(?:\.\d+)?/.test(sv) || /^(?:XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL|均码)$/i.test(sv);
+        };
+        const isSizeChecked = COMMON_FIELDS.some(f => f && f.c && f.n === "产品尺寸");
+        const stage1SizeVal = matchField("产品尺寸", data.attrs || {}, data.pageText || "");
+        const stage1DetailedMissing = (isDetailedSpecModeActive() || isSizeChecked) && (
+          !isCompleteProductDim(stage1SizeVal) ||
+          (isDetailedSpecModeActive() && !matchField("单件重量", data.attrs || {}, data.pageText || ""))
         );
         const stage1HasAllChecked = !(finalBundle.missingRequired && finalBundle.missingRequired.length) && !stage1DetailedMissing;
         if (needOcr && !stage1HasAllChecked) {
           const baseMissing = Array.isArray(finalBundle.missingRequired) ? finalBundle.missingRequired : [];
+          const extraSizeTarget = (isSizeChecked && !isCompleteProductDim(stage1SizeVal)) ? ["产品尺寸"] : [];
           const stillMissing = isDetailedSpecModeActive()
             ? [...new Set([...baseMissing, "产品尺寸", "单件重量"])]
-            : baseMissing;
+            : [...new Set([...baseMissing, ...extraSizeTarget])];
           const hasAllMissingNow = () => {
             if (!stillMissing.length) return true;
             const mergedSoFar = (data.pageText || "") + "\n" + ocrItems.map(x => x.text).join("\n");
-            return stillMissing.every(mf => Boolean(CARTON_FIELDS.includes(mf) ? extractCartonValue(mf, data.attrs || {}, mergedSoFar) : matchField(mf, data.attrs || {}, mergedSoFar)));
+            return stillMissing.every(mf => {
+              const mv = CARTON_FIELDS.includes(mf) ? extractCartonValue(mf, data.attrs || {}, mergedSoFar) : matchField(mf, data.attrs || {}, mergedSoFar);
+              if (!mv) return false;
+              if (mf === "产品尺寸") return isCompleteProductDim(mv);
+              return true;
+            });
           };
           const sortedPool = [...ocrCandidatePool]
             .filter(b => b.w >= 200 && b.h >= 100 && (b.w / Math.max(1, b.h)) < 8)
