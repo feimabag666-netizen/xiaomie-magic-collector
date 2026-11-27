@@ -25,13 +25,35 @@ if (location.hash && !location.hash.startsWith("#capture=")) {
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// 支持可中断睡眠（点击“停止采集”时立即唤醒）
+// 支持并发安全的可中断睡眠（点击“暂停/取消/单条超时”时立即唤醒，不会多任务互相覆盖）
 let stopRequested = false;
-let cancelSleepResolve = null;
-function interruptibleSleep(ms) {
+const sleepCancelers = new Set();
+function cancelAllInterruptibleSleeps() {
+  for (const fn of [...sleepCancelers]) {
+    sleepCancelers.delete(fn);
+    try { fn(); } catch {}
+  }
+}
+function interruptibleSleep(ms, signal = null) {
+  if (signal?.aborted) return Promise.resolve();
   return new Promise(resolve => {
-    const timer = setTimeout(() => { cancelSleepResolve = null; resolve(); }, ms);
-    cancelSleepResolve = () => { clearTimeout(timer); cancelSleepResolve = null; resolve(); };
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      sleepCancelers.delete(finish);
+      if (signal && onAbort) {
+        try { signal.removeEventListener("abort", onAbort); } catch {}
+      }
+      resolve();
+    };
+    const onAbort = () => finish();
+    const timer = setTimeout(finish, ms);
+    sleepCancelers.add(finish);
+    if (signal) {
+      try { signal.addEventListener("abort", onAbort, { once: true }); } catch {}
+    }
   });
 }
 
@@ -984,30 +1006,46 @@ if ($("skipCurrent")) {
   };
 }
 
-async function rateGate(maxMinute, maxHour, maxDay, isCurrentTabCapture = false) {
-  const now = Date.now();
-  const saved = await getStore("collectTimes", []);
-  let times = (Array.isArray(saved) ? saved : []).filter(t => Number.isFinite(t) && now - t < 86400000);
-  if (times.length >= maxDay) {
-    return { ok: false, message: "已达到每日安全上限，今天停止采集" };
-  }
-  if (times.filter(t => now - t < 3600000).length >= maxHour) {
-    return { ok: false, message: "已达到每小时安全上限，本批次停止采集" };
-  }
-  // 用户主动对当前已打开标签页做快照采集时不额外开后台新标签，免除每分钟卡顿等待
-  if (!isCurrentTabCapture) {
-    const minuteTimes = times.filter(t => now - t < 60000);
-    if (minuteTimes.length >= maxMinute) {
-      const waitMs = Math.max(1000, 60000 - (now - Math.min(...minuteTimes)) + 1000);
-      $("status").innerText = `已达到每分钟上限，等待${Math.ceil(waitMs / 1000)}秒…`;
-      await interruptibleSleep(waitMs);
-      if (stopRequested) return { ok: false, message: "已手动停止采集" };
-      return rateGate(maxMinute, maxHour, maxDay, isCurrentTabCapture);
+let _rateGateLockChain = Promise.resolve();
+function _withRateGateLock(fn) {
+  const run = _rateGateLockChain.then(fn, fn);
+  _rateGateLockChain = run.catch(() => {});
+  return run;
+}
+
+async function rateGate(maxMinute, maxHour, maxDay, isCurrentTabCapture = false, taskCtx = null) {
+  while (true) {
+    if (taskCtx?.aborted) return { ok: false, message: "任务已中止" };
+    if (stopRequested) return { ok: false, message: "已手动停止采集" };
+    const stepRes = await _withRateGateLock(async () => {
+      const now = Date.now();
+      const saved = await getStore("collectTimes", []);
+      const times = (Array.isArray(saved) ? saved : []).filter(t => Number.isFinite(t) && now - t < 86400000);
+      if (times.length >= maxDay) {
+        return { done: true, ok: false, message: "已达到每日安全上限，今天停止采集" };
+      }
+      if (times.filter(t => now - t < 3600000).length >= maxHour) {
+        return { done: true, ok: false, message: "已达到每小时安全上限，本批次停止采集" };
+      }
+      if (!isCurrentTabCapture) {
+        const minuteTimes = times.filter(t => now - t < 60000);
+        if (minuteTimes.length >= maxMinute) {
+          const waitMs = Math.max(1000, 60000 - (now - Math.min(...minuteTimes)) + 1000);
+          return { done: false, waitMs };
+        }
+      }
+      times.push(Date.now());
+      await chrome.storage.local.set({ collectTimes: times });
+      return { done: true, ok: true };
+    });
+    if (stepRes.done) return { ok: stepRes.ok, message: stepRes.message };
+    $("status").innerText = `已达到每分钟上限（${maxMinute}个/分），等待 ${Math.ceil(stepRes.waitMs / 1000)} 秒后自动继续…`;
+    if (taskCtx?.rowRef) {
+      updateTaskRow(taskCtx.rowRef, { status: `⏳ 限流冷却 ${Math.ceil(stepRes.waitMs / 1000)}s…`, cls: "run" });
     }
+    await interruptibleSleep(stepRes.waitMs, taskCtx?.abortCtrl?.signal || null);
+    await checkTaskControl(taskCtx);
   }
-  times.push(Date.now());
-  await chrome.storage.local.set({ collectTimes: times });
-  return { ok: true };
 }
 
 let selectedSaveDirectory = null;
@@ -1069,9 +1107,20 @@ async function dl(url, filename, saveDir = "采集", blobObj = null) {
   const cleanDir = String(saveDir || "采集").replace(/[\\/:*?"<>|]/g, "").trim();
   const dlFilename = cleanDir && !filename.startsWith(cleanDir + "/") ? `${cleanDir}/${filename}` : filename;
   return new Promise(resolve => {
+    let settled = false;
+    const finish = ok => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(guardTo);
+      resolve(ok);
+    };
+    const guardTo = setTimeout(() => {
+      scheduleRevoke(url, null);
+      finish(false);
+    }, 20000);
     chrome.downloads.download({ url, filename: dlFilename, conflictAction: "overwrite" }, id => {
       scheduleRevoke(url, id ?? null);
-      resolve(id !== undefined && !chrome.runtime.lastError);
+      finish(id !== undefined && !chrome.runtime.lastError);
     });
   });
 }
@@ -2599,19 +2648,38 @@ function requestAssetPermissions(capture) {
   ]);
 }
 
-function waitTabLoaded(tabId) {
-  // 忽略建标签时的空白页 complete，只认 http(s) 页面加载完成
+function waitTabLoaded(tabId, signal = null) {
+  // 忽略建标签时的空白页 complete，只认 http(s) 页面加载完成；支持外部取消立即退出
+  if (signal?.aborted) return Promise.resolve(false);
   return new Promise(resolve => {
-    const to = setTimeout(() => { chrome.tabs.onUpdated.removeListener(f); resolve(false); }, 60000);
+    let settled = false;
+    const cleanup = () => {
+      chrome.tabs.onUpdated.removeListener(f);
+      clearTimeout(to);
+      if (signal) {
+        try { signal.removeEventListener("abort", onAbort); } catch {}
+      }
+    };
+    const finish = ok => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(ok);
+    };
+    const onAbort = () => finish(false);
+    const to = setTimeout(() => finish(false), 60000);
     async function f(id, info) {
       if (id !== tabId || info.status !== "complete") return;
       try {
         const t = await chrome.tabs.get(tabId);
         if (!t.url || !t.url.startsWith("http")) return;
       } catch (e) { return; }
-      chrome.tabs.onUpdated.removeListener(f); clearTimeout(to); resolve(true);
+      finish(true);
     }
     chrome.tabs.onUpdated.addListener(f);
+    if (signal) {
+      try { signal.addEventListener("abort", onAbort, { once: true }); } catch {}
+    }
   });
 }
 
@@ -3082,27 +3150,54 @@ async function acquireOcrSlot() {
   } else if (idle) {
     idle.busy = true;
   } else {
-    idle = await new Promise(resolve => ocrWaitQueue.push(resolve));
+    idle = await new Promise(resolve => {
+      let done = false;
+      const waiter = slot => {
+        if (done) {
+          releaseOcrSlot(slot);
+          return;
+        }
+        done = true;
+        clearTimeout(to);
+        resolve(slot);
+      };
+      const to = setTimeout(() => {
+        if (done) return;
+        done = true;
+        const idx = ocrWaitQueue.indexOf(waiter);
+        if (idx >= 0) ocrWaitQueue.splice(idx, 1);
+        resolve(null);
+      }, 25000);
+      ocrWaitQueue.push(waiter);
+    });
+    if (!idle) return null;
     idle.busy = true;
   }
-  if (idle.worker && idle.uses >= 24) {
-    await resetOcrWorker(idle);
+  try {
+    if (idle.worker && idle.uses >= 24) {
+      await resetOcrWorker(idle);
+    }
+    if (!idle.worker) {
+      idle.worker = await _spawnOcrWorker();
+      idle.uses = 0;
+    }
+    return idle;
+  } catch (e) {
+    releaseOcrSlot(idle);
+    throw e;
   }
-  if (!idle.worker) {
-    idle.worker = await _spawnOcrWorker();
-    idle.uses = 0;
-  }
-  return idle;
 }
 
 function releaseOcrSlot(slot) {
   if (!slot) return;
   if (ocrWaitQueue.length > 0) {
     const next = ocrWaitQueue.shift();
-    next(slot);
-  } else {
-    slot.busy = false;
+    if (typeof next === "function") {
+      next(slot);
+      return;
+    }
   }
+  slot.busy = false;
 }
 
 async function getOcr() {
@@ -8194,7 +8289,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       await checkTaskControl(taskCtx);
       tab = await chrome.tabs.create({ url, active: false });
       if (taskCtx) taskCtx.tabId = tab.id;
-      const loaded = await waitTabLoaded(tab.id);
+      const loaded = await waitTabLoaded(tab.id, taskCtx?.abortCtrl?.signal || null);
       await checkTaskControl(taskCtx);
       if (!loaded) {
         let probe = null;
@@ -9062,16 +9157,20 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
           }
         }
 
-        // 2b) 对详情图、主图尾图、SKU图及可疑彩条角标做完整 OCR 过滤（彻底剔除工厂宣传、OEM代工流程、铺货下单、快递售后图）
+        // 2b) 对详情图、主图尾图、SKU图及可疑彩条角标做完整 OCR 过滤（大批量任务时自动控流防止排队堵塞，仍优先覆盖头尾详情图与可疑角标）
         if (imgFilterMode !== "all" && typeof ocrImg === "function") {
-          const tailDetailSet = new Set(detailAssets.slice(-12));
-          const headDetailSet = new Set(detailAssets.slice(0, 6));
-          const tailMainSet = new Set(mainAssets.slice(-4));
+          const isLargeBatch = (collectTaskQueue.length + activeTaskSet.size) >= 3;
+          const max2bScan = isLargeBatch ? 18 : 32;
+          const headBannerSet = new Set(detailAssets.slice(0, 3));
+          const tailBannerSet = new Set(detailAssets.slice(-4));
+          const tailDetailSet = new Set(detailAssets.slice(-8));
+          const headDetailSet = new Set(detailAssets.slice(0, 4));
+          const tailMainSet = new Set(mainAssets.slice(-3));
           const prioritized = [
-            ...detailAssets.slice(0, 6),
-            ...detailAssets.slice(-12).reverse(),
-            ...skuAssets,
-            ...mainAssets.slice(-4).reverse(),
+            ...detailAssets.slice(0, 4),
+            ...detailAssets.slice(-6).reverse(),
+            ...mainAssets.slice(-3).reverse(),
+            ...skuAssets.slice(0, 6),
             ...detailAssets,
             ...mainAssets,
           ];
@@ -9085,9 +9184,9 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
             const isWideBanner = w > 0 && h > 0 && (w / h) >= 1.8 && h <= 450;
             const inTailOrHead = tailDetailSet.has(a) || headDetailSet.has(a) || tailMainSet.has(a) || skuAssets.includes(a);
             const isDetailAsset = detailAssets.includes(a);
-            if (a.suspectBadge || isSmallOrMedium || isWideBanner || inTailOrHead || isDetailAsset) {
+            if (a.suspectBadge || isSmallOrMedium || isWideBanner || inTailOrHead || (!isLargeBatch && isDetailAsset)) {
               suspectJunkAssets.push(a);
-              if (suspectJunkAssets.length >= 48) break;
+              if (suspectJunkAssets.length >= max2bScan) break;
             }
           }
           if (suspectJunkAssets.length) {
@@ -9100,7 +9199,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
                 aiFilteredCount++;
                 return;
               }
-              if (asset.suspectBadge || headDetailSet.has(asset) || tailDetailSet.has(asset) || tailMainSet.has(asset)) {
+              if (asset.suspectBadge || headBannerSet.has(asset) || tailBannerSet.has(asset) || tailMainSet.has(asset)) {
                 const bannerImgs = await _makeBannerOcrImages(asset.image);
                 for (const bannerIm of bannerImgs) {
                   await checkTaskControl(taskCtx);
@@ -9116,6 +9215,7 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
             });
           }
         }
+        ocrCandidatePool.length = 0;
 
         reportProg(70, "🤖 AI三步检索与文案并发生成…");
         const enrichedBundle = await buildFieldsPayload({
@@ -9173,30 +9273,45 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
       // 注意：blob URL 的释放统一由 dl() 内部处理（自选目录写入完成后立刻释放，浏览器默认下载等待 onChanged 完成再释放），防止提前 revoke 导致默认下载失败
       return await dl(source, relPath, saveDir, asset?.image?.blob);
     };
-    if (opts.detail) {
-      const cleanDetailAssets = detailAssets.filter(a => !a.__dropJunkByOcr);
-      for (let i = 0; i < cleanDetailAssets.length; i++) {
-        await checkTaskControl(taskCtx);
-        const asset = cleanDetailAssets[i];
-        const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
-        if (await downloadAssetSafely(asset, mediaPath("详情图", mediaFilename(mediaBase, "detail", i, cleanDetailAssets.length, ext, asset.url, namingCfg, sharedFlatNames || usedDetailNames)))) nd++;
+    const releaseAssetsMemory = list => {
+      for (const asset of list || []) {
+        if (asset?.image) {
+          asset.image.blob = null;
+          asset.image = null;
+        }
       }
-    }
-    if (opts.main) {
-      const cleanMainAssets = mainAssets.filter(a => !a.__dropJunkByOcr);
-      for (const [i, asset] of cleanMainAssets.entries()) {
-        await checkTaskControl(taskCtx);
-        const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
-        if (await downloadAssetSafely(asset, mediaPath("主图", mediaFilename(mediaBase, "main", i, cleanMainAssets.length, ext, asset.url, namingCfg, sharedFlatNames || usedMainNames)))) nm++;
+    };
+    try {
+      if (opts.detail) {
+        const cleanDetailAssets = detailAssets.filter(a => !a.__dropJunkByOcr);
+        for (let i = 0; i < cleanDetailAssets.length; i++) {
+          await checkTaskControl(taskCtx);
+          const asset = cleanDetailAssets[i];
+          const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
+          if (await downloadAssetSafely(asset, mediaPath("详情图", mediaFilename(mediaBase, "detail", i, cleanDetailAssets.length, ext, asset.url, namingCfg, sharedFlatNames || usedDetailNames)))) nd++;
+        }
       }
-    }
-    if (doSku) {
-      const cleanSkuAssets = skuAssets.filter(a => !a.__dropJunkByOcr);
-      for (const [i, asset] of cleanSkuAssets.entries()) {
-        await checkTaskControl(taskCtx);
-        const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
-        if (await downloadAssetSafely(asset, mediaPath("SKU图", mediaFilename(mediaBase, "sku", i, cleanSkuAssets.length, ext, asset.url, namingCfg, sharedFlatNames || usedSkuNames)))) ns++;
+      if (opts.main) {
+        const cleanMainAssets = mainAssets.filter(a => !a.__dropJunkByOcr);
+        for (const [i, asset] of cleanMainAssets.entries()) {
+          await checkTaskControl(taskCtx);
+          const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
+          if (await downloadAssetSafely(asset, mediaPath("主图", mediaFilename(mediaBase, "main", i, cleanMainAssets.length, ext, asset.url, namingCfg, sharedFlatNames || usedMainNames)))) nm++;
+        }
       }
+      if (doSku) {
+        const cleanSkuAssets = skuAssets.filter(a => !a.__dropJunkByOcr);
+        for (const [i, asset] of cleanSkuAssets.entries()) {
+          await checkTaskControl(taskCtx);
+          const ext = asset.image?.ext || (asset.image?.blob?.type?.includes("png") ? "png" : mediaExtFromUrl(asset.url));
+          if (await downloadAssetSafely(asset, mediaPath("SKU图", mediaFilename(mediaBase, "sku", i, cleanSkuAssets.length, ext, asset.url, namingCfg, sharedFlatNames || usedSkuNames)))) ns++;
+        }
+      }
+    } finally {
+      releaseAssetsMemory(detailAssets);
+      releaseAssetsMemory(mainAssets);
+      releaseAssetsMemory(skuAssets);
+      ocrCandidatePool.length = 0;
     }
     if (opts.video) {
       for (let i = 0; i < data.videos.length; i++) {
@@ -9296,7 +9411,7 @@ async function checkTaskControl(taskCtx) {
 function pauseCollection() {
   if (!isCollectQueueRunning && activeTaskWorkers === 0 && collectTaskQueue.length === 0) return;
   pauseRequested = true;
-  if (cancelSleepResolve) cancelSleepResolve();
+  cancelAllInterruptibleSleeps();
   for (const t of activeTaskSet) {
     if (t?.rowRef && !t.aborted) {
       updateTaskRow(t.rowRef, { status: "⏸ 已暂停（点继续恢复）", cls: "run" });
@@ -9411,7 +9526,7 @@ function deleteAllPendingTasks() {
     if (t.rowRef?.tr) t.rowRef.tr.remove();
   }
   wakeAllPauseWaiters();
-  if (cancelSleepResolve) cancelSleepResolve();
+  cancelAllInterruptibleSleeps();
   syncTaskBucketsUI();
   updateQueueBtnState();
   if (activeTaskWorkers === 0) {
@@ -9502,8 +9617,34 @@ async function runSingleQueuedTask(task) {
     return "skip";
   }
 
-  const gate = await rateGate(maxMinute, maxHour, maxDay, !!pageCapture);
+  let gate;
+  try {
+    gate = await rateGate(maxMinute, maxHour, maxDay, !!pageCapture, task);
+  } catch (e) {
+    if (e instanceof TaskControlError || task.aborted) {
+      const act = e?.controlAction || task.aborted;
+      if (act === "delete") {
+        if (rowRef?.tr) rowRef.tr.remove();
+        syncTaskBucketsUI();
+        return "delete";
+      }
+      updateTaskRow(rowRef, { status: "⏭️ 已跳过", cls: "skip", pct: 100, m: "-", d: "-", s: "-", v: "-", dir: "" });
+      queueSkipN++;
+      return "skip";
+    }
+    throw e;
+  }
   if (!gate.ok) {
+    if (task.aborted === "delete") {
+      if (rowRef?.tr) rowRef.tr.remove();
+      syncTaskBucketsUI();
+      return "delete";
+    }
+    if (task.aborted === "skip") {
+      updateTaskRow(rowRef, { status: "⏭️ 已跳过", cls: "skip", pct: 100, m: "-", d: "-", s: "-", v: "-", dir: "" });
+      queueSkipN++;
+      return "skip";
+    }
     updateTaskRow(rowRef, { status: gate.message, cls: "fail", pct: 0 });
     $("status").innerText = gate.message;
     clearCollectQueue();
@@ -9522,18 +9663,57 @@ async function runSingleQueuedTask(task) {
   activeTaskSet.add(task);
   updateTaskRow(rowRef, { status: "🚀 启动采集…", cls: "run", pct: 5 });
   updateQueueBtnState();
+
+  // 单条任务看门狗：避免某条商品卡死在网页/OCR/AI或写入阶段导致并发槽位永久耗尽（暂停时不计时）
+  let watchdogTimer = null;
+  let activeRunMs = 0;
+  let activeIdleMs = 0;
+  let lastTickAt = Date.now();
+  let lastPctSeen = -1;
+  let lastLabelSeen = "";
+  const abortRacePromise = new Promise((_, reject) => {
+    const onSigAbort = () => reject(new TaskControlError(task.aborted || task.abortCtrl?.signal?.reason || "abort"));
+    if (task.abortCtrl?.signal) {
+      if (task.abortCtrl.signal.aborted) onSigAbort();
+      else task.abortCtrl.signal.addEventListener("abort", onSigAbort, { once: true });
+    }
+  });
+  watchdogTimer = setInterval(() => {
+    const now = Date.now();
+    const dt = Math.max(0, now - lastTickAt);
+    lastTickAt = now;
+    if (pauseRequested || task.aborted) return;
+    activeRunMs += dt;
+    activeIdleMs += dt;
+    if (activeIdleMs >= 105000 || activeRunMs >= 210000) {
+      clearInterval(watchdogTimer);
+      watchdogTimer = null;
+      abortTaskNow(task, "timeout");
+    }
+  }, 5000);
+
   try {
     await checkTaskControl(task);
-    const r = await collectOne(
+    const collectPromise = collectOne(
       u,
       { prefix, rawNo: assignedNo, suffix, step },
       saveDir,
       opts,
       minSize,
       pageCapture,
-      (pct, label) => updateTaskRow(rowRef, { pct, status: label, cls: "run" }),
+      (pct, label) => {
+        if (pct !== lastPctSeen || label !== lastLabelSeen) {
+          lastPctSeen = pct;
+          lastLabelSeen = label;
+          activeIdleMs = 0;
+        }
+        updateTaskRow(rowRef, { pct, status: label, cls: "run" });
+      },
       task
     );
+    // 防止未触发超时竞态时控制台出现 UnhandledRejection
+    collectPromise.catch(() => {});
+    const r = await Promise.race([collectPromise, abortRacePromise]);
     await checkTaskControl(task);
     updateTaskRow(rowRef, { status: "✅ 完成", cls: "ok", pct: 100, m: r.nm, d: r.nd, s: r.ns, v: r.nv, dir: r.folder });
     if (!queueDoneUrls.includes(u)) queueDoneUrls.push(u);
@@ -9565,6 +9745,11 @@ async function runSingleQueuedTask(task) {
         syncTaskBucketsUI();
         return "delete";
       }
+      if (act === "timeout") {
+        updateTaskRow(rowRef, { status: "⏱️ 单条超时已跳过（防卡死继续下一条）", cls: "fail", pct: 100, m: 0, d: 0, s: 0, v: 0, dir: "" });
+        queueFailN++;
+        return "fail";
+      }
       updateTaskRow(rowRef, { status: "⏭️ 已跳过", cls: "skip", pct: 100, m: "-", d: "-", s: "-", v: "-", dir: "" });
       queueSkipN++;
       return "skip";
@@ -9573,6 +9758,10 @@ async function runSingleQueuedTask(task) {
     queueFailN++;
     return "fail";
   } finally {
+    if (watchdogTimer) {
+      clearInterval(watchdogTimer);
+      watchdogTimer = null;
+    }
     activeTaskSet.delete(task);
     updateQueueBtnState();
   }
