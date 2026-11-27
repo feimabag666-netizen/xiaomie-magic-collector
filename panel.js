@@ -6245,8 +6245,28 @@ function formatPriceTiersForOutput(tiers, rawPriceStr, { minQty = 0, priceMode =
 const SPEC_VARYING_FIELDS = new Set(["型号", "详细规格", "规格", "容量", "产品尺寸", "单件重量", "每箱多少个", "箱子毛净重", "箱子尺寸", "箱子立方数", "价格"]);
 
 // 提取纯物理规格名（剥离颜色词，颜色绝不能单独成为规格；仅容量/尺寸/单件重量/功率/电压/大小号等物理规格可独立成规格）
-const _PHYSICAL_SPEC_RE = /(?:\d+(?:\.\d+)?\s*(?:ml|l|oz|cm|mm|m|g|kg|w|kw|v|mah|ah|寸|英寸|号|升|毫升|克|千克|公斤|瓦|伏|件套|支装|个装|层|格)|大号|中号|小号|特大号|加大号|迷你|mini|\b(?:xs|s|m|l|xl|xxl|2xl|3xl)\b)/i;
-const _COLOR_WORD_RE = /(?:^|[\s\-—_\/／|,+]+)(?:(?:浅|深|亮|暗|哑光|磨砂|香槟|玫瑰|樱花|雾霾|克莱因|天|藏|宝|军|草|橄榄|墨|酒|枣|蜜桃|奶油|象牙|珍珠|星耀|曜石|炫酷|经典|纯)?(?:(?:黑|白|红|粉|蓝|绿|灰|黄|橙|橘|紫|棕|咖|咖啡|金|银|青|茶|米|卡其|杏|驼|透明)色(?=\d|$|[\s\-—_\/／|,+]+)|(?:黑|白|红|粉|蓝|绿|灰|黄|橙|橘|紫|棕|咖|咖啡|金|银|青|茶|米|卡其|杏|驼|透明)(?=$|[\s\-—_\/／|,+]+))|(?:black|white|red|pink|blue|green|gray|grey|yellow|orange|purple|brown|gold|silver|beige|khaki|navy|cyan|ivory|transparent|clear)(?=\d|$|[\s\-—_\/／|,+]+))/gi;
+const _PHYSICAL_SPEC_RE = /(?:\d+(?:\.\d+)?\s*(?:ml|l|oz|cm|mm|m|g|kg|w|kw|v|mah|ah|寸|英寸|号|升|毫升|克|千克|公斤|瓦|伏|件套|支装|个装|层|格)|特大号|加大号|大号|中号|小号|迷你|mini|\b(?:xs|s|m|l|xl|xxl|2xl|3xl)\b)/i;
+const _COLOR_WORD_RE = /(?:^|[\s\-—_\/／|,+]+)(?:(?:浅|深|亮|暗|哑光|磨砂|香槟|玫瑰|樱花|雾霾|克莱因|天|藏|宝|军|草|橄榄|墨|酒|枣|蜜桃|奶油|象牙|珍珠|星耀|曜石|炫酷|经典|纯)?(?:(?:黑|白|红|粉|蓝|绿|灰|黄|橙|橘|紫|棕|咖|咖啡|金|银|青|茶|米|卡其|杏|驼|透明)色(?=特大号|加大号|大号|中号|小号|迷你|mini|\d|$|[\s\-—_\/／|,+]+|xs|s|m|l|xl|xxl)|(?:黑|白|红|粉|蓝|绿|灰|黄|橙|橘|紫|棕|咖|咖啡|金|银|青|茶|米|卡其|杏|驼|透明)(?=特大号|加大号|大号|中号|小号|迷你|mini|\d|$|[\s\-—_\/／|,+]+|xs|s|m|l|xl|xxl))|(?:black|white|red|pink|blue|green|gray|grey|yellow|orange|purple|brown|gold|silver|beige|khaki|navy|cyan|ivory|transparent|clear)(?=\d|$|[\s\-—_\/／|,+]+))/gi;
+
+function _sizeWordRank(str) {
+  const s = String(str || "").trim();
+  if (!s) return 0;
+  if (/(?:超小|特小|加小|\bxxs\b)/i.test(s)) return 5;
+  if (/(?:迷你|mini|\bxs\b)/i.test(s)) return 10;
+  if (/(?:小号|小款|小码|\bs\b)/i.test(s)) return 20;
+  if (/(?:中号|中款|中码|常规款?|标准款?|\bm\b)/i.test(s)) return 30;
+  if (/(?:加大号?|\bxl\b)/i.test(s)) return 50;
+  if (/(?:特大号?|超大号?|\b(?:xxl|2xl)\b)/i.test(s)) return 60;
+  if (/\b(?:xxxl|3xl)\b/i.test(s)) return 70;
+  if (/(?:大号|大款|大码|\bl\b)/i.test(s)) return 40;
+  const numM = s.match(/(\d+(?:\.\d+)?)\s*(?:寸|英寸|层|格|w|kw|v|mah|ah|件套|支装|个装|只装|片装)/i);
+  if (numM) return parseFloat(numM[1]) || 0;
+  return 0;
+}
+
+function _specScaleRank(str) {
+  return _capToMl(str) || _dimToVolCm3(str) || _weightToGrams(str) || _sizeWordRank(str) || 0;
+}
 
 function normalizePhysicalSpecName(rawSpec) {
   // 先保留括号内的物理规格参数（如 标准款（350ml）-> 标准款 350ml），再清除多余括号壳
@@ -6579,7 +6599,14 @@ function detectDistinctMultiSpecs(data, attrs = {}, extraText = "") {
 
   if (variantSpecs.length >= 2 && variantSpecs.length >= maxDimCount) {
     const sortedVars = [...variantSpecs];
-    if (sortedVars.every(v => _capToMl(v.spec) > 0)) sortedVars.sort((x, y) => _capToMl(x.spec) - _capToMl(y.spec));
+    if (sortedVars.every(v => _capToMl(v.spec) > 0)) {
+      sortedVars.sort((x, y) => _capToMl(x.spec) - _capToMl(y.spec));
+    } else if (sortedVars.every(v => _specScaleRank(v.spec) > 0)) {
+      sortedVars.sort((x, y) => _specScaleRank(x.spec) - _specScaleRank(y.spec));
+    } else if (sortedVars.every(v => /\d/.test(v.price || ""))) {
+      const pVal = s => parseFloat((String(s || "").match(/\d+(?:\.\d+)?/) || ["0"])[0]) || 0;
+      sortedVars.sort((x, y) => pVal(x.price) - pVal(y.price));
+    }
     return sortedVars.map((v, i) => ({
       spec: v.spec,
       capacity: _extractCapacityToken(v.spec) || (sortCaps.length >= 2 ? (sortCaps[i] || "") : ""),
@@ -6662,14 +6689,39 @@ function adaptMultiSpecCorrespondence(items, data, { minQty = 0, priceMode = "ra
     return s;
   };
 
-  // 1) 按容量或尺寸从小到大稳定排序（保持对应下标同步）
-  const list = items.map(it => ({
-    ...it,
-    capacity: cleanStr(it.capacity) || _extractCapacityToken(it.spec) || "",
-  }));
-  const getMetric = (it) => _capToMl(it.capacity || it.spec) || _dimToVolCm3(it.size) || _weightToGrams(it.weight, true) || 0;
-  if (list.every(it => getMetric(it) > 0)) {
-    list.sort((x, y) => getMetric(x) - getMetric(y));
+  // 1) 按容量或尺寸从小到大稳定排序（保持对应下标同步），并在不重名的前提下剥离颜色前缀（如 黑色大号 -> 大号）
+  const strippedSpecs = items.map(it => {
+    const raw = cleanStr(it.spec);
+    return normalizePhysicalSpecName(raw) || _stripColorFromSpecName(raw) || raw;
+  });
+  const canStripColors = new Set(strippedSpecs.map(s => s.toLowerCase())).size === new Set(items.map(it => cleanStr(it.spec).toLowerCase())).size;
+  const list = items.map((it, idx) => {
+    const rawCap = cleanStr(it.capacity);
+    const safeCap = (rawCap && isValidFieldValue("容量", rawCap)) ? rawCap : "";
+    const specName = canStripColors ? strippedSpecs[idx] : cleanStr(it.spec);
+    return {
+      ...it,
+      spec: specName,
+      capacity: safeCap || _extractCapacityToken(specName) || "",
+    };
+  });
+  const getSpecMetric = (it) => _capToMl(it.capacity) || _specScaleRank(it.spec) || 0;
+  const getFallbackMetric = (it) => _dimToVolCm3(it.size) || _weightToGrams(it.weight, true) || 0;
+  if (list.every(it => getSpecMetric(it) > 0)) {
+    list.sort((x, y) => getSpecMetric(x) - getSpecMetric(y));
+  } else if (list.every(it => (getSpecMetric(it) || getFallbackMetric(it)) > 0)) {
+    list.sort((x, y) => (getSpecMetric(x) || getFallbackMetric(x)) - (getSpecMetric(y) || getFallbackMetric(y)));
+  }
+
+  // 若各规格名自带明确物理量级顺序（如 小号 < 大号 / 300ml < 500ml），防止传入的产品尺寸恰好逆序贴错规格
+  const specRanks = list.map(getSpecMetric);
+  if (specRanks.every(r => r > 0) && new Set(specRanks).size === list.length && list.every(it => _dimToVolCm3(it.size) > 0)) {
+    const dimVols = list.map(it => _dimToVolCm3(it.size));
+    const dimInverted = dimVols.some((v, idx) => idx > 0 && specRanks[idx] > specRanks[idx - 1] && v + 1 < dimVols[idx - 1]);
+    if (dimInverted) {
+      const sortedSizes = list.map(it => it.size).sort((a, b) => _dimToVolCm3(a) - _dimToVolCm3(b));
+      for (let i = 0; i < list.length; i++) list[i].size = sortedSizes[i];
+    }
   }
 
   // 2) 计算每个规格的一致性物理量级 mags[i]（优先容量ml；若仅部分有容量则按尺寸体积等比外推量级）
@@ -6781,6 +6833,15 @@ function adaptMultiSpecCorrespondence(items, data, { minQty = 0, priceMode = "ra
         list[i].weight = `${scaledG}g`;
       }
     }
+    const normWeightsG = list.map(it => _weightToGrams(it.weight, true));
+    const hasScaleStep = hasSignificantDiff || (specRanks.every(r => r > 0) && new Set(specRanks).size >= 2);
+    if (hasScaleStep && normWeightsG.every(g => g > 0) && new Set(normWeightsG.map(g => Math.round(g))).size >= 2) {
+      const weightInverted = normWeightsG.some((g, idx) => idx > 0 && (mags[idx] > mags[idx - 1] * 1.05 || (specRanks[idx] > 0 && specRanks[idx - 1] > 0 && specRanks[idx] > specRanks[idx - 1])) && g + 0.5 < normWeightsG[idx - 1]);
+      if (weightInverted) {
+        const sortedWeights = list.map(it => it.weight).sort((a, b) => _weightToGrams(a, true) - _weightToGrams(b, true));
+        for (let i = 0; i < list.length; i++) list[i].weight = sortedWeights[i];
+      }
+    }
   }
 
   // 5) 对齐「箱规四项」（每箱多少个、箱子毛净重、箱子尺寸、箱子立方数）
@@ -6856,7 +6917,7 @@ function adaptMultiSpecCorrespondence(items, data, { minQty = 0, priceMode = "ra
     }
   }
 
-  // 6) 对齐「价格」：若多规格已有独立SKU价格则保留；若仅有单一均价则按物理量级递增适配
+  // 6) 对齐「价格」：若多规格已有独立SKU价格则保留（且严禁大尺寸反而比小尺寸便宜）；若仅有单一均价则按物理量级递增适配
   const parseFirstPrice = (pStr) => {
     const s = String(pStr || "");
     const curM = s.match(/([¥￥$€£])\s*(\d+(?:\.\d+)?)/);
@@ -6865,10 +6926,28 @@ function adaptMultiSpecCorrespondence(items, data, { minQty = 0, priceMode = "ra
     const bm = bare.match(/(\d+(?:\.\d+)?)/);
     return bm ? { cur: "¥", val: parseFloat(bm[1]) } : null;
   };
-  const priceObjs = list.map(it => parseFirstPrice(it.price));
+  let priceObjs = list.map(it => parseFirstPrice(it.price));
   const distinctPrices = new Set(priceObjs.filter(Boolean).map(p => p.val.toFixed(2)));
   const rawPagePriceStr = formatPriceTiersForOutput(data?.priceTiers, attrs["价格"] || "", { minQty, priceMode: "raw", markupPct: 0 });
   const globalPriceObj = priceObjs[anchorIdx] || priceObjs.find(Boolean) || parseFirstPrice(rawPagePriceStr);
+
+  // 若尺寸/容量/单重存在明显大小梯度，但抓到的独立价格出现了“小尺寸更贵、大尺寸更便宜”的倒挂错配，先按价格从小到大重新对应各规格
+  const hasPriceScaleStep = hasSignificantDiff || (specRanks.every(r => r > 0) && new Set(specRanks).size >= 2);
+  if (hasPriceScaleStep && priceObjs.every(Boolean) && distinctPrices.size >= 2) {
+    let hasInversion = false;
+    for (let i = 1; i < list.length; i++) {
+      const largerThanPrev = mags[i] > mags[i - 1] * 1.05 || (specRanks[i] > 0 && specRanks[i - 1] > 0 && specRanks[i] > specRanks[i - 1]);
+      if (largerThanPrev && priceObjs[i].val + 0.001 < priceObjs[i - 1].val) {
+        hasInversion = true;
+        break;
+      }
+    }
+    if (hasInversion) {
+      const sortedPriceStrs = list.map(it => it.price).sort((a, b) => (parseFirstPrice(a)?.val || 0) - (parseFirstPrice(b)?.val || 0));
+      for (let i = 0; i < list.length; i++) list[i].price = sortedPriceStrs[i];
+      priceObjs = list.map(it => parseFirstPrice(it.price));
+    }
+  }
 
   if (distinctPrices.size <= 1 && globalPriceObj && globalPriceObj.val > 0 && hasSignificantDiff) {
     // 若 list 中已有价格是经过 markup_pct 加价的，先还原或基于全局价格统一处理
@@ -6966,7 +7045,7 @@ async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMod
             content: [
               "你是电商多规格参数结构化整理专家。该商品在容量、产品尺寸、单件重量、箱规或价格中存在多个规格，请严格依据网页文本、属性表、包装件重尺表、SKU列表和OCR文字，按从小到大顺序输出所有规格，保证型号、容量、产品尺寸、箱规、单件重量、价格一一对应、彼此适配。",
               "严格输出纯 JSON 数组，每个元素格式：",
-              `{"spec":"纯物理规格名如350ml或500ml或基础款/升级款(严禁带颜色词，若尺寸4个容量缺第4个请从详情页或OCR补全真实容量)","capacity":"该规格对应的容量(如350ml/18L，非容量类产品留空)","model":"该规格型号(无则留空)","size":"该规格对应的产品尺寸(带cm/mm)","weight":"该规格对应的单件重量(带g/kg)","cartonQty":"每箱多少个(必须带/箱或pcs/ctn)","cartonWeight":"箱子毛净重(如毛重18.5kg/净重17.2kg)","cartonSize":"箱子尺寸(长×宽×高cm)","cartonCbm":"箱子立方数(如0.0889 m³)","price":"该规格对应价格(如有阶梯写清XXX件多少钱，过滤低于${minQty}件的价格)"}`,
+              `{"spec":"纯物理规格名如350ml或500ml或小号/大号或基础款/升级款(严禁带颜色词，若尺寸4个容量缺第4个请从详情页或OCR补全真实容量)","capacity":"仅填真实容积或可装规格(如350ml/18L/可装14寸电脑)，绝对禁止把大号/小号/黑色等规格颜色词填入capacity！非容量类或无标注则留空\"\"","model":"该规格型号(无则留空)","size":"该规格对应的产品尺寸(带cm/mm，小规格配小尺寸、大规格配大尺寸)","weight":"该规格对应的单件重量(带g/kg)","cartonQty":"每箱多少个(必须带/箱或pcs/ctn)","cartonWeight":"箱子毛净重(如毛重18.5kg/净重17.2kg)","cartonSize":"箱子尺寸(长×宽×高cm)","cartonCbm":"箱子立方数(如0.0889 m³)","price":"该规格对应价格(必须与规格大小严格匹配：大尺寸/大容量价格绝不能低于小尺寸/小容量；如有阶梯写清XXX件多少钱，过滤低于${minQty}件的价格)"}`,
               "铁律1：颜色绝对不能单独成为规格！同一物理规格的不同颜色必须合并；若实际只有 1 个物理规格返回空数组 []。",
               "铁律2：严禁漏掉任何尺寸或规格！比如页面有4个尺寸但属性栏容量只写了3个时，必须对照网页正文与OCR找出第4个规格，输出完整4组一一对应的数据，绝不允许4个尺寸配3个容量、1个单重、1个箱规、1个价格的不对齐现象！",
               "铁律3：网页未单独列出某规格的容量/单件重量/箱规/价格时，请结合其尺寸与容量变化做外贸B2B物理适配（净重≈单件重量×装箱数，毛重>净重，立方数=箱规体积），绝不输出“-”或机械把完全相同的单个重量与价格硬复制到明显一大一小的规格里。",
@@ -6996,9 +7075,11 @@ async function aiExtractMultiSpecVariants(data, stageOcrText, { minQty, priceMod
                 const prRow = matchPackRow(normSp, cleanStr(it.size));
                 let pr = normalizeRawPriceText(it.price || "");
                 if (pr && priceMode === "markup_pct") pr = applyPriceMarkupPct(pr, markupPct);
+                const aiCap = cleanStr(it.capacity);
+                const validAiCap = (aiCap && isValidFieldValue("容量", aiCap)) ? aiCap : "";
                 dedup.set(k, {
                   spec: normSp,
-                  capacity: cleanStr(it.capacity) || _extractCapacityToken(normSp) || detected[idx]?.capacity || "",
+                  capacity: validAiCap || _extractCapacityToken(normSp) || detected[idx]?.capacity || "",
                   rawModel: cleanStr(it.model) || detected[idx]?.model || "",
                   size: cleanStr(it.size) || prRow?.size || detected[idx]?.size || "",
                   weight: (cleanStr(it.weight) || prRow?.weight || detected[idx]?.weight)
