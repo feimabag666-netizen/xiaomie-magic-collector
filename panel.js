@@ -4366,15 +4366,18 @@ function normalizeYesNoFieldValue(rawVal) {
   return "";
 }
 
-// 规范单件重量：确保一定带上明确单位（g / kg 等），纯数字按页面键名或数值量级自动补全单位
+// 规范单件重量：确保一定带上明确单位（g / kg 等），纯数字按页面键名或数值量级自动补全单位，拒绝把网页长句/备案号乱拼“g”
 function normalizeUnitWeight(rawVal, attrs = {}) {
   const s = String(rawVal ?? "").trim();
   if (!s) return "";
-  if (/(?:kg|g|mg|lb|lbs|oz|克|千克|公斤|斤|两)\b/i.test(s) || /(?:克|千克|公斤|斤|两)/.test(s)) {
-    return s;
+  if (typeof isValidFieldValue === "function" && !isValidFieldValue("单件重量", s)) return "";
+  const explicitM = s.match(/(\d+(?:\.\d+)?(?:\s*[-~—]\s*\d+(?:\.\d+)?)?\s*(?:kg|g|mg|lb|lbs|oz|克|千克|公斤|斤|两))/i);
+  if (explicitM) {
+    return s.length <= 24 ? s : explicitM[1].replace(/\s+/g, "");
   }
-  const numMatch = s.match(/(\d+(?:\.\d+)?)/);
-  if (!numMatch) return s;
+  const cleanNumOnly = s.match(/^(?:约\s*)?(\d+(?:\.\d+)?)(?:\s*[-~—]\s*(\d+(?:\.\d+)?))?\s*(?:左右)?$/);
+  if (!cleanNumOnly) return "";
+  const numMatch = cleanNumOnly;
   // 先看网页属性表里对应的键名是否标明了单位（如 重量(kg) / 单位重量(g)）
   let hintedUnit = "";
   for (const k of Object.keys(attrs || {})) {
@@ -4440,7 +4443,8 @@ function isValidFieldValue(name, val) {
   if (/^(?:预览|查看|展开|收起|更多|查看详情|详情|图片|大图|视频|暂无|待定|未知|不详|无规格|无尺寸|无|见详情|见图片|详见详情|见描述|咨询客服|联系客服|略|说明|参数|全部|选择|客服|评价|收藏|举报|登录|注册|null|undefined|none|n\/a)$/i.test(v)) return false;
   if (/(?:\d+\+?\s*(?:人好评|人评价|人付款|人想买|人收藏|人关注|人看过|条评价|条评论|笔成交|件可售|件起批)|好评率|回头率|复购率|揽收率|物流体验|买家保障|先采后付|退货包运费|加入进货单|立即购买|加入购物车)/i.test(v)) return false;
   if (name === "产品尺寸") {
-    if (/(?:人好评|人评价|人付款|销量|成交|[¥￥$€£])/.test(v)) return false;
+    if (v.length > 48) return false;
+    if (/(?:人好评|人评价|人付款|销量|成交|ICP|网安备|备案|许可证|版权|营业执照|张大妈|worthbuy|http|[¥￥$€£])/i.test(v)) return false;
     return /\d/.test(v) || /^(?:XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL|均码)$/i.test(v);
   }
   if (name === "容量") {
@@ -4448,8 +4452,11 @@ function isValidFieldValue(name, val) {
     return /(?:\d+(?:\.\d+)?\s*(?:ml|mL|l|L|cl|oz|gal|cc|升|毫升|加仑|立方|mah|ah|wh|gb|tb|寸|英寸|本|瓶|杯|个|只|件|pcs)|(?:大容量|小容量|中容量|\d+\s*L(?:以下|以上)?|A[345](?:书本|杂志|文件|文件夹|纸)?|(?:可放|可装|容纳)[^，。;；\n]{1,20}(?:电脑|笔记本|平板|ipad|书|A4|衣物)))/i.test(v);
   }
   if (name === "单件重量") {
-    if (/(?:人|好评|评价|付款|成交|销量|¥|￥|\$)/.test(v)) return false;
-    return /\d/.test(v);
+    if (v.length > 32) return false;
+    if (/(?:ICP|网安备|备案|许可证|版权|营业执照|排行榜|百科|张大妈|值得买|热搜|购物车|立即购买|人|好评|评价|付款|成交|销量|http|¥|￥|\$)/i.test(v)) return false;
+    const hasWeightUnit = /\d+(?:\.\d+)?\s*(?:kg|g|mg|lb|lbs|oz|克|千克|公斤|斤|两)\b/i.test(v) || /\d+(?:\.\d+)?\s*(?:克|千克|公斤|斤|两)/.test(v);
+    const isCleanNum = /^(?:约\s*)?\d+(?:\.\d+)?(?:\s*[-~—]\s*\d+(?:\.\d+)?)?\s*(?:左右)?$/i.test(v);
+    return hasWeightUnit || isCleanNum;
   }
   if (name === "电压" || name === "功率") {
     return /\d/.test(v);
@@ -4503,7 +4510,22 @@ function matchField(name, attrs, text) {
       if (/^[\u4e00-\u9fa5]{2,5}$/.test(c)) return [...c].map(ch => escRe(ch)).join("\\s*");
       return escRe(c);
     };
-    const lenRange = (isYesNo || name === "单位") ? "{1,36}" : "{2,96}";
+    const lenRange = (isYesNo || name === "单位") ? "{1,36}" : (name === "单件重量" ? "{2,32}" : "{2,96}");
+    let fallback1dDim = "";
+    const isMultiAxisDim = val => /\d+(?:\.\d+)?\s*[×xX*＊]\s*\d+(?:\.\d+)?/.test(String(val || ""));
+    const normDimOut = val => String(val || "").replace(/\s*([×xX*＊])\s*/g, "×").replace(/\s+(mm|cm|m|毫米|厘米)$/i, "$1").trim();
+    const extractLabeledLwh = txt => {
+      const cleanedTxt = String(txt || "").replace(/(?:外箱|纸箱|箱规|整箱|箱子尺寸|装箱|毛重|净重|carton|ctn|meas)[^\n。；;]{0,80}/gi, " ");
+      const mL = cleanedTxt.match(/长\s*[:：]?\s*(\d+(?:\.\d+)?)\s*(mm|cm|毫米|厘米)/i);
+      const mW = cleanedTxt.match(/(?:宽|厚|深)\s*[:：]?\s*(\d+(?:\.\d+)?)\s*(mm|cm|毫米|厘米)/i);
+      const mH = cleanedTxt.match(/高\s*[:：]?\s*(\d+(?:\.\d+)?)\s*(mm|cm|毫米|厘米)/i);
+      const found = [mL, mW, mH].filter(Boolean);
+      if (found.length >= 2) {
+        const unit = found[0][2];
+        return `${found.map(x => x[1]).join("×")}${unit}`;
+      }
+      return "";
+    };
     for (const c of cand) {
       const lblPat = buildLabelReStr(c);
       // 1) 同行「标签: 值」匹配（避免跨行直接吞掉下一列标签如“尺寸: 材质:”）
@@ -4514,8 +4536,19 @@ function matchField(name, attrs, text) {
         if (name === "单件重量" && /(?:外箱|纸箱|箱子|整箱|大箱|包装|毛净?|箱)\s*$/i.test(prefixCtx)) continue;
         if (name === "单位" && /(?:尺寸|重量|容量|货币|金额|价格|计量长度|长度)\s*$/i.test(prefixCtx)) continue;
         const rawMatched = m && m[1] ? m[1].trim() : "";
-        const v = norm(rawMatched);
-        if (v && !BADVAL.has(v) && isValidFieldValue(name, v)) return v;
+        let v = norm(rawMatched);
+        if (name === "单件重量") {
+          const wm = String(v).match(/(\d+(?:\.\d+)?(?:\s*[-~—]\s*\d+(?:\.\d+)?)?\s*(?:kg|g|mg|lb|lbs|oz|克|千克|公斤|斤|两))/i);
+          if (!wm) continue;
+          v = wm[1].replace(/\s+/g, "");
+        }
+        if (v && !BADVAL.has(v) && isValidFieldValue(name, v)) {
+          if (name === "产品尺寸" && !isMultiAxisDim(v)) {
+            if (!fallback1dDim) fallback1dDim = v;
+            continue;
+          }
+          return name === "产品尺寸" ? normDimOut(v) : v;
+        }
       }
     }
     // 2) 兼容两栏双行图片排版（如上行「尺寸:  材质:」，下行「160x80mm  PP、硅胶」；或冒号缺失/换行的竖排框）
@@ -4545,7 +4578,7 @@ function matchField(name, attrs, text) {
       // 先看同行无冒号紧跟值（如“尺寸 160x80mm”）
       if (name === "产品尺寸") {
         const sameDim = curLine.match(dimWithUnitRe);
-        if (sameDim && isValidFieldValue(name, sameDim[1])) return sameDim[1].replace(/\s+/g, "");
+        if (sameDim && isValidFieldValue(name, sameDim[1])) return normDimOut(sameDim[1]);
       }
       for (let off = 1; off <= 2 && li + off < lines.length; off++) {
         const nextLine = lines[li + off];
@@ -4556,7 +4589,7 @@ function matchField(name, attrs, text) {
           if (/(?:外箱|纸箱|箱规|整箱|箱子尺寸|carton|ctn)/i.test(nextLine)) continue;
           const dm = nextLine.match(dimWithUnitRe) || nextLine.match(dimTokenRe);
           if (dm && /\d/.test(dm[1]) && isValidFieldValue(name, dm[1])) {
-            return dm[1].replace(/\s*([×xX*＊])\s*/g, "$1").replace(/\s+(mm|cm|m|毫米|厘米)$/i, "$1").trim();
+            return normDimOut(dm[1]);
           }
         }
         // 把带空格的尺寸合并后再按列拆分匹配
@@ -4566,20 +4599,31 @@ function matchField(name, attrs, text) {
         const cells = mergedDimNext.split(/\s{1,}|\t+/).map(x => x.trim()).filter(Boolean);
         const pickedCell = cells[matchedColIdx] || (cells.length === 1 ? cells[0] : "");
         const vCell = norm(pickedCell);
+        if (name === "单件重量" && !/(?:kg|g|mg|lb|lbs|oz|克|千克|公斤|斤|两)/i.test(vCell)) continue;
         if (vCell && !BADVAL.has(vCell) && !/[:：]$/.test(vCell) && isValidFieldValue(name, vCell)) {
-          return vCell;
+          if (name === "产品尺寸" && !isMultiAxisDim(vCell)) {
+            if (!fallback1dDim) fallback1dDim = vCell;
+            continue;
+          }
+          return name === "产品尺寸" ? normDimOut(vCell) : vCell;
         }
         break;
       }
     }
-    // 3) 「产品尺寸」终极兜底：剔除外箱/箱规行后，匹配任意带单位的 2D/3D 商品尺寸（如 160x80mm / 16×8×8cm）或“高160mm 直径80mm”
+    // 3) 「产品尺寸」终极兜底：剔除外箱/箱规行后，优先匹配 2D/3D 多维尺寸（如 250mm*140mm*290mm），再尝试拼接分标注“长/宽/高”，最后才回退单轴尺寸
     if (name === "产品尺寸") {
       const noCartonText = String(text)
         .replace(/(?:外箱|纸箱|箱规|整箱|箱子尺寸|装箱|毛重|净重|carton|ctn|meas)[^\n。；;]{0,80}/gi, " ");
-      const mFallback = noCartonText.match(/\b(\d{1,4}(?:\.\d+)?\s*[×xX*＊]\s*\d{1,4}(?:\.\d+)?(?:\s*[×xX*＊]\s*\d{1,4}(?:\.\d+)?)?\s*(?:mm|cm|毫米|厘米))(?=$|[^a-zA-Z0-9])/i);
+      const mFallback = noCartonText.match(/(\d{1,4}(?:\.\d+)?\s*(?:mm|cm|毫米|厘米)?\s*[×xX*＊]\s*\d{1,4}(?:\.\d+)?\s*(?:mm|cm|毫米|厘米)?(?:\s*[×xX*＊]\s*\d{1,4}(?:\.\d+)?)?\s*(?:mm|cm|毫米|厘米))(?=$|[^a-zA-Z0-9])/i);
       if (mFallback && isValidFieldValue(name, mFallback[1])) {
-        return mFallback[1].replace(/\s*([×xX*＊])\s*/g, "$1").replace(/\s+(mm|cm|毫米|厘米)$/i, "$1").trim();
+        const unitEnd = (mFallback[1].match(/(mm|cm|毫米|厘米)\s*$/i) || ["", ""])[1];
+        const nums = mFallback[1].match(/\d+(?:\.\d+)?/g) || [];
+        if (nums.length >= 2) return `${nums.slice(0, 3).join("×")}${unitEnd}`;
+        return normDimOut(mFallback[1]);
       }
+      const lwh = extractLabeledLwh(noCartonText);
+      if (lwh && isValidFieldValue(name, lwh)) return lwh;
+      if (fallback1dDim) return fallback1dDim;
     }
     // 针对「包装方式」支持详情介绍中的自然语言描述（如 单个OPP袋包装、独立PE袋、彩盒装、牛皮纸盒、吸塑卡装、防尘袋包装 等）
     if (name === "包装方式") {
@@ -7714,11 +7758,16 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
     return { value: stage1Val, source: "", stage: 1 };
   }
 
-  // 2) 第2级：没有就 OCR 图片看看
+  // 2) 第2级：没有就 OCR 图片看看（找“产品尺寸”时若只命中单轴尺寸如 290mm，继续向后找完整 2D/3D 长宽高尺寸）
   if (Array.isArray(ocrItems) && ocrItems.length) {
+    let partialDimFallback = "";
     for (const item of ocrItems) {
       const v = extractFn({}, item.text || "");
       if (v) {
+        if (field === "产品尺寸" && !/\d+(?:\.\d+)?\s*[×xX*＊]\s*\d+(?:\.\d+)?/.test(v)) {
+          if (!partialDimFallback) partialDimFallback = v;
+          continue;
+        }
         return { value: v, source: "", stage: 2 };
       }
     }
@@ -7726,6 +7775,9 @@ async function findSpecsByFourStageCascade(data, sourceUrl, ocrItems, field = "�
     const vMerged = extractFn({}, mergedOcr);
     if (vMerged) {
       return { value: vMerged, source: "", stage: 2 };
+    }
+    if (partialDimFallback) {
+      return { value: partialDimFallback, source: "", stage: 2 };
     }
   }
 
@@ -9066,8 +9118,8 @@ async function collectOne(url, slotReq, saveDir, opts, minSize, initialData = nu
     }
 
     // 2) 若为商品页或开启参数/AI：双线程 Web Worker OCR -> 三步检索 -> AI并发生成
-    const FACTORY_OCR_RE = /(?:工厂占地|占地面积|工厂实拍|源头工厂|实力工厂|自有工厂|工厂直供|工厂直销|厂商直供|源头厂家|实力厂家|实力仓库|自有仓库|大型仓库|成品仓库|现货仓库|发货仓库|仓储中心|物流仓库|仓储配送|生产基地|生产车间|车间实拍|车间.{0,12}(?:分工|生产|制造|效率|流水)|缝纫车间|裁剪车间|质检车间|专注生产|生产效率|生产我们更专业|品质检测|出货实拍|出货流程|线下展厅|公司展厅|厂房面积|完整生产线|生产线|流水线|日产量|月产量|年产量|仓储量|仓库实景|研发团队|企业实力|公司简介|关于我们|荣誉资质|营业执照|增值税专票|可开专票|生产经验|定制生产|加工生产|OEM\s*[/／]?\s*ODM|贴牌定制|品牌贴牌|来图定制|来样定制|来图来样|私模定制|开模定制|全流程代工|全流程定制|定制流程|合作流程|采购流程|下单流程|咨询客服.*确定需求|确定需求.*提供报价|提供报价.*支付款项|支付款项.*加工生产|factory\s*(?:area|building|tour|strength|profile)|production\s*line|manufacturing\s*(?:base|workshop)|warehouse\s*capacity|custom\s*process|company\s*profile)/i;
-    const JUNK_OCR_TEXT_RE = /(?:淘宝|天猫|抖音|拼多多|快手|小红书|京东|微信号|扫码加|加微信|二维码|铺货|铺贷|代发|店管家|一键下单|一键铺|采源宝|微店|超级店长|店小秘|马帮|买家须知|购物须知|发货说明|物流说明|退换货说明|售后说明|诚招.{0,12}代理(?:商)?|招募.{0,10}代理(?:商)?|渠道代理商|关注店铺|收藏店铺|店铺首页|联系客服|掌柜推荐|跨店满减|直播间专享)/i;
+    const FACTORY_OCR_RE = /(?:工厂占地|占地面积|工厂实拍|源头工厂|实力工厂|生产厂家|箱包厂|自有工厂|工厂直供|工厂直销|厂商直供|源头厂家|实力厂家|实力仓库|自有仓库|大型仓库|成品仓库|现货仓库|发货仓库|仓储中心|物流仓库|仓储配送|生产基地|生产车间|车间实拍|车间.{0,12}(?:分工|生产|制造|效率|流水)|缝纫车间|裁剪车间|质检车间|专注生产|生产效率|生产我们更专业|品质检测|出货实拍|出货流程|线下展厅|公司展厅|厂房面积|完整生产线|生产线|流水线|日产量|月产量|年产量|仓储量|仓库实景|研发团队|企业实力|公司简介|关于我们|荣誉资质|营业执照|增值税专票|可开专票|生产经验|定制生产|加工生产|来样加工|来电洽谈|欢迎.{0,8}洽谈|OEM\s*[/／]?\s*ODM|贴牌定制|品牌贴牌|来图定制|来样定制|来图来样|私模定制|开模定制|全流程代工|全流程定制|定制流程|合作流程|采购流程|下单流程|咨询客服.*确定需求|确定需求.*提供报价|提供报价.*支付款项|支付款项.*加工生产|factory\s*(?:area|building|tour|strength|profile)|production\s*line|manufacturing\s*(?:base|workshop)|warehouse\s*capacity|custom\s*process|company\s*profile)/i;
+    const JUNK_OCR_TEXT_RE = /(?:淘宝|天猫|抖音|拼多多|快手|小红书|京东|微信号|扫码加|加微信|二维码|铺货|铺贷|代发|店管家|一键下单|一键铺|采源宝|微店|超级店长|店小秘|马帮|买家.{0,6}须知|购买须知|购物须知|拍前.{0,12}(?:咨询|联系)|发货说明|物流说明|退换货说明|售后说明|诚招.{0,12}代理(?:商)?|招募.{0,10}代理(?:商)?|渠道代理商|关注店铺|收藏店铺|店铺首页|联系客服|掌柜推荐|跨店满减|直播间专享)/i;
     const SPEC_OCR_GUARD_RE = /(?:箱规|装箱数|外箱尺寸|毛重|净重|产品尺寸|外形尺寸|规格参数)\s*[:：]?\s*\d/i;
     const isJunkOcrText = rawText => {
       const t = String(rawText || "");
